@@ -1,0 +1,20 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for the app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "notification:default",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted",
+    "notification:allow-notify",
+    "notification:allow-create-channel",
+    "dialog:default",
+    "dialog:allow-open",
+    "reminder:default"
+  ]
+}
