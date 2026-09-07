@@ -1,0 +1,33 @@
+:root {
+  --color-primary: #1989fa;
+  --color-success: #07c160;
+  --color-warning: #ff976a;
+  --color-danger: #ee0a24;
+
+  --course-color-1: #1989fa;
+  --course-color-2: #07c160;
+  --course-color-3: #ff976a;
+  --course-color-4: #ee0a24;
+  --course-color-5: #7232dd;
+  --course-color-6: #ffcd00;
+  --course-color-7: #14c4c4;
+  --course-color-8: #f97316;
+  --course-color-9: #8b5cf6;
+  --course-color-10: #ec4899;
+  --course-color-11: #10b981;
+  --course-color-12: #6366f1;
+
+  /* Theme defaults */
+  --theme-bg-color: #ffffff;
+  --theme-card-opacity: 0.3;
+  --theme-card-border-width: 1px;
+  --theme-card-border-color: #999;
+  --theme-card-border-radius: 6px;
+  --theme-grid-line-color: #e0e0e0;
+  --theme-grid-line-opacity: 1;
+  --theme-header-bg: #f5f5f5;
+  --theme-header-text: #333;
+  --theme-body-text: #333;
+  --theme-bg-image: none;
+  --theme-bg-image-opacity: 0.3;
+}

@@ -1,0 +1,69 @@
+@import "./variables.css";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  color: #333;
+  background-color: #f7f8fa;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Vant confirm dialogs are mounted outside component scope, so theme styles live globally. */
+.theme-confirm-dialog {
+  background: var(--theme-bg-color) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+}
+
+.theme-confirm-dialog .van-dialog__header {
+  color: var(--theme-header-text) !important;
+  font-weight: 700 !important;
+  padding-top: 24px !important;
+}
+
+.theme-confirm-dialog .van-dialog__message {
+  color: var(--theme-body-text) !important;
+  opacity: 0.8 !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.theme-confirm-dialog .van-hairline--top::after {
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+}
+
+.theme-confirm-dialog .van-dialog__footer {
+  padding: 8px !important;
+}
+
+.theme-confirm-dialog .van-button {
+  background: transparent !important;
+  border: none !important;
+  color: var(--theme-body-text) !important;
+  font-size: 15px !important;
+}
+
+.theme-confirm-dialog .van-dialog__confirm {
+  color: var(--theme-header-text) !important;
+  font-weight: 700 !important;
+}
+
+.theme-confirm-dialog .van-hairline--left::after {
+  border-left: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+}

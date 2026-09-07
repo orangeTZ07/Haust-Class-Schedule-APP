@@ -1,0 +1,29 @@
+{
+  "name": "course-mngr",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.14.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-sql": "^2",
+    "vant": "^4.9",
+    "vue": "^3.5",
+    "vue-router": "^4.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.1",
+    "@vitejs/plugin-vue": "^5.2",
+    "typescript": "^5.7",
+    "vite": "^6.0",
+    "vue-tsc": "^2.2"
+  }
+}
