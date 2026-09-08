@@ -27,11 +27,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- GitHub Actions 安卓纯 CI（合入 `main` 前验证可编译）
-- 基于 `v*` 标签自动构建 APK 并发布 GitHub Release
-
 ## [0.1.0] - 2026-09-08
 
 ### Added
@@ -43,3 +38,5 @@
 - 上课提醒（含 Android 相关能力）
 - 主题、背景、网格等个性化设置
 - 面向新手的 README 与协作说明
+- GitHub Actions 安卓纯 CI（合入 `main` 前验证可编译）
+- 基于 `v*` 标签自动构建 APK 并发布 GitHub Release
