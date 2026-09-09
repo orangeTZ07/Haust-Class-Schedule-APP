@@ -1,0 +1,108 @@
+name: Release Android
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      NDK_VERSION: 27.0.11902837
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Android APK
+        uses: ./.github/actions/build-android-apk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+
+      - name: Locate APK
+        id: apk
+        run: |
+          set -euo pipefail
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
+          if [ -z "$apk" ]; then
+            echo "No APK found"
+            find src-tauri/gen/android/app/build/outputs -type f || true
+            exit 1
+          fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+
+      # Ephemeral keystore: installable, but signature changes per release.
+      # Later: put a fixed keystore in Secrets for seamless upgrades.
+      - name: Sign APK
+        id: signed
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          KEYSTORE="${RUNNER_TEMP}/release.jks"
+          STORE_PASS="android"
+          KEY_ALIAS="release"
+          OUT="${RUNNER_TEMP}/course-mngr-${TAG}-arm64.apk"
+
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$STORE_PASS" -keypass "$STORE_PASS" \
+            -dname "CN=Haust Class Schedule, OU=Release, O=HAUST, L=Luoyang, ST=Henan, C=CN"
+
+          BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
+          "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:${STORE_PASS}" \
+            --key-pass "pass:${STORE_PASS}" \
+            --out "$OUT" \
+            "${{ steps.apk.outputs.path }}"
+
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog for this tag
+        id: changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          OUT="${RUNNER_TEMP}/release-notes.md"
+
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## \\[" ver "\\]") { grab = 1 }
+            grab && /^## \[/ && $0 !~ ("^## \\[" ver "\\]") { exit }
+            grab { print }
+          ' CHANGELOG.md > "$OUT"
+
+          if [ ! -s "$OUT" ]; then
+            echo "CHANGELOG.md 里找不到版本节 ## [${VERSION}]。"
+            echo "发版前请把 [Unreleased] 的内容移到对应版本节，再打 tag。"
+            exit 1
+          fi
+
+          echo "----- release notes -----"
+          cat "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.signed.outputs.path }}
+          body_path: ${{ steps.changelog.outputs.path }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

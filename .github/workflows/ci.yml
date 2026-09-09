@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Status check name in GitHub: "Android"
+  # Use this exact name when configuring branch rulesets.
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      NDK_VERSION: 27.0.11902837
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Android APK
+        uses: ./.github/actions/build-android-apk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
