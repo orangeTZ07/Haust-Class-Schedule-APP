@@ -11,7 +11,7 @@
 2. **发版时**：
    - 把 `[Unreleased]` 里的条目剪到新版本节，例如 `## [0.2.0] - 2026-09-08`
    - 清空后留一个空的 `[Unreleased]`
-   - 同步改 `package.json` / `src-tauri/tauri.conf.json` 的 `version`
+   - 同步改 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 的 `version`
    - 提交后打 tag：`git tag v0.2.0 && git push origin v0.2.0`
    - Release 工作流会自动把 `## [0.2.0]` 这一节填进 GitHub Release 正文（找不到对应节会失败）
 3. **写什么**：用用户能看懂的一句话；别写「重构 xxx 文件」这种实现细节。

@@ -1,0 +1,60 @@
+name: Build Android APK
+description: Setup Android/Node/Rust environment and build Tauri Android APK.
+
+inputs:
+  ndk-version:
+    description: Android NDK version to install.
+    required: false
+    default: "27.0.11902837"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "17"
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android NDK
+      shell: bash
+      run: sdkmanager "ndk;${{ inputs.ndk-version }}"
+
+    - name: Export Android env
+      shell: bash
+      run: |
+        echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+        echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${{ inputs.ndk-version }}" >> "$GITHUB_ENV"
+        echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${{ inputs.ndk-version }}" >> "$GITHUB_ENV"
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+        cache: npm
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android
+
+    - name: Cache Rust
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri -> target
+        cache-targets: true
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Init Android project
+      shell: bash
+      run: npx tauri android init
+
+    - name: Build Android APK
+      shell: bash
+      run: npx tauri android build --apk --target aarch64
