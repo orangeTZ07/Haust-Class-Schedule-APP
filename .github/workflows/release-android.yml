@@ -72,22 +72,41 @@ jobs:
 
           echo "path=$OUT" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release icon
+        id: icon
+        run: |
+          set -euo pipefail
+          SRC="src-tauri/icons/icon.png"
+          if [ ! -f "$SRC" ]; then
+            echo "Missing app icon at $SRC"
+            exit 1
+          fi
+          OUT="${RUNNER_TEMP}/app-icon.png"
+          cp "$SRC" "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
       - name: Extract changelog for this tag
         id: changelog
         env:
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           VERSION="${TAG#v}"
           OUT="${RUNNER_TEMP}/release-notes.md"
 
-          awk -v ver="$VERSION" '
-            $0 ~ ("^## \\[" ver "\\]") { grab = 1 }
-            grab && /^## \[/ && $0 !~ ("^## \\[" ver "\\]") { exit }
-            grab { print }
-          ' CHANGELOG.md > "$OUT"
+          {
+            echo "![App Icon](https://github.com/${REPO}/releases/download/${TAG}/app-icon.png)"
+            echo ""
+            awk -v ver="$VERSION" '
+              $0 ~ ("^## \\[" ver "\\]") { grab = 1 }
+              grab && /^## \[/ && $0 !~ ("^## \\[" ver "\\]") { exit }
+              grab { print }
+            ' CHANGELOG.md
+          } > "$OUT"
 
-          if [ ! -s "$OUT" ]; then
+          # Body must still contain the version section, not only the icon line.
+          if ! grep -q "^## \\[${VERSION}\\]" "$OUT"; then
             echo "CHANGELOG.md 里找不到版本节 ## [${VERSION}]。"
             echo "发版前请把 [Unreleased] 的内容移到对应版本节，再打 tag。"
             exit 1
@@ -100,7 +119,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.signed.outputs.path }}
+          files: |
+            ${{ steps.signed.outputs.path }}
+            ${{ steps.icon.outputs.path }}
           body_path: ${{ steps.changelog.outputs.path }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
