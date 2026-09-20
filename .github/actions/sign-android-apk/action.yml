@@ -54,10 +54,33 @@ runs:
 
         KEYSTORE="${RUNNER_TEMP}/release.jks"
         rm -f "$KEYSTORE"
+        BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
+        APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner"
 
         if [ -n "$KS_B64" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KS_PASS" ] && [ -n "$KEY_PASS" ]; then
-          echo "Signing with the project keystore from secrets."
-          printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE"
+          # The real keystore. Every way this can go wrong names itself. A previous revision
+          # let a failure here surface as a bare "Process completed with exit code 2", which
+          # says nothing about which of the four secrets is wrong.
+          if ! printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE" 2>/dev/null; then
+            echo "::error title=ANDROID_KEYSTORE_BASE64 is not valid base64::Could not decode the ${#KS_B64} characters received. It must be the *contents* of the .b64 file, not its path: [Convert]::ToBase64String([IO.File]::ReadAllBytes('haust-release.jks'))"
+            exit 1
+          fi
+          echo "Decoded keystore: $(wc -c < "$KEYSTORE") bytes"
+
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$KS_PASS" > "${RUNNER_TEMP}/entries.txt" 2>&1; then
+            echo "::error title=ANDROID_KEYSTORE_PASSWORD is wrong::keytool cannot open the keystore with it. keytool said:"
+            sed 's/^/  /' "${RUNNER_TEMP}/entries.txt"
+            exit 1
+          fi
+
+          ALIASES="$(sed -n 's/^\([^,]*\),.*/\1/p' "${RUNNER_TEMP}/entries.txt" | tr '\n' ' ')"
+          echo "Aliases present in keystore: ${ALIASES:-<none>}"
+          if ! sed -n 's/^\([^,]*\),.*/\1/p' "${RUNNER_TEMP}/entries.txt" | grep -qx "$KEY_ALIAS"; then
+            echo "::error title=ANDROID_KEY_ALIAS is wrong::it is set to '${KEY_ALIAS}' but the keystore contains: ${ALIASES:-<none>}. It must match the -alias used with keytool -genkeypair."
+            exit 1
+          fi
+
+          SIGN_ARGS=(--ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:${KS_PASS}" --key-pass "pass:${KEY_PASS}")
         else
           # Never fail here. CI's job is to hand back an installable APK, and an unfinished
           # secret setup must not take that away -- an earlier version of this action exited 1
@@ -80,17 +103,16 @@ runs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "$KS_PASS" -keypass "$KEY_PASS" \
             -dname "CN=Haust Class Schedule CI, OU=CI, O=HAUST, L=Luoyang, ST=Henan, C=CN"
+
+          SIGN_ARGS=(--ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:${KS_PASS}" --key-pass "pass:${KEY_PASS}")
         fi
 
-        BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
-        "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" sign \
-          --ks "$KEYSTORE" \
-          --ks-key-alias "$KEY_ALIAS" \
-          --ks-pass "pass:${KS_PASS}" \
-          --key-pass "pass:${KEY_PASS}" \
-          --out "$OUTPUT_APK" \
-          "$UNSIGNED_APK"
+        if ! "$APKSIGNER" sign "${SIGN_ARGS[@]}" --out "$OUTPUT_APK" "$UNSIGNED_APK" > "${RUNNER_TEMP}/sign.log" 2>&1; then
+          echo "::error title=apksigner failed::captured output follows. The usual cause is ANDROID_KEY_PASSWORD differing from the key password used when the keystore was created."
+          sed 's/^/  /' "${RUNNER_TEMP}/sign.log"
+          exit 1
+        fi
 
-        "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" verify --print-certs "$OUTPUT_APK" | head -n 5
+        "$APKSIGNER" verify --print-certs "$OUTPUT_APK" | head -n 5
 
         echo "signed=$OUTPUT_APK" >> "$GITHUB_OUTPUT"
