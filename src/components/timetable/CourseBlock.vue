@@ -34,11 +34,14 @@ const props = withDefaults(defineProps<{
   /// space between the rows, so a block spanning one would otherwise end short of the next
   /// row's top edge.
   dividers?: number;
+  /// Playing the delete animation: shrink away and ignore input until the row is gone.
+  deleting?: boolean;
 }>(), {
   allowDrag: true,
   allowExpand: true,
   showConflictTag: true,
-  dividers: 0
+  dividers: 0,
+  deleting: false
 });
 
 const emit = defineEmits<{
@@ -224,7 +227,7 @@ const periodText = computed(() => {
     ref="blockRef"
     class="course-block" 
     :data-schedule-id="schedule.id"
-    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1 }"
+    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting }"
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
@@ -275,6 +278,19 @@ const periodText = computed(() => {
   flex-direction: column;
 }
 
+/* Shrink away over the same 240ms WeekGrid waits before it drops the row, so the block leaves
+   visibly instead of vanishing between frames. !important is required because the drag offset
+   is written into the element's inline transform, which otherwise wins over this rule. */
+.course-block.is-deleting {
+  transform: scale(0.5) !important;
+  opacity: 0;
+  transition:
+    transform 0.24s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.24s ease;
+  pointer-events: none;
+  z-index: 300;
+}
+
 .course-accent {
   position: absolute;
   top: 6px;
@@ -282,8 +298,7 @@ const periodText = computed(() => {
   left: 4px;
   width: 3px;
   border-radius: 999px;
-  opacity: 0.72;
-}
+  opacity: 0.72;}
 
 .course-block.is-conflicting {
   padding-right: 20px;

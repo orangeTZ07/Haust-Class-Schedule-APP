@@ -83,12 +83,27 @@ const gridZoom = ref(1);
 const pinchState = ref<{ startDistance: number; startScale: number } | null>(null);
 const orbitPhase = ref<OrbitPhase>("idle");
 const suppressNextClick = ref(false);
+// Schedule id currently playing its delete animation, if any. The row is only removed from
+// the database once the block has visibly left, so a delete reads as an action rather than
+// the block vanishing between frames.
+const deletingId = ref<number | null>(null);
+const DELETE_ANIMATION_MS = 240;
 let orbitAnimationTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const MIN_GRID_WIDTH = 360;
 const MAX_GRID_ZOOM = 2.2;
 const ORBIT_OPEN_DURATION_MS = 420;
 const ORBIT_CLOSE_DURATION_MS = 280;
+
+/// Puts the grid back to its default width. gridZoom is driven by a two-finger pinch and had
+/// no way back to 1 other than pinching to exactly the right distance, so an accidental pinch
+/// left the timetable stretched for good. The horizontal scroll offset is a separate concern:
+/// it lives on .grid-container in HomeView, which resets it alongside this.
+const resetView = () => {
+  gridZoom.value = 1;
+};
+
+defineExpose({ resetView });
 
 const todayDayNumber = computed(() => {
   const day = new Date().getDay();
@@ -620,9 +635,23 @@ const updateDropTarget = (clientX: number, clientY: number) => {
   };
 };
 
+// How far outside the trash icon a finger still counts as "over" it. The old test was
+// document.elementsFromPoint against the icon's exact border box, which asked a fingertip for
+// pixel precision. The tolerance lives here rather than in the icon's padding because growing
+// the box would move the icon; the icon is 44px, so the drop zone is roughly 124px across.
+const TRASH_TARGET_SLOP = 40;
+
 const isPointerOverTrashTarget = (clientX: number, clientY: number) => {
-  const elements = document.elementsFromPoint(clientX, clientY);
-  return elements.some(element => element instanceof HTMLElement && !!element.closest('[data-trash-target="schedule-delete"]'));
+  const target = document.querySelector<HTMLElement>('[data-trash-target="schedule-delete"]');
+  if (!target) return false;
+
+  const rect = target.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return false;
+
+  // Shortest distance from the point to the rectangle -- zero when inside it.
+  const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+  const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+  return Math.hypot(dx, dy) <= TRASH_TARGET_SLOP;
 };
 
 const syncDragTrashState = (clientX?: number, clientY?: number) => {
@@ -683,9 +712,17 @@ const handlePointerUp = async (event: PointerEvent) => {
   }
 
   if (shouldDelete && currentDrag?.hasMoved) {
-    dragState.value = null;
+    // dragState deliberately survives the animation: clearing it first would snap the block
+    // back into its cell and then shrink it there, instead of shrinking it where the finger
+    // let go. The pointer listeners are already detached, so it stays put.
     dropTarget.value = null;
+    deletingId.value = currentDrag.scheduleId;
+    await new Promise(resolve => setTimeout(resolve, DELETE_ANIMATION_MS));
+
+    dragState.value = null;
+    deletingId.value = null;
     syncDragTrashState();
+
     const removed = await removeSchedule(currentDrag.scheduleId);
     if (removed) {
       if (currentDrag.source === "floating" || conflictGroupByScheduleId.value.has(currentDrag.scheduleId)) {
@@ -938,6 +975,7 @@ onUnmounted(() => {
                 :schedule="block.schedule"
                 :span="block.span"
                 :dividers="countDividersWithin(block.schedule.startPeriod, block.span)"
+                :deleting="deletingId === block.schedule.id"
                 :is-dragging="isBlockDragging(block.schedule.id)"
                 :drag-offset="getBlockDragOffset(block.schedule.id)"
                 :conflict-count="getConflictMeta(block.schedule.id).count"

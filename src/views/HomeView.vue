@@ -61,6 +61,18 @@ const closeSidebar = () => {
   sidebarVisible.value = false;
 };
 
+const gridContainerRef = ref<HTMLElement | null>(null);
+const weekGridRef = ref<{ resetView: () => void } | null>(null);
+
+// Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the
+// horizontal offset lives on this component's container, so neither had a way back: they are
+// easy to disturb by touch and were impossible to restore precisely.
+const resetTimetableView = () => {
+  weekGridRef.value?.resetView();
+  if (gridContainerRef.value) gridContainerRef.value.scrollLeft = 0;
+  showToast({ message: "课表视图已重置", type: "success" });
+};
+
 const handleSidebarAction = (action: string) => {
   if (action === "import") {
     importVisible.value = true;
@@ -68,8 +80,9 @@ const handleSidebarAction = (action: string) => {
     exportVisible.value = true;
   } else if (action === "contact") {
     contactVisible.value = true;
+  } else if (action === "reset-view") {
+    resetTimetableView();
   }
-  console.log("Sidebar action:", action);
   closeSidebar();
 };
 
@@ -157,8 +170,9 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
         @change-week="setCurrentWeek"
       />
 
-      <div class="grid-container">
+      <div ref="gridContainerRef" class="grid-container">
         <WeekGrid
+          ref="weekGridRef"
           @drag-trash-state-change="handleDragTrashStateChange"
           @request-add="onRequestAdd"
         />
