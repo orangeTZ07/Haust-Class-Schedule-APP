@@ -29,3 +29,57 @@ jobs:
         uses: ./.github/actions/build-android-apk
         with:
           ndk-version: ${{ env.NDK_VERSION }}
+
+      # The composite action only *builds*, and its output is an unsigned release APK --
+      # Android refuses to install one. So this job used to be a pure pass/fail gate whose
+      # APK was thrown away, which meant a pull request could not actually be installed and
+      # tried on a phone. Sign it with an ephemeral key and publish it.
+      #
+      # Signing mirrors release-android.yml on purpose: extracting it into the shared
+      # action would change the release path too, and that is out of scope here. Because
+      # the key is ephemeral, each run's APK has a different signature -- switching between
+      # CI builds means uninstalling the previous one first.
+      - name: Locate APK
+        id: apk
+        run: |
+          set -euo pipefail
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort | head -n 1)"
+          if [ -z "$apk" ]; then
+            echo "No APK found"
+            find src-tauri/gen/android/app/build/outputs -type f || true
+            exit 1
+          fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Sign APK
+        id: signed
+        run: |
+          set -euo pipefail
+          KEYSTORE="${RUNNER_TEMP}/ci.jks"
+          OUT="${RUNNER_TEMP}/course-mngr-ci-${GITHUB_RUN_NUMBER}-arm64.apk"
+
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -alias ci \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Haust Class Schedule CI, OU=CI, O=HAUST, L=Luoyang, ST=Henan, C=CN"
+
+          BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
+          "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias ci \
+            --ks-pass "pass:android" \
+            --key-pass "pass:android" \
+            --out "$OUT" \
+            "${{ steps.apk.outputs.path }}"
+
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-mngr-apk-${{ github.run_number }}
+          path: ${{ steps.signed.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
