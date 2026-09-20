@@ -8,6 +8,7 @@ const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, mov
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
+  (e: "request-add", slot: { day: number; period: number }): void;
 }>();
 
 const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -236,6 +237,19 @@ const countDividersWithin = (startPeriod: number, span: number): number => {
     if (shouldShowDividerAfter(period)) dividers++;
   }
   return dividers;
+};
+
+// Tapping an empty slot is how a course gets added. Two guards keep that from firing at the
+// wrong moment: a cell that already holds a block is left to the block, and a drag swallows
+// cell clicks for a short window afterwards, because dropping a course onto a free slot
+// would otherwise immediately pop the add form over the cell it just landed in.
+let suppressCellClickUntil = 0;
+
+const handleCellClick = (day: number, period: number) => {
+  if (Date.now() < suppressCellClickUntil) return;
+  if (dragState.value) return;
+  if (getBlocksByDayAndPeriod(day, period).length > 0) return;
+  emit("request-add", { day, period });
 };
 
 const getDividerLabel = (period: number): string => {
@@ -768,6 +782,7 @@ const beginDrag = (
   source: "grid" | "floating" | "embedded-conflict" = "grid"
 ) => {
   event.stopPropagation();
+  suppressCellClickUntil = Date.now() + 600;
 
   dragState.value = {
     scheduleId: block.schedule.id,
@@ -915,6 +930,7 @@ onUnmounted(() => {
             :class="getCellClass(day, slot.period)"
             :data-day="day"
             :data-period="slot.period"
+            @click="handleCellClick(day, slot.period)"
           >
             <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="block.schedule.id">
               <CourseBlock

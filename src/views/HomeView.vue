@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
+import { showToast } from "vant";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
 import ImportPopup from "@/components/course/ImportPopup.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
+import CourseForm from "@/components/course/CourseForm.vue";
 
 const { cssVariables, themeConfig } = useTheme();
-const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek } = useCourses();
+const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
+        periodSlots, addCourse, addSchedule } = useCourses();
 
 const sidebarVisible = ref(false);
 const importVisible = ref(false);
@@ -23,6 +26,35 @@ const trashTargetState = ref({
 
 const toggleSidebar = () => {
   sidebarVisible.value = !sidebarVisible.value;
+};
+
+// Adding a course: WeekGrid reports the tapped empty slot, the form collects the rest.
+const addSlot = ref<{ day: number; period: number } | null>(null);
+const addVisible = ref(false);
+const lastPeriod = computed(() =>
+  periodSlots.value.length ? periodSlots.value[periodSlots.value.length - 1].period : 10
+);
+
+const onRequestAdd = (slot: { day: number; period: number }) => {
+  addSlot.value = slot;
+  addVisible.value = true;
+};
+
+const onAddSubmit = async (payload: {
+  name: string;
+  teacher?: string;
+  location?: string;
+  span: number;
+}) => {
+  const slot = addSlot.value;
+  if (!slot) return;
+  // endPeriod is inclusive here -- WeekGrid derives a block's span as end - start + 1.
+  const endPeriod = slot.period + payload.span - 1;
+  const course = await addCourse(payload.name, payload.teacher, payload.location);
+  await addSchedule(course.id, slot.day, slot.period, endPeriod);
+  addVisible.value = false;
+  addSlot.value = null;
+  showToast({ message: `已添加「${payload.name}」`, type: "success" });
 };
 
 const closeSidebar = () => {
@@ -105,6 +137,15 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
     <!-- 联系开发者弹窗 -->
     <ContactPopup v-model:show="contactVisible" />
 
+    <!-- 点空格子添加课程 -->
+    <CourseForm
+      v-model:show="addVisible"
+      :day="addSlot?.day ?? 1"
+      :period="addSlot?.period ?? 1"
+      :max-period="lastPeriod"
+      @submit="onAddSubmit"
+    />
+
     <!-- 内容层 -->
     <div class="content-layer" :class="{ pushed: sidebarVisible }">
       <TopBar
@@ -117,7 +158,10 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
       />
 
       <div class="grid-container">
-        <WeekGrid @drag-trash-state-change="handleDragTrashStateChange" />
+        <WeekGrid
+          @drag-trash-state-change="handleDragTrashStateChange"
+          @request-add="onRequestAdd"
+        />
       </div>
     </div>
   </div>
