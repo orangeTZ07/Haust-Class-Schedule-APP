@@ -126,7 +126,11 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
 <style scoped>
 .home-view {
   position: relative;
+  /* 100dvh tracks the *visible* viewport. With viewport-fit=cover, 100vh on Android
+     extends under the gesture bar / navigation bar, so the last row of the grid sat
+     below the reachable area. The vh line stays as a fallback for older WebViews. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -156,6 +160,11 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* Keeps the grid clear of the gesture bar. Applied on the content layer rather than on
+     .home-view so the background layers still bleed to the true screen edge. Every other
+     view in this app already handled its safe-area insets; this screen did not, even
+     though it is the one users spend their time on. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

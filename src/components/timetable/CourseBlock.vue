@@ -183,7 +183,14 @@ const style = computed(() => {
   }
 
   return {
-    height: `${baseHeight}px`,
+    // Derived from the shared --row-height variable rather than the bare 50px literal it
+    // used to be. `.period-row` is `min-height: var(--row-height)`, i.e. a minimum it can
+    // grow past, so two independent literals drifted apart and the blocks stopped lining
+    // up with the grid (the reported "边框错位"). Floating/orbit cards keep the measured
+    // pixel height, which is what their motion math needs.
+    height: props.floatingFrame
+      ? `${baseHeight}px`
+      : `calc(var(--row-height, 50px) * ${props.span || 1} - 4px)`,
     width: normalWidth,
     left: normalLeft,
     top: props.floatingFrame ? `${props.floatingFrame.top}px` : '2px',
@@ -250,7 +257,11 @@ const periodText = computed(() => {
   line-height: 1.3;
   overflow: hidden;
   cursor: pointer;
-  touch-action: none;
+  /* pan-y, not none: blocks cover nearly the whole timetable, so `none` meant a
+     single-finger swipe that started on a course could not scroll the page at all.
+     Vertical panning now always belongs to the browser; long-press still starts a
+     drag (see armLongPressDrag in WeekGrid.vue). */
+  touch-action: pan-y;
   user-select: none;
   transition: 
     all 0.3s cubic-bezier(0.4, 0, 0.2, 1),

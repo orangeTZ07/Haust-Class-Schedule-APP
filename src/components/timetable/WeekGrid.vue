@@ -468,6 +468,12 @@ const handleTouchStart = (event: TouchEvent) => {
 };
 
 const handleTouchMove = (event: TouchEvent) => {
+  // A drag in progress owns the gesture: without this the browser would also scroll the
+  // page under the finger, because course blocks are touch-action: pan-y.
+  if (dragState.value) {
+    if (event.cancelable) event.preventDefault();
+    return;
+  }
   if (!pinchState.value || event.touches.length !== 2) return;
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
@@ -688,7 +694,64 @@ const handlePointerUp = async (event: PointerEvent) => {
   }
 };
 
+// Touch must not start a drag on contact. A finger landing on a course block is far more
+// often the beginning of a scroll than of a re-schedule, and because the blocks cover
+// nearly the whole grid, starting the drag immediately made the timetable feel frozen and
+// turned small swipes into accidental course moves. Mouse keeps its instant drag; touch
+// has to hold briefly first.
+const LONG_PRESS_MS = 280;
+const LONG_PRESS_TOLERANCE = 12;
+
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let longPressOrigin: { x: number; y: number } | null = null;
+
+const clearLongPress = () => {
+  if (longPressTimer !== null) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressOrigin = null;
+  window.removeEventListener("pointermove", onLongPressMove);
+  window.removeEventListener("pointerup", clearLongPress);
+  window.removeEventListener("pointercancel", clearLongPress);
+};
+
+function onLongPressMove(event: PointerEvent) {
+  if (!longPressOrigin) return;
+  const travelled = Math.hypot(
+    event.clientX - longPressOrigin.x,
+    event.clientY - longPressOrigin.y
+  );
+  // The finger is travelling, i.e. the user is scrolling -- let the browser have it.
+  if (travelled > LONG_PRESS_TOLERANCE) clearLongPress();
+}
+
 const startDrag = (
+  block: MergedBlock,
+  event: PointerEvent,
+  source: "grid" | "floating" | "embedded-conflict" = "grid"
+) => {
+  if (event.pointerType === "mouse") {
+    beginDrag(block, event, source);
+    return;
+  }
+
+  clearLongPress();
+  longPressOrigin = { x: event.clientX, y: event.clientY };
+  const held = event;
+  longPressTimer = setTimeout(() => {
+    const origin = longPressOrigin;
+    clearLongPress();
+    if (!origin) return;
+    navigator.vibrate?.(10);
+    beginDrag(block, held, source);
+  }, LONG_PRESS_MS);
+  window.addEventListener("pointermove", onLongPressMove);
+  window.addEventListener("pointerup", clearLongPress);
+  window.addEventListener("pointercancel", clearLongPress);
+};
+
+const beginDrag = (
   block: MergedBlock,
   event: PointerEvent,
   source: "grid" | "floating" | "embedded-conflict" = "grid"
@@ -791,6 +854,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearOrbitAnimationTimer();
+  clearLongPress();
   stopDragListeners();
   syncDragTrashState();
   window.removeEventListener("resize", handleWindowResize);
@@ -943,6 +1007,9 @@ onUnmounted(() => {
 <style scoped>
 .week-grid {
   --time-col-width: 44px;
+  /* Height of one class period. .period-row uses it as its minimum and CourseBlock
+     multiplies it by its span, so grid rows and blocks stay in lockstep. */
+  --row-height: 50px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1022,7 +1089,9 @@ onUnmounted(() => {
 .period-row {
   display: grid;
   grid-template-columns: var(--time-col-width) repeat(7, minmax(0, 1fr));
-  min-height: 50px;
+  /* Single source of truth for the row height. CourseBlock reads the same variable for
+     its own height, so the blocks and the grid can no longer drift apart. */
+  min-height: var(--row-height);
 }
 
 .period-row.section-morning .time-col,
