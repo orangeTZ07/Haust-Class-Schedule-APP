@@ -53,33 +53,19 @@ jobs:
 
       - name: Sign APK
         id: signed
-        run: |
-          set -euo pipefail
-          KEYSTORE="${RUNNER_TEMP}/ci.jks"
-          OUT="${RUNNER_TEMP}/course-mngr-ci-${GITHUB_RUN_NUMBER}-arm64.apk"
-
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE" \
-            -alias ci \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Haust Class Schedule CI, OU=CI, O=HAUST, L=Luoyang, ST=Henan, C=CN"
-
-          BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
-          "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" sign \
-            --ks "$KEYSTORE" \
-            --ks-key-alias ci \
-            --ks-pass "pass:android" \
-            --key-pass "pass:android" \
-            --out "$OUT" \
-            "${{ steps.apk.outputs.path }}"
-
-          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/sign-android-apk
+        with:
+          unsigned-apk: ${{ steps.apk.outputs.path }}
+          output-apk: ${{ runner.temp }}/course-mngr-ci-${{ github.run_number }}-arm64.apk
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
           name: course-mngr-apk-${{ github.run_number }}
-          path: ${{ steps.signed.outputs.path }}
+          path: ${{ steps.signed.outputs.signed-apk }}
           if-no-files-found: error
           retention-days: 14
