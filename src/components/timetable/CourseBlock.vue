@@ -30,10 +30,15 @@ const props = withDefaults(defineProps<{
   allowDrag?: boolean;
   allowExpand?: boolean;
   showConflictTag?: boolean;
+  /// Number of 午休 / 晚饭 dividers strictly inside this block's span. They occupy vertical
+  /// space between the rows, so a block spanning one would otherwise end short of the next
+  /// row's top edge.
+  dividers?: number;
 }>(), {
   allowDrag: true,
   allowExpand: true,
-  showConflictTag: true
+  showConflictTag: true,
+  dividers: 0
 });
 
 const emit = defineEmits<{
@@ -190,7 +195,7 @@ const style = computed(() => {
     // pixel height, which is what their motion math needs.
     height: props.floatingFrame
       ? `${baseHeight}px`
-      : `calc(var(--row-height, 50px) * ${props.span || 1} - 4px)`,
+      : `calc(var(--row-height, 50px) * ${props.span || 1} + ${props.dividers || 0} * var(--divider-height, 29px) - 4px)`,
     width: normalWidth,
     left: normalLeft,
     top: props.floatingFrame ? `${props.floatingFrame.top}px` : '2px',

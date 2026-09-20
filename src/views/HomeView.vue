@@ -174,6 +174,10 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
 
 .grid-container {
   flex: 1;
+  /* Same reason as .body in WeekGrid.vue: a flex item defaults to min-height: auto, so it
+     would grow to its content height instead of letting the timetable scroll inside it.
+     overflow-y stays hidden because .body is the vertical scroller. */
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;

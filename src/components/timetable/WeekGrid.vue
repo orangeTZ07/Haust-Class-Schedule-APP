@@ -227,6 +227,17 @@ const shouldShowDividerAfter = (period: number): boolean => {
   return dividerPositions.value.some(d => d.afterPeriod === period);
 };
 
+/// How many 午休 / 晚饭 dividers sit inside a block's span, i.e. strictly between its first
+/// and last period. CourseBlock turns this into height via var(--divider-height); the count
+/// is passed rather than a pixel value so the divider height keeps a single definition.
+const countDividersWithin = (startPeriod: number, span: number): number => {
+  let dividers = 0;
+  for (let period = startPeriod; period < startPeriod + span - 1; period++) {
+    if (shouldShowDividerAfter(period)) dividers++;
+  }
+  return dividers;
+};
+
 const getDividerLabel = (period: number): string => {
   const divider = dividerPositions.value.find(d => d.afterPeriod === period);
   return divider?.label || "";
@@ -910,6 +921,7 @@ onUnmounted(() => {
                 :course="block.course"
                 :schedule="block.schedule"
                 :span="block.span"
+                :dividers="countDividersWithin(block.schedule.startPeriod, block.span)"
                 :is-dragging="isBlockDragging(block.schedule.id)"
                 :drag-offset="getBlockDragOffset(block.schedule.id)"
                 :conflict-count="getConflictMeta(block.schedule.id).count"
@@ -1010,6 +1022,9 @@ onUnmounted(() => {
   /* Height of one class period. .period-row uses it as its minimum and CourseBlock
      multiplies it by its span, so grid rows and blocks stay in lockstep. */
   --row-height: 50px;
+  /* Vertical space a 午休 / 晚饭 divider occupies between two rows. Blocks that span
+     across one have to add it, otherwise they fall short. */
+  --divider-height: 29px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1082,6 +1097,12 @@ onUnmounted(() => {
 .body {
   position: relative;
   flex: 1;
+  /* Without this the flex item refuses to shrink below its content height (the default
+     for a flex item is min-height: auto). It then grows past .week-grid, which has
+     overflow: hidden, so the rows past the fold are clipped and cannot be reached --
+     the timetable simply does not scroll. TodoPanel.vue:935 already does this; the
+     timetable was missing it. */
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 20px;
 }
@@ -1359,7 +1380,11 @@ onUnmounted(() => {
 .divider {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  /* A declared height rather than one derived from padding (8px 12px used to make it 29px
+     by accident). CourseBlock adds exactly this much when a block spans across a divider,
+     so the value has to be something both sides can name. */
+  height: var(--divider-height);
+  padding: 0 12px;
   gap: 12px;
 }
 
