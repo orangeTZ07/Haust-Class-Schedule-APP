@@ -55,11 +55,22 @@ runs:
         KEYSTORE="${RUNNER_TEMP}/release.jks"
         rm -f "$KEYSTORE"
 
-        if [ -z "$KS_B64" ]; then
-          # Deliberately still build something installable when the secrets are absent, so a
-          # missing secret is a warning rather than a red CI. But say so loudly: a throwaway
-          # key means the next build cannot upgrade over this one.
-          echo "::warning title=Throwaway signing key::ANDROID_KEYSTORE_BASE64 is not set, so this APK is signed with a freshly generated key. It installs, but Android requires a matching signature to upgrade, so the next build will need an uninstall first. Add the ANDROID_KEYSTORE_* secrets to make upgrades work in place."
+        if [ -n "$KS_B64" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KS_PASS" ] && [ -n "$KEY_PASS" ]; then
+          echo "Signing with the project keystore from secrets."
+          printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE"
+        else
+          # Never fail here. CI's job is to hand back an installable APK, and an unfinished
+          # secret setup must not take that away -- an earlier version of this action exited 1
+          # on a partial configuration, which skipped the upload and left nothing to install.
+          # It must not pass silently either: a throwaway key means the next build cannot
+          # upgrade over this one, and an uninstall wipes the app's database.
+          MISSING=""
+          [ -n "$KS_B64" ]    || MISSING="$MISSING ANDROID_KEYSTORE_BASE64"
+          [ -n "$KEY_ALIAS" ] || MISSING="$MISSING ANDROID_KEY_ALIAS"
+          [ -n "$KS_PASS" ]   || MISSING="$MISSING ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$KEY_PASS" ]  || MISSING="$MISSING ANDROID_KEY_PASSWORD"
+          echo "::warning title=Throwaway signing key::Signing with a freshly generated key because these repository secrets are not set:${MISSING}. The APK installs, but Android requires a matching signature to upgrade, so the next build will need an uninstall first -- and an uninstall wipes the app database. Add them at https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+
           KS_PASS="${KS_PASS:-android}"
           KEY_PASS="${KEY_PASS:-android}"
           KEY_ALIAS="${KEY_ALIAS:-ci-throwaway}"
@@ -69,13 +80,6 @@ runs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "$KS_PASS" -keypass "$KEY_PASS" \
             -dname "CN=Haust Class Schedule CI, OU=CI, O=HAUST, L=Luoyang, ST=Henan, C=CN"
-        else
-          echo "Signing with the project keystore from secrets."
-          printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE"
-          if [ -z "$KEY_ALIAS" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_PASS" ]; then
-            echo "::error title=Incomplete signing secrets::ANDROID_KEYSTORE_BASE64 is set but ANDROID_KEY_ALIAS / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD is missing."
-            exit 1
-          fi
         fi
 
         BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
