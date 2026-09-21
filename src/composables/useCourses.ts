@@ -275,13 +275,15 @@ export function useCourses() {
     return result;
   };
 
-  const addCourse = async (name: string, teacher?: string, location?: string): Promise<Course> => {
+  // color is optional and only supplied when restoring a backup, so that a course comes back
+  // the colour it was. Every other caller still gets the next palette entry.
+  const addCourse = async (name: string, teacher?: string, location?: string, color?: string): Promise<Course> => {
     const colorIndex = courses.value.length % COLORS.length;
     const courseData = {
       name,
       teacher,
       location,
-      color: COLORS[colorIndex]
+      color: color || COLORS[colorIndex]
     };
     
     const id = await courseService.addCourse(courseData);
@@ -590,8 +592,81 @@ export function useCourses() {
     }
   };
 
-  const parsePeriods = (periodsStr: string): number[] => {
-    if (typeof periodsStr !== 'string') return [];
+  /// Restores a 完整 JSON 备份 written by exportToJsonBackup.
+  ///
+  /// Deliberately not importFromJson: that one parses the flat array of {name, day, periods}
+  /// items the AI prompt emits. A backup is an object holding full Course and CourseSchedule
+  /// records, including everything the flat shape cannot express -- startWeek, endWeek,
+  /// weekType, scope and isCancelled -- which is precisely the per-week override data a user
+  /// would be most upset to lose. Feeding a backup to importFromJson fails outright with
+  /// "JSON 必须是数组格式", so the export had no way back at all.
+  ///
+  /// Courses are re-created through addCourse, which allocates fresh ids, so schedules are
+  /// re-pointed through a map from the backup's ids to the new ones. Skipping that would
+  /// attach each schedule to whichever course happened to share the number.
+  const importFromJsonBackup = async (
+    jsonStr: string
+  ): Promise<{ success: boolean; message: string; count: number }> => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          success: false,
+          message: "这不是备份：顶层应是含 courses 与 schedules 的对象。如果是一组 AI 生成的课表条目，请用上面的按周 / 按学期导入。",
+          count: 0
+        };
+      }
+
+      const backupCourses: Course[] = Array.isArray(parsed.courses) ? parsed.courses : [];
+      const backupSchedules: CourseSchedule[] = Array.isArray(parsed.schedules) ? parsed.schedules : [];
+      if (backupCourses.length === 0) {
+        return { success: false, message: "备份里没有课程数据", count: 0 };
+      }
+
+      // Replace rather than merge: restoring a backup should leave the timetable as it was,
+      // and merging would leave duplicates behind. The caller confirms before we get here.
+      await clearAll();
+
+      const idMap = new Map<number, number>();
+      let courseCount = 0;
+      for (const course of backupCourses) {
+        const newId = (await addCourse(course.name ?? "未命名课程", course.teacher, course.location, course.color)).id;
+        courseCount++;
+        // Only courses that carried an id can be remapped. Counting through the map instead of
+        // here would report "restored 0 courses" for a backup whose courses have no ids, even
+        // though they were created.
+        if (typeof course.id === "number") idMap.set(course.id, newId);
+      }
+
+      let scheduleCount = 0;
+      for (const schedule of backupSchedules) {
+        const newCourseId = idMap.get(schedule.courseId);
+        if (newCourseId === undefined) continue;
+        await addSchedule(newCourseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, {
+          startWeek: schedule.startWeek,
+          endWeek: schedule.endWeek,
+          weekType: schedule.weekType,
+          scope: schedule.scope,
+          isCancelled: schedule.isCancelled
+        });
+        scheduleCount++;
+      }
+
+      // Report dropped rows rather than swallowing them: a restore that quietly loses part of
+      // the data is worse than one that says what it could not place.
+      const dropped = backupSchedules.length - scheduleCount;
+      return {
+        success: true,
+        message: `已恢复 ${courseCount} 门课程、${scheduleCount} 条课段` +
+          (dropped > 0 ? `，跳过 ${dropped} 条找不到对应课程的课段` : ""),
+        count: courseCount
+      };
+    } catch (e) {
+      return { success: false, message: `恢复失败: ${(e as Error).message}`, count: 0 };
+    }
+  };
+
+  const parsePeriods = (periodsStr: string): number[] => {    if (typeof periodsStr !== 'string') return [];
     if (periodsStr.includes("-")) {
       const [start, end] = periodsStr.split("-").map(Number);
       return Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -650,6 +725,7 @@ export function useCourses() {
     importFromCsv,
     importFromSemesterCsv,
     importFromJson,
+    importFromJsonBackup,
     exportToCsv,
     exportToJsonBackup,
     clearAll,
