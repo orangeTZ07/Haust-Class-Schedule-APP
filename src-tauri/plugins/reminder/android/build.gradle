@@ -23,4 +23,9 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // Where app.tauri.plugin.Plugin, Invoke and JSObject come from. Released Tauri plugins all
+    // declare this (e.g. plugins/geolocation/android/build.gradle.kts). Without it the plugin
+    // class cannot resolve its own superclass -- a failure that stayed invisible only because the
+    // sources were sitting in a directory Gradle never compiled.
+    implementation(project(":tauri-android"))
 }
