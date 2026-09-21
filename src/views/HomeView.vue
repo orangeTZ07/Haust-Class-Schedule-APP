@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
+import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
@@ -22,6 +23,14 @@ const contactVisible = ref(false);
 const trashTargetState = ref({
   visible: false,
   active: false
+});
+
+// Reminders cover a rolling seven-day window rather than the whole semester, so the window is
+// renewed every time the app opens. Failures are swallowed deliberately: not being able to
+// schedule a reminder must never get in the way of using the timetable.
+const { reschedule: rescheduleReminders } = useReminder();
+onMounted(() => {
+  rescheduleReminders().catch(() => {});
 });
 
 const toggleSidebar = () => {

@@ -151,6 +151,24 @@ export function useCourses() {
     semesterStartDate.value = iso;
   };
 
+  /// Which semester week a date falls in, or null when the semester start is missing or the date
+  /// precedes it.
+  ///
+  /// Counted in whole local days rather than by dividing timestamps: across a daylight-saving
+  /// change a calendar day is not 24 hours, so a raw millisecond division lands on the wrong week
+  /// for part of the year. Rounding after subtracting two local midnights absorbs that hour.
+  const weekNumberForDate = (date: Date): number | null => {
+    const start = parseIsoDate(semesterStartDate.value);
+    if (!start) return null;
+
+    const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const to = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const days = Math.round((to.getTime() - from.getTime()) / 86400000);
+    if (days < 0) return null;
+
+    return Math.floor(days / 7) + 1;
+  };
+
   const semesterWeekCount = computed(() => {
     const maxImportedWeek = schedules.value.reduce((max, schedule) => Math.max(max, schedule.endWeek), 0);
     return Math.max(maxImportedWeek, 20);
@@ -160,10 +178,14 @@ export function useCourses() {
     return schedules.value.filter(schedule => getScheduleScope(schedule) === "semester");
   });
 
-  const effectiveSchedules = computed(() => {
-    const baseSchedules = semesterSchedules.value.filter(schedule => isScheduleActiveInWeek(schedule, currentWeek.value));
+  /// The schedules that actually apply in a given week, with weekly overrides suppressing the
+  /// semester entries they replace. effectiveSchedules is this for the displayed week, but the
+  /// reminder scheduler needs arbitrary weeks: a seven-day window starting today does not line up
+  /// with whichever week happens to be on screen.
+  const getSchedulesForWeek = (week: number): CourseSchedule[] => {
+    const baseSchedules = semesterSchedules.value.filter(schedule => isScheduleActiveInWeek(schedule, week));
     const weeklySchedules = schedules.value.filter(schedule => {
-      return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, currentWeek.value);
+      return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, week);
     });
 
     const suppressedBaseIds = new Set(
@@ -181,7 +203,9 @@ export function useCourses() {
         a.endPeriod - b.endPeriod ||
         a.id - b.id;
     });
-  });
+  };
+
+  const effectiveSchedules = computed(() => getSchedulesForWeek(currentWeek.value));
 
   const activeCourseTable = computed(() => {
     return courseTables.value.find(table => table.id === activeCourseTableId.value) || courseTables.value[0] || null;
@@ -195,13 +219,18 @@ export function useCourses() {
     setCurrentWeek(currentWeek.value + offset);
   };
 
-  const getPeriodTime = (period: number): string => {
+  /// Minutes past midnight at which a period begins, or null when the period is outside the
+  /// current period configuration. Split out from getPeriodTime so the reminder scheduler can
+  /// place an alarm at a real clock time without parsing the "08:00-08:45" display string.
+  const getPeriodStartMinutes = (period: number): number | null => {
     const config = periodConfig.value;
+    const totalPeriods = config.morningPeriods + config.afternoonPeriods + (config.eveningPeriods || 0);
+    if (!Number.isFinite(period) || period < 1 || period > totalPeriods) return null;
+
     const [morningH, morningM] = config.morningStart.split(":").map(Number);
     const [afternoonH, afternoonM] = config.afternoonStart.split(":").map(Number);
     const [eveningH, eveningM] = (config.eveningStart || "19:00").split(":").map(Number);
 
-    let startTimeMinutes: number;
     let sectionStartTime: number;
     let localPeriod: number;
 
@@ -218,10 +247,15 @@ export function useCourses() {
 
     const bigBlocks = Math.floor((localPeriod - 1) / 2);
     const isSecondInBlock = (localPeriod - 1) % 2 === 1;
-    
-    startTimeMinutes = sectionStartTime + 
+
+    return sectionStartTime +
       bigBlocks * (config.periodDuration * 2 + config.breakDuration + config.longBreakDuration) +
       (isSecondInBlock ? (config.periodDuration + config.breakDuration) : 0);
+  };
+
+  const getPeriodTime = (period: number): string => {
+    const startTimeMinutes = getPeriodStartMinutes(period);
+    if (startTimeMinutes === null) return "";
 
     const format = (minutes: number) => {
       const h = Math.floor(minutes / 60).toString().padStart(2, "0");
@@ -229,7 +263,7 @@ export function useCourses() {
       return `${h}:${m}`;
     };
 
-    return `${format(startTimeMinutes)}-${format(startTimeMinutes + config.periodDuration)}`;
+    return `${format(startTimeMinutes)}-${format(startTimeMinutes + periodConfig.value.periodDuration)}`;
   };
 
   const periodSlots = computed(() => {
@@ -713,6 +747,9 @@ export function useCourses() {
     semesterStartDate,
     setSemesterStartDate,
     weekDateLabels,
+    weekNumberForDate,
+    getSchedulesForWeek,
+    getPeriodStartMinutes,
     shiftCurrentWeek,
     getDaySchedules,
     getCellCourses,

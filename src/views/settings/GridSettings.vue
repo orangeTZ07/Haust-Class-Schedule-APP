@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
+import { useReminder } from "@/composables/useReminder";
+import { checkBatteryOptimization, openBatterySettings } from "@/services/reminderService";
+import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 
 const {
   periodConfig,
@@ -48,6 +51,61 @@ const resetToDefaults = () => {
     eveningPeriods: 2
   };
 };
+
+const { prefs: reminderPrefs, reminderSupported, maxMinutesBefore, reschedule } = useReminder();
+
+const reminderBusy = ref(false);
+const reminderMessage = ref("");
+const batteryExempt = ref(true);
+
+const refreshBatteryState = async () => {
+  if (!reminderSupported) return;
+  batteryExempt.value = await checkBatteryOptimization();
+};
+
+onMounted(refreshBatteryState);
+
+/// Called after the switch flips, so reminderPrefs already holds the new value.
+///
+/// The notification permission is requested before anything is scheduled: on Android 13+ the
+/// alarm would otherwise fire into a notification the system drops, and the feature would look
+/// broken rather than unpermitted.
+const onToggleReminder = async () => {
+  if (reminderBusy.value) return;
+  reminderBusy.value = true;
+  try {
+    if (reminderPrefs.value.enabled) {
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        granted = (await requestPermission()) === "granted";
+      }
+      if (!granted) {
+        reminderPrefs.value.enabled = false;
+        reminderMessage.value = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
+        return;
+      }
+    }
+    await applyReminders();
+  } catch (e) {
+    reminderMessage.value = `设置提醒失败：${(e as Error).message}`;
+  } finally {
+    reminderBusy.value = false;
+  }
+};
+
+/// Also used when the lead time changes: the trigger times are computed from it, so every alarm
+/// in the window has to be rewritten.
+const applyReminders = async () => {
+  const result = await reschedule();
+  if (!result.supported) {
+    reminderMessage.value = "当前平台不支持上课提醒（仅 Android）。";
+    return;
+  }
+  reminderMessage.value = reminderPrefs.value.enabled
+    ? `已为未来 7 天注册 ${result.scheduled} 个提醒`
+    : `已关闭，并取消 ${result.cancelled} 个提醒`;
+  await refreshBatteryState();
+};
 </script>
 
 <template>
@@ -92,6 +150,45 @@ const resetToDefaults = () => {
       </div>
       <div class="section-hint">
         课表会在星期下方显示本周日期，按这个日期与当前周数推算。改完周数切换一下即可看到效果。
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">上课提醒</div>
+      <div class="config-item">
+        <span class="label">开启提醒</span>
+        <van-switch
+          v-model="reminderPrefs.enabled"
+          :disabled="!reminderSupported || reminderBusy"
+          @update:model-value="onToggleReminder"
+        />
+      </div>
+      <div v-if="reminderPrefs.enabled" class="config-item">
+        <span class="label">提前</span>
+        <div class="input-group">
+          <van-stepper
+            v-model="reminderPrefs.minutesBefore"
+            :min="1"
+            :max="maxMinutesBefore"
+            :step="5"
+            integer
+            theme="round"
+            button-size="22"
+            @change="applyReminders"
+          />
+          <span class="unit">min</span>
+        </div>
+      </div>
+      <div v-if="reminderMessage" class="section-hint">{{ reminderMessage }}</div>
+      <div v-if="!reminderSupported" class="section-hint">
+        上课提醒依赖 Android 的闹钟与通知，当前平台不可用。
+      </div>
+      <div v-if="reminderSupported && reminderPrefs.enabled && !batteryExempt" class="section-hint">
+        系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
+        <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
+      </div>
+      <div v-if="reminderSupported && reminderPrefs.enabled" class="section-hint">
+        每次打开应用会为未来 7 天重新排一遍提醒；超过一周不开应用，后面的提醒不会自动排上。
       </div>
     </div>
 
@@ -320,5 +417,15 @@ const resetToDefaults = () => {
   line-height: 1.6;
   opacity: 0.5;
   margin-top: 8px;
+}
+
+.mini-link {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--theme-card-border-color);
+  text-decoration: underline;
 }
 </style>
