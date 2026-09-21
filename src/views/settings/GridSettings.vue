@@ -52,14 +52,13 @@ const resetToDefaults = () => {
   };
 };
 
-const { prefs: reminderPrefs, reminderSupported, maxMinutesBefore, reschedule } = useReminder();
+const { prefs: reminderPrefs, maxMinutesBefore, reschedule } = useReminder();
 
 const reminderBusy = ref(false);
 const reminderMessage = ref("");
 const batteryExempt = ref(true);
 
 const refreshBatteryState = async () => {
-  if (!reminderSupported) return;
   batteryExempt.value = await checkBatteryOptimization();
 };
 
@@ -97,13 +96,13 @@ const onToggleReminder = async () => {
 /// in the window has to be rewritten.
 const applyReminders = async () => {
   const result = await reschedule();
-  if (!result.supported) {
-    reminderMessage.value = "当前平台不支持上课提醒（仅 Android）。";
-    return;
-  }
-  reminderMessage.value = reminderPrefs.value.enabled
+  const summary = reminderPrefs.value.enabled
     ? `已为未来 7 天注册 ${result.scheduled} 个提醒`
     : `已关闭，并取消 ${result.cancelled} 个提醒`;
+  // A failure has to be visible. Reporting the count alone is exactly what made the previous
+  // round impossible to diagnose: "registered 0" reads the same whether there was nothing to
+  // schedule or every single call was rejected.
+  reminderMessage.value = result.error ? `${summary}；失败：${result.error}` : summary;
   await refreshBatteryState();
 };
 </script>
@@ -159,7 +158,7 @@ const applyReminders = async () => {
         <span class="label">开启提醒</span>
         <van-switch
           v-model="reminderPrefs.enabled"
-          :disabled="!reminderSupported || reminderBusy"
+          :disabled="reminderBusy"
           @update:model-value="onToggleReminder"
         />
       </div>
@@ -180,14 +179,11 @@ const applyReminders = async () => {
         </div>
       </div>
       <div v-if="reminderMessage" class="section-hint">{{ reminderMessage }}</div>
-      <div v-if="!reminderSupported" class="section-hint">
-        上课提醒依赖 Android 的闹钟与通知，当前平台不可用。
-      </div>
-      <div v-if="reminderSupported && reminderPrefs.enabled && !batteryExempt" class="section-hint">
+      <div v-if="reminderPrefs.enabled && !batteryExempt" class="section-hint">
         系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
         <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
       </div>
-      <div v-if="reminderSupported && reminderPrefs.enabled" class="section-hint">
+      <div v-if="reminderPrefs.enabled" class="section-hint">
         每次打开应用会为未来 7 天重新排一遍提醒；超过一周不开应用，后面的提醒不会自动排上。
       </div>
     </div>

@@ -1,41 +1,54 @@
+use serde::de::DeserializeOwned;
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
+use crate::{BatteryStatus, CancelReminderArgs, SetReminderArgs};
+
 /// The package the Kotlin classes live in. It has to match `namespace` in android/build.gradle and
 /// the `package` line of ReminderPlugin.kt -- register_android_plugin resolves the class through
-/// this string, and a mismatch registers nothing at all while still reporting success upstream.
-#[cfg(target_os = "android")]
+/// this string, and a mismatch registers nothing while still reporting success upstream.
 const PLUGIN_IDENTIFIER: &str = "com.coursemngr.reminder";
 
 /// Registers the Kotlin plugin with the mobile runtime.
-///
-/// This is what makes the @Command methods reachable. Without it the native class is never
-/// instantiated, so `plugin:reminder|set_reminder` from the frontend has nothing to dispatch to
-/// and the feature is inert no matter how complete the Kotlin looks.
-pub fn init<R: Runtime, C: serde::de::DeserializeOwned>(
+pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
 ) -> Result<Reminder<R>, Box<dyn std::error::Error>> {
-    #[cfg(target_os = "android")]
-    {
-        let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "ReminderPlugin")?;
-        return Ok(Reminder(handle));
-    }
-
-    #[cfg(not(target_os = "android"))]
-    {
-        let _ = api;
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "the reminder plugin has no native implementation for this target",
-        )
-        .into())
-    }
+    let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "ReminderPlugin")?;
+    Ok(Reminder(handle))
 }
 
 /// Handle to the Kotlin plugin.
-///
-/// The commands are invoked straight from the frontend, so nothing calls through this handle yet.
-/// It is held so the native plugin stays registered, and so Rust-side callers can be added later
-/// without reworking the registration.
-pub struct Reminder<R: Runtime>(#[allow(dead_code)] PluginHandle<R>);
+pub struct Reminder<R: Runtime>(PluginHandle<R>);
+
+impl<R: Runtime> Reminder<R> {
+    // run_mobile_plugin takes the Kotlin method name, which is camelCase; the snake_case names are
+    // what the frontend invokes, and Tauri maps between the two on its side.
+
+    pub fn set_reminder(&self, args: SetReminderArgs) -> Result<(), String> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("setReminder", args)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn cancel_reminder(&self, args: CancelReminderArgs) -> Result<(), String> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("cancelReminder", args)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn check_battery_optimization(&self) -> Result<BatteryStatus, String> {
+        self.0
+            .run_mobile_plugin::<BatteryStatus>("checkBatteryOptimization", ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn open_battery_settings(&self) -> Result<(), String> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("openBatterySettings", ())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}

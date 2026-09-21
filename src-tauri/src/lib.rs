@@ -26,12 +26,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_reminder::init()) // 重新启用
-        .invoke_handler(tauri::generate_handler![
-            commands::reminder::set_reminder,
-            commands::reminder::cancel_reminder,
-            commands::reminder::check_battery_optimization,
-            commands::reminder::open_battery_settings,
-        ])
+        // The reminder commands live in the plugin and are reached as
+        // `plugin:reminder|set_reminder`. Four stubs of the same name used to be registered here
+        // as app commands, which meant `invoke("set_reminder")` resolved to a function that
+        // returned Ok(()) having done nothing -- a second, silently useless copy of the API.
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

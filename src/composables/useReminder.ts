@@ -1,6 +1,6 @@
 import { ref, watch } from "vue";
 import { useCourses } from "@/composables/useCourses";
-import { cancelReminder, setReminder, reminderSupported } from "@/services/reminderService";
+import { cancelReminder, setReminder } from "@/services/reminderService";
 
 /// 只排未来这么多天。一周七天里，同一门课恰好出现一次，而 Kotlin 侧是用 schedule id 作为
 /// PendingIntent 的 request code —— 也就是「一个日程只能挂一个闹钟」。两者刚好对上，所以七天
@@ -64,13 +64,14 @@ export function useReminder() {
   }, { deep: true });
 
   /// Registers one alarm per class meeting in the next WINDOW_DAYS, and cancels the ones that no
-  /// longer qualify. Returns what it did so the settings screen can show it -- silently scheduling
-  /// nothing is indistinguishable from a broken feature.
-  const reschedule = async (): Promise<{ scheduled: number; cancelled: number; supported: boolean }> => {
-    if (!reminderSupported) {
-      return { scheduled: 0, cancelled: 0, supported: false };
-    }
-
+  /// longer qualify. Returns what it did, including the first error encountered: a rejection was
+  /// previously discarded per schedule, which made a systematic failure -- a command that does not
+  /// resolve, a capability that is not granted -- indistinguishable from "nothing to schedule".
+  const reschedule = async (): Promise<{
+    scheduled: number;
+    cancelled: number;
+    error?: string;
+  }> => {
     const previously = readRegistered();
     const now = Date.now();
 
@@ -83,10 +84,11 @@ export function useReminder() {
         }
       }
       writeRegistered([]);
-      return { scheduled: 0, cancelled: previously.length, supported: true };
+      return { scheduled: 0, cancelled: previously.length };
     }
 
     const scheduled: number[] = [];
+    let firstError = "";
     const today = startOfDay(new Date());
 
     for (let offset = 0; offset < WINDOW_DAYS; offset++) {
@@ -121,8 +123,11 @@ export function useReminder() {
         try {
           await setReminder(schedule.id, triggerAt, title, body);
           scheduled.push(schedule.id);
-        } catch {
-          // One rejected alarm must not abort the rest of the window.
+        } catch (e) {
+          // Keep the first failure rather than dropping it; the caller shows it verbatim.
+          if (!firstError) {
+            firstError = (e as Error)?.message || String(e);
+          }
         }
       }
     }
@@ -139,12 +144,11 @@ export function useReminder() {
     }
     writeRegistered(scheduled);
 
-    return { scheduled: scheduled.length, cancelled: stale.length, supported: true };
+    return { scheduled: scheduled.length, cancelled: stale.length, error: firstError || undefined };
   };
 
   return {
     prefs,
-    reminderSupported,
     maxMinutesBefore: MAX_MINUTES_BEFORE,
     reschedule
   };
