@@ -264,8 +264,8 @@ let suppressCellClickUntil = 0;
 //
 // A single tap used to be enough, which made every stray touch on the timetable a candidate for
 // opening a course form -- and the grid is mostly empty space, so mis-taps were common. The first
-// tap is acknowledged with a hint: a tap that appears to do nothing reads as a broken control,
-// which is a failure mode this codebase has hit more than once.
+// tap is deliberately silent: an earlier version raised a toast telling the user to tap again, but
+// it sat over the timetable and hid the very cells it was talking about.
 const DOUBLE_TAP_MS = 400;
 let lastSlotTap = { day: 0, period: 0, at: 0 };
 
@@ -285,7 +285,6 @@ const handleCellClick = (day: number, period: number) => {
   }
 
   lastSlotTap = { day, period, at: now };
-  showToast("再点一次即可添加课程");
 };
 
 const getDividerLabel = (period: number): string => {
