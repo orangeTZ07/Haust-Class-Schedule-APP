@@ -140,12 +140,22 @@ const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }
 // sidebar, the dimming overlay and the content layer all read the same number, and a drag simply
 // moves it. A boolean can only ever snap between two states, which is what made the first version
 // feel stiff.
-const EDGE_ZONE_PX = 40;
+/// Where a swipe may begin, measured from the left edge.
+///
+/// The lower bound is the one that matters: a touch starting closer to the edge than this lands in
+/// the strip Android's own back gesture owns under gesture navigation, and the system takes the
+/// gesture before the webview sees anything -- which is what made the drawer feel unreliable and,
+/// worse, sometimes triggered back instead. An earlier revision accepted anything within 40px of
+/// the edge, i.e. exactly that contested strip. The upper bound keeps this an edge gesture rather
+/// than a swipe from anywhere.
+const SWIPE_START_MIN_PX = 56;
+const SWIPE_START_MAX_PX = 180;
 const DRAG_DECISION_RATIO = 0.4;
 /// px per ms. Past this the gesture is treated as a flick and wins over how far it travelled.
 const FLING_VELOCITY = 0.35;
-/// Movement below this is not yet enough to tell a horizontal drag from a vertical one.
-const DIRECTION_THRESHOLD_PX = 8;
+/// Movement below this is not yet enough to tell a horizontal drag from a vertical one. Kept small
+/// so the drawer starts moving almost at once rather than after a visible dead zone.
+const DIRECTION_THRESHOLD_PX = 4;
 
 interface DragState {
   x: number;
@@ -172,10 +182,8 @@ const onEdgeTouchStart = (event: TouchEvent) => {
     return;
   }
 
-  // Closed: only a drag beginning near the left edge may open it. Starting flush with the screen
-  // edge would fight Android's own back gesture, which claims the outermost strip under gesture
-  // navigation and would take the swipe before the webview sees it.
-  if (touch.clientX > EDGE_ZONE_PX) {
+  // Closed: the drag has to begin inside the band, not merely somewhere near the edge.
+  if (touch.clientX < SWIPE_START_MIN_PX || touch.clientX > SWIPE_START_MAX_PX) {
     dragState = null;
     return;
   }
@@ -195,12 +203,26 @@ const onEdgeTouchMove = (event: TouchEvent) => {
   // Decide once, and only once, whether this gesture belongs to the drawer. Until it is clearly
   // horizontal the event is left alone so the timetable keeps scrolling normally.
   if (state.horizontal === null) {
-    if (Math.abs(dx) < DIRECTION_THRESHOLD_PX && Math.abs(dy) < DIRECTION_THRESHOLD_PX) return;
-    state.horizontal = Math.abs(dx) > Math.abs(dy) * 1.2;
-    if (!state.horizontal) {
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+    if (adx < DIRECTION_THRESHOLD_PX && ady < DIRECTION_THRESHOLD_PX) return;
+
+    // Vertical leads outright: the user is scrolling the timetable, so leave the event alone.
+    if (ady > adx) {
       dragState = null;
       return;
     }
+
+    // Closed: only a rightward drag opens. A leftward one is left to the browser rather than
+    // claiming a gesture that was never going to open anything.
+    if (!sidebarVisible.value && dx <= 0) {
+      dragState = null;
+      return;
+    }
+
+    // Claimed as soon as horizontal travel leads, even slightly. The previous revision required
+    // 1.2x, so a slightly diagonal start discarded the whole gesture and the swipe did nothing.
+    state.horizontal = true;
     sidebarDragging.value = true;
   }
 
