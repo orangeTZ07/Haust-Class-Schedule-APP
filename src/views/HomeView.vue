@@ -121,10 +121,53 @@ const handleClear = () => {
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }) => {
   trashTargetState.value = state;
 };
+
+// Swipe in from the left edge to open the sidebar. The menu button still works; this is a second
+// way in, not a replacement.
+//
+// The zone is deliberately not flush with the screen edge: Android's own back gesture claims the
+// outermost strip on gesture navigation, and a swipe starting there is taken by the system before
+// the webview sees it.
+const EDGE_ZONE_PX = 40;
+const EDGE_SWIPE_MIN_PX = 50;
+
+let edgeSwipeStart: { x: number; y: number } | null = null;
+
+const onEdgeTouchStart = (event: TouchEvent) => {
+  const touch = event.touches[0];
+  if (!touch || touch.clientX > EDGE_ZONE_PX) {
+    edgeSwipeStart = null;
+    return;
+  }
+  edgeSwipeStart = { x: touch.clientX, y: touch.clientY };
+};
+
+const onEdgeTouchEnd = (event: TouchEvent) => {
+  const start = edgeSwipeStart;
+  edgeSwipeStart = null;
+  if (!start) return;
+
+  const touch = event.changedTouches[0];
+  if (!touch) return;
+
+  const dx = touch.clientX - start.x;
+  const dy = touch.clientY - start.y;
+
+  // Horizontal intent only. A mostly-vertical drag that happens to begin near the edge is the
+  // user scrolling the timetable, and must not fling the drawer open.
+  if (dx >= EDGE_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy)) {
+    sidebarVisible.value = true;
+  }
+};
 </script>
 
 <template>
-  <div class="home-view" :style="cssVariables">
+  <div
+    class="home-view"
+    :style="cssVariables"
+    @touchstart.passive="onEdgeTouchStart"
+    @touchend="onEdgeTouchEnd"
+  >
     <!-- 背景层 -->
     <div
       class="bg-layer"

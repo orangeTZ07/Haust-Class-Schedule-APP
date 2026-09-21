@@ -260,11 +260,32 @@ const countDividersWithin = (startPeriod: number, span: number): number => {
 // would otherwise immediately pop the add form over the cell it just landed in.
 let suppressCellClickUntil = 0;
 
+// Two taps on the same empty slot, close together, open the add form.
+//
+// A single tap used to be enough, which made every stray touch on the timetable a candidate for
+// opening a course form -- and the grid is mostly empty space, so mis-taps were common. The first
+// tap is acknowledged with a hint: a tap that appears to do nothing reads as a broken control,
+// which is a failure mode this codebase has hit more than once.
+const DOUBLE_TAP_MS = 400;
+let lastSlotTap = { day: 0, period: 0, at: 0 };
+
 const handleCellClick = (day: number, period: number) => {
   if (Date.now() < suppressCellClickUntil) return;
   if (dragState.value) return;
   if (getBlocksByDayAndPeriod(day, period).length > 0) return;
-  emit("request-add", { day, period });
+
+  const now = Date.now();
+  const isSecondTap =
+    lastSlotTap.day === day && lastSlotTap.period === period && now - lastSlotTap.at <= DOUBLE_TAP_MS;
+
+  if (isSecondTap) {
+    lastSlotTap = { day: 0, period: 0, at: 0 };
+    emit("request-add", { day, period });
+    return;
+  }
+
+  lastSlotTap = { day, period, at: now };
+  showToast("再点一次即可添加课程");
 };
 
 const getDividerLabel = (period: number): string => {
