@@ -4,8 +4,18 @@ import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 
 const {
-  periodConfig
+  periodConfig,
+  semesterStartDate,
+  setSemesterStartDate
 } = useCourses();
+
+/// Bound through a change handler rather than v-model so the stored value stays exactly the
+/// "YYYY-MM-DD" the input produces; useCourses parses it from parts to dodge the UTC-midnight
+/// shift a bare date string would otherwise get.
+const onSemesterStartChange = (event: Event) => {
+  const value = (event.target as HTMLInputElement).value;
+  if (value) setSemesterStartDate(value);
+};
 
 const { themeConfig, isDark } = useTheme();
 
@@ -66,6 +76,22 @@ const resetToDefaults = () => {
       <div class="config-item">
         <span class="label">晚课节数</span>
         <van-stepper v-model="periodConfig.eveningPeriods" :min="0" :max="6" integer theme="round" button-size="22" />
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">学期日期</div>
+      <div class="config-item">
+        <span class="label">第 1 周周一</span>
+        <input
+          class="date-input"
+          type="date"
+          :value="semesterStartDate"
+          @change="onSemesterStartChange"
+        />
+      </div>
+      <div class="section-hint">
+        课表会在星期下方显示本周日期，按这个日期与当前周数推算。改完周数切换一下即可看到效果。
       </div>
     </div>
 
@@ -272,5 +298,27 @@ const resetToDefaults = () => {
 
 :deep(.van-picker__title) {
   color: var(--theme-body-text) !important;
+}
+
+.date-input {
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
+  background: color-mix(in srgb, var(--theme-header-bg) 8%, transparent);
+  color: var(--theme-header-text);
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+/* The native control renders its own indicator; let the theme colours through instead. */
+.date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.45);
+}
+
+.section-hint {
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.5;
+  margin-top: 8px;
 }
 </style>

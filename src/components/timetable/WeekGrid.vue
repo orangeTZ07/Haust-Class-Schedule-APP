@@ -4,7 +4,7 @@ import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, moveSchedule, removeSchedule } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule } = useCourses();
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
@@ -942,7 +942,8 @@ onUnmounted(() => {
         class="day-header"
         :class="{ 'is-today': todayDayNumber === index + 1 }"
       >
-        {{ day }}
+        <span class="day-name">{{ day }}</span>
+        <span v-if="weekDateLabels[index]" class="day-date">{{ weekDateLabels[index] }}</span>
       </div>
     </div>
 
@@ -1117,7 +1118,11 @@ onUnmounted(() => {
 }
 
 .day-header {
-  padding: 9px 2px;
+  padding: 7px 2px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   text-align: center;
   font-size: 12px;
   font-weight: 600;
@@ -1127,22 +1132,32 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.day-name {
+  white-space: nowrap;
+}
+
+.day-date {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.62;
+  /* Tabular figures so the seven dates line up in a column instead of jittering. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .day-header.is-today {
   color: var(--theme-card-border-color);
   font-weight: 800;
 }
 
-.day-header.is-today::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 4px;
-  width: 18px;
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-card-border-color) 80%, var(--theme-header-text));
-  transform: translateX(-50%);
+.day-header.is-today .day-date {
+  opacity: 1;
+  font-weight: 700;
 }
+
+/* The today marker used to be an absolutely positioned bar at bottom: 4px. The date line now
+   occupies that space, so today is marked by colour and weight on both lines instead of
+   stacking a bar on top of the text. */
 
 .day-header:last-child {
   border-right: none;

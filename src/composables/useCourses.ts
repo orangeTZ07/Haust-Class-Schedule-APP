@@ -27,13 +27,28 @@ const courseTables = ref<CourseTable[]>([]);
 const activeCourseTableId = ref<number>(1);
 const periodConfig = ref<PeriodTimeConfig>({ ...defaultConfig });
 const currentWeek = ref(1);
+/// Monday of week 1, as "YYYY-MM-DD". 2026-08-31 is the start of this institution's
+/// 2026-2027 first semester -- it is what makes week 4 read 09-21..09-27 -- and it is only a
+/// starting point: 设置 -> 网格设置 lets it be changed, and the value is persisted.
+const DEFAULT_SEMESTER_START = "2026-08-31";
+const semesterStartDate = ref(DEFAULT_SEMESTER_START);
 
 let nextCourseId = 1;
 let nextScheduleId = 1;
 
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
-  CURRENT_WEEK: "course-mngr-current-week"
+  CURRENT_WEEK: "course-mngr-current-week",
+  SEMESTER_START: "course-mngr-semester-start"
+};
+
+/// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
+/// because the bare date string is read as UTC midnight and would land a day early in every
+/// timezone behind UTC -- which would show the wrong date to exactly the users who set it.
+const parseIsoDate = (iso: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 };
 
 const getScheduleScope = (schedule: CourseSchedule) => schedule.scope ?? "semester";
@@ -87,6 +102,11 @@ async function loadDataFromDb() {
     if (Number.isFinite(savedCurrentWeek) && savedCurrentWeek > 0) {
       currentWeek.value = savedCurrentWeek;
     }
+
+    const savedSemesterStart = localStorage.getItem(STORAGE_KEYS.SEMESTER_START);
+    if (savedSemesterStart) {
+      semesterStartDate.value = savedSemesterStart;
+    }
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
   }
@@ -104,6 +124,32 @@ export function useCourses() {
   watch(currentWeek, () => {
     localStorage.setItem(STORAGE_KEYS.CURRENT_WEEK, String(currentWeek.value));
   });
+
+  watch(semesterStartDate, () => {
+    localStorage.setItem(STORAGE_KEYS.SEMESTER_START, semesterStartDate.value);
+  });
+
+  /// "MM-DD" for each of the seven columns of the week on screen, Monday first, or nulls when
+  /// the semester start is unusable. Computed from the week number rather than stored, so the
+  /// dates follow the week selector instead of having to be kept in sync with it.
+  const weekDateLabels = computed<(string | null)[]>(() => {
+    const start = parseIsoDate(semesterStartDate.value);
+    return Array.from({ length: 7 }, (_, index) => {
+      if (!start) return null;
+      const date = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() + (currentWeek.value - 1) * 7 + index
+      );
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${month}-${day}`;
+    });
+  });
+
+  const setSemesterStartDate = (iso: string) => {
+    semesterStartDate.value = iso;
+  };
 
   const semesterWeekCount = computed(() => {
     const maxImportedWeek = schedules.value.reduce((max, schedule) => Math.max(max, schedule.endWeek), 0);
@@ -589,6 +635,9 @@ export function useCourses() {
     currentWeek,
     semesterWeekCount,
     setCurrentWeek,
+    semesterStartDate,
+    setSemesterStartDate,
+    weekDateLabels,
     shiftCurrentWeek,
     getDaySchedules,
     getCellCourses,
