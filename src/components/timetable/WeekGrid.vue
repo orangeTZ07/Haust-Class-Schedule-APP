@@ -95,12 +95,19 @@ const MAX_GRID_ZOOM = 2.2;
 const ORBIT_OPEN_DURATION_MS = 420;
 const ORBIT_CLOSE_DURATION_MS = 280;
 
-/// Puts the grid back to its default width. gridZoom is driven by a two-finger pinch and had
-/// no way back to 1 other than pinching to exactly the right distance, so an accidental pinch
-/// left the timetable stretched for good. The horizontal scroll offset is a separate concern:
-/// it lives on .grid-container in HomeView, which resets it alongside this.
-const resetView = () => {
+/// Puts the grid back to its default width, and reports whether anything actually changed.
+///
+/// gridZoom is driven by a two-finger pinch and had no way back to 1 other than pinching to
+/// exactly the right distance, so an accidental pinch left the timetable stretched for good. The
+/// horizontal scroll offset is a separate concern: it lives on .grid-container in HomeView, which
+/// resets it alongside this.
+///
+/// Returning whether it changed anything lets the caller say "already at the default" instead of
+/// claiming a reset that did nothing -- which is indistinguishable from a dead button.
+const resetView = (): boolean => {
+  const changed = gridZoom.value !== 1;
   gridZoom.value = 1;
+  return changed;
 };
 
 defineExpose({ resetView });

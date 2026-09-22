@@ -82,15 +82,23 @@ const closeSidebar = () => {
 };
 
 const gridContainerRef = ref<HTMLElement | null>(null);
-const weekGridRef = ref<{ resetView: () => void } | null>(null);
+const weekGridRef = ref<{ resetView: () => boolean } | null>(null);
 
-// Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the
-// horizontal offset lives on this component's container, so neither had a way back: they are
-// easy to disturb by touch and were impossible to restore precisely.
+// Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the horizontal
+// offset lives on this component's container, so neither had a way back: they are easy to disturb
+// by touch and were impossible to restore precisely.
+//
+// It reports what it found rather than always announcing a reset. "Nothing to reset" and "the
+// button is dead" look identical otherwise, and the button did appear dead -- for a different
+// reason, a suppressed click, which made this even harder to read from the outside.
 const resetTimetableView = () => {
-  weekGridRef.value?.resetView();
+  const wasZoomed = weekGridRef.value?.resetView() ?? false;
+  const wasScrolled = (gridContainerRef.value?.scrollLeft ?? 0) !== 0;
   if (gridContainerRef.value) gridContainerRef.value.scrollLeft = 0;
-  showToast({ message: "课表视图已重置", type: "success" });
+  showToast({
+    message: wasZoomed || wasScrolled ? "课表视图已重置" : "课表视图已是默认状态",
+    type: wasZoomed || wasScrolled ? "success" : "text"
+  });
 };
 
 const handleSidebarAction = (action: string) => {
@@ -156,6 +164,9 @@ const FLING_VELOCITY = 0.35;
 /// Movement below this is not yet enough to tell a horizontal drag from a vertical one. Kept small
 /// so the drawer starts moving almost at once rather than after a visible dead zone.
 const DIRECTION_THRESHOLD_PX = 4;
+/// How far left a finger must travel before a drag counts as closing an open drawer. Larger than
+/// the threshold above on purpose: see the note in onEdgeTouchMove.
+const CLOSE_DRAG_MIN_PX = 12;
 
 interface DragState {
   x: number;
@@ -176,6 +187,13 @@ const onEdgeTouchStart = (event: TouchEvent) => {
   const touch = event.touches[0];
   if (!touch) return;
 
+  // Two fingers is a pinch on the timetable, not a drawer gesture. Claiming it would call
+  // preventDefault and break the zoom.
+  if (event.touches.length > 1) {
+    dragState = null;
+    return;
+  }
+
   // Open: a drag anywhere may close it again, which is what makes the swipe reversible.
   if (sidebarVisible.value) {
     dragState = { x: touch.clientX, y: touch.clientY, at: Date.now(), baseOffset: SIDEBAR_WIDTH, horizontal: null };
@@ -187,6 +205,15 @@ const onEdgeTouchStart = (event: TouchEvent) => {
     dragState = null;
     return;
   }
+
+  // A touch landing on a course is the user grabbing that course, not reaching for the drawer. The
+  // swipe band overlaps the first day column, so without this a long-press drag near the left edge
+  // moved the drawer at the same time as the course.
+  if (event.target instanceof Element && event.target.closest(".course-block")) {
+    dragState = null;
+    return;
+  }
+
   dragState = { x: touch.clientX, y: touch.clientY, at: Date.now(), baseOffset: 0, horizontal: null };
 };
 
@@ -194,14 +221,20 @@ const onEdgeTouchMove = (event: TouchEvent) => {
   const state = dragState;
   if (!state) return;
 
+  // A second finger means a pinch; hand the gesture to the zoom.
+  if (event.touches.length > 1) {
+    dragState = null;
+    return;
+  }
+
   const touch = event.touches[0];
   if (!touch) return;
 
   const dx = touch.clientX - state.x;
   const dy = touch.clientY - state.y;
 
-  // Decide once, and only once, whether this gesture belongs to the drawer. Until it is clearly
-  // horizontal the event is left alone so the timetable keeps scrolling normally.
+  // Decide once, and only once, whether this gesture belongs to the drawer. Until then the event
+  // is left alone so the timetable keeps scrolling normally.
   if (state.horizontal === null) {
     const adx = Math.abs(dx);
     const ady = Math.abs(dy);
@@ -213,15 +246,27 @@ const onEdgeTouchMove = (event: TouchEvent) => {
       return;
     }
 
-    // Closed: only a rightward drag opens. A leftward one is left to the browser rather than
-    // claiming a gesture that was never going to open anything.
-    if (!sidebarVisible.value && dx <= 0) {
+    if (sidebarVisible.value) {
+      // Closing takes a deliberate leftward drag. Claiming any horizontal jitter here was a
+      // regression: claiming calls preventDefault on touchmove, and that suppresses the click a tap
+      // would otherwise produce -- so taps on the menu items, 重置课表视图 among them, stopped
+      // registering at all.
+      if (dx > -CLOSE_DRAG_MIN_PX) {
+        dragState = null;
+        return;
+      }
+      // Re-anchor where the gesture was recognised, so the drawer carries on from where it already
+      // is instead of jumping by however far the finger travelled first.
+      state.x = touch.clientX;
+      state.y = touch.clientY;
+      state.baseOffset = sidebarOffset.value;
+    } else if (dx <= 0) {
+      // Closed: only a rightward drag opens. A leftward one is left to the browser rather than
+      // claiming a gesture that was never going to open anything.
       dragState = null;
       return;
     }
 
-    // Claimed as soon as horizontal travel leads, even slightly. The previous revision required
-    // 1.2x, so a slightly diagonal start discarded the whole gesture and the swipe did nothing.
     state.horizontal = true;
     sidebarDragging.value = true;
   }
@@ -229,7 +274,9 @@ const onEdgeTouchMove = (event: TouchEvent) => {
   // Cancelling the default only after claiming the gesture, so a vertical scroll is untouched.
   if (event.cancelable) event.preventDefault();
 
-  sidebarOffset.value = Math.min(Math.max(state.baseOffset + dx, 0), SIDEBAR_WIDTH);
+  // Re-read from state.x rather than reusing dx: the open case re-anchors above.
+  const liveDx = touch.clientX - state.x;
+  sidebarOffset.value = Math.min(Math.max(state.baseOffset + liveDx, 0), SIDEBAR_WIDTH);
 };
 
 const onEdgeTouchEnd = () => {
