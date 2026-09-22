@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked, RotateCcw, History } from '@lucide/vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   visible: boolean;
-}>();
+  /// How far the drawer is out, from 0 to width. The drawer and the dimming overlay both read it,
+  /// so a drag moves the whole thing as one piece instead of snapping a class on and off.
+  offset?: number;
+  /// True while a finger is down. Suppresses transitions so nothing lags behind the finger.
+  dragging?: boolean;
+  width?: number;
+}>(), {
+  offset: 0,
+  dragging: false,
+  width: 280
+});
 
 const emit = defineEmits<{
   close: [];
@@ -21,6 +31,8 @@ const menuItems = [
   { icon: Download, label: "导入课表", action: "import" },
   { icon: Upload, label: "导出课表", action: "export" },
   { icon: Palette, label: "样式调整", action: "style" },
+  { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
+  { icon: History, label: "恢复到导入时", action: "restore-import" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 
@@ -58,12 +70,17 @@ const handleOverlayClick = () => {
     <!-- 遮罩层 -->
     <div
       class="overlay"
-      :class="{ visible }"
+      :class="{ visible: offset > 0, 'is-dragging': dragging }"
+      :style="{ opacity: Math.min(offset / width, 1) }"
       @click="handleOverlayClick"
     />
 
     <!-- 侧边栏 -->
-    <div class="sidebar" :class="{ visible }">
+    <div
+      class="sidebar"
+      :class="{ visible, 'is-dragging': dragging }"
+      :style="{ width: `${width}px`, transform: `translateX(${offset - width}px)` }"
+    >
       <div class="sidebar-header">
         <span class="app-title">课程表</span>
       </div>
@@ -100,7 +117,9 @@ const handleOverlayClick = () => {
   -webkit-backdrop-filter: blur(2px);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
+  /* Same duration and easing as .content-layer in HomeView: the drawer and the page behind it
+     have to settle together, or the two halves of the same motion look disconnected. */
+  transition: opacity 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0.28s ease;
   z-index: 101;
 }
 
@@ -119,7 +138,8 @@ const handleOverlayClick = () => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   transform: translateX(-100%);
-  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
   z-index: 102;
   display: flex;
   flex-direction: column;
@@ -129,6 +149,13 @@ const handleOverlayClick = () => {
 
 .sidebar.visible {
   transform: translateX(0);
+}
+
+/* While the finger is down the offset is written on every move; a transition on top of that makes
+   both the drawer and the overlay chase the finger rather than sit under it. */
+.sidebar.is-dragging,
+.overlay.is-dragging {
+  transition: none;
 }
 
 .sidebar-header {

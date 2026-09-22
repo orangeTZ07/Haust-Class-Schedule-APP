@@ -4,10 +4,11 @@ import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, moveSchedule, removeSchedule } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule } = useCourses();
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
+  (e: "request-add", slot: { day: number; period: number }): void;
 }>();
 
 const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -82,12 +83,45 @@ const gridZoom = ref(1);
 const pinchState = ref<{ startDistance: number; startScale: number } | null>(null);
 const orbitPhase = ref<OrbitPhase>("idle");
 const suppressNextClick = ref(false);
+// Schedule id currently playing its delete animation, if any. The row is only removed from
+// the database once the block has visibly left, so a delete reads as an action rather than
+// the block vanishing between frames.
+const deletingId = ref<number | null>(null);
+const DELETE_ANIMATION_MS = 240;
 let orbitAnimationTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const MIN_GRID_WIDTH = 360;
 const MAX_GRID_ZOOM = 2.2;
 const ORBIT_OPEN_DURATION_MS = 420;
 const ORBIT_CLOSE_DURATION_MS = 280;
+
+/// Puts the view back to how it looks on a fresh open, and reports whether anything moved.
+///
+/// Three things can carry the view away from that state, and an earlier revision only knew about
+/// the first two: the pinch zoom, the outer container's horizontal offset, and -- the one people
+/// actually hit -- .body's vertical scroll, since scrolling down to the later periods is the
+/// ordinary way the timetable "moves". Leaving it out meant the reset changed nothing while still
+/// reporting success.
+///
+/// Returning whether anything changed lets the caller distinguish a real reset from a no-op,
+/// because a no-op and a dead button are otherwise the same message.
+const resetView = (): boolean => {
+  const body = bodyRef.value;
+  const changed =
+    gridZoom.value !== 1 ||
+    (body?.scrollTop ?? 0) !== 0 ||
+    (body?.scrollLeft ?? 0) !== 0;
+
+  gridZoom.value = 1;
+  if (body) {
+    body.scrollTop = 0;
+    body.scrollLeft = 0;
+  }
+
+  return changed;
+};
+
+defineExpose({ resetView });
 
 const todayDayNumber = computed(() => {
   const day = new Date().getDay();
@@ -225,6 +259,50 @@ const dividerPositions = computed(() => {
 
 const shouldShowDividerAfter = (period: number): boolean => {
   return dividerPositions.value.some(d => d.afterPeriod === period);
+};
+
+/// How many 午休 / 晚饭 dividers sit inside a block's span, i.e. strictly between its first
+/// and last period. CourseBlock turns this into height via var(--divider-height); the count
+/// is passed rather than a pixel value so the divider height keeps a single definition.
+const countDividersWithin = (startPeriod: number, span: number): number => {
+  let dividers = 0;
+  for (let period = startPeriod; period < startPeriod + span - 1; period++) {
+    if (shouldShowDividerAfter(period)) dividers++;
+  }
+  return dividers;
+};
+
+// Tapping an empty slot is how a course gets added. Two guards keep that from firing at the
+// wrong moment: a cell that already holds a block is left to the block, and a drag swallows
+// cell clicks for a short window afterwards, because dropping a course onto a free slot
+// would otherwise immediately pop the add form over the cell it just landed in.
+let suppressCellClickUntil = 0;
+
+// Two taps on the same empty slot, close together, open the add form.
+//
+// A single tap used to be enough, which made every stray touch on the timetable a candidate for
+// opening a course form -- and the grid is mostly empty space, so mis-taps were common. The first
+// tap is deliberately silent: an earlier version raised a toast telling the user to tap again, but
+// it sat over the timetable and hid the very cells it was talking about.
+const DOUBLE_TAP_MS = 400;
+let lastSlotTap = { day: 0, period: 0, at: 0 };
+
+const handleCellClick = (day: number, period: number) => {
+  if (Date.now() < suppressCellClickUntil) return;
+  if (dragState.value) return;
+  if (getBlocksByDayAndPeriod(day, period).length > 0) return;
+
+  const now = Date.now();
+  const isSecondTap =
+    lastSlotTap.day === day && lastSlotTap.period === period && now - lastSlotTap.at <= DOUBLE_TAP_MS;
+
+  if (isSecondTap) {
+    lastSlotTap = { day: 0, period: 0, at: 0 };
+    emit("request-add", { day, period });
+    return;
+  }
+
+  lastSlotTap = { day, period, at: now };
 };
 
 const getDividerLabel = (period: number): string => {
@@ -468,6 +546,12 @@ const handleTouchStart = (event: TouchEvent) => {
 };
 
 const handleTouchMove = (event: TouchEvent) => {
+  // A drag in progress owns the gesture: without this the browser would also scroll the
+  // page under the finger, because course blocks are touch-action: pan-y.
+  if (dragState.value) {
+    if (event.cancelable) event.preventDefault();
+    return;
+  }
   if (!pinchState.value || event.touches.length !== 2) return;
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
@@ -589,9 +673,23 @@ const updateDropTarget = (clientX: number, clientY: number) => {
   };
 };
 
+// How far outside the trash icon a finger still counts as "over" it. The old test was
+// document.elementsFromPoint against the icon's exact border box, which asked a fingertip for
+// pixel precision. The tolerance lives here rather than in the icon's padding because growing
+// the box would move the icon; the icon is 44px, so the drop zone is roughly 124px across.
+const TRASH_TARGET_SLOP = 40;
+
 const isPointerOverTrashTarget = (clientX: number, clientY: number) => {
-  const elements = document.elementsFromPoint(clientX, clientY);
-  return elements.some(element => element instanceof HTMLElement && !!element.closest('[data-trash-target="schedule-delete"]'));
+  const target = document.querySelector<HTMLElement>('[data-trash-target="schedule-delete"]');
+  if (!target) return false;
+
+  const rect = target.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return false;
+
+  // Shortest distance from the point to the rectangle -- zero when inside it.
+  const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+  const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+  return Math.hypot(dx, dy) <= TRASH_TARGET_SLOP;
 };
 
 const syncDragTrashState = (clientX?: number, clientY?: number) => {
@@ -652,9 +750,17 @@ const handlePointerUp = async (event: PointerEvent) => {
   }
 
   if (shouldDelete && currentDrag?.hasMoved) {
-    dragState.value = null;
+    // dragState deliberately survives the animation: clearing it first would snap the block
+    // back into its cell and then shrink it there, instead of shrinking it where the finger
+    // let go. The pointer listeners are already detached, so it stays put.
     dropTarget.value = null;
+    deletingId.value = currentDrag.scheduleId;
+    await new Promise(resolve => setTimeout(resolve, DELETE_ANIMATION_MS));
+
+    dragState.value = null;
+    deletingId.value = null;
     syncDragTrashState();
+
     const removed = await removeSchedule(currentDrag.scheduleId);
     if (removed) {
       if (currentDrag.source === "floating" || conflictGroupByScheduleId.value.has(currentDrag.scheduleId)) {
@@ -688,12 +794,70 @@ const handlePointerUp = async (event: PointerEvent) => {
   }
 };
 
+// Touch must not start a drag on contact. A finger landing on a course block is far more
+// often the beginning of a scroll than of a re-schedule, and because the blocks cover
+// nearly the whole grid, starting the drag immediately made the timetable feel frozen and
+// turned small swipes into accidental course moves. Mouse keeps its instant drag; touch
+// has to hold briefly first.
+const LONG_PRESS_MS = 280;
+const LONG_PRESS_TOLERANCE = 12;
+
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let longPressOrigin: { x: number; y: number } | null = null;
+
+const clearLongPress = () => {
+  if (longPressTimer !== null) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressOrigin = null;
+  window.removeEventListener("pointermove", onLongPressMove);
+  window.removeEventListener("pointerup", clearLongPress);
+  window.removeEventListener("pointercancel", clearLongPress);
+};
+
+function onLongPressMove(event: PointerEvent) {
+  if (!longPressOrigin) return;
+  const travelled = Math.hypot(
+    event.clientX - longPressOrigin.x,
+    event.clientY - longPressOrigin.y
+  );
+  // The finger is travelling, i.e. the user is scrolling -- let the browser have it.
+  if (travelled > LONG_PRESS_TOLERANCE) clearLongPress();
+}
+
 const startDrag = (
   block: MergedBlock,
   event: PointerEvent,
   source: "grid" | "floating" | "embedded-conflict" = "grid"
 ) => {
+  if (event.pointerType === "mouse") {
+    beginDrag(block, event, source);
+    return;
+  }
+
+  clearLongPress();
+  longPressOrigin = { x: event.clientX, y: event.clientY };
+  const held = event;
+  longPressTimer = setTimeout(() => {
+    const origin = longPressOrigin;
+    clearLongPress();
+    if (!origin) return;
+    navigator.vibrate?.(10);
+    beginDrag(block, held, source);
+  }, LONG_PRESS_MS);
+  window.addEventListener("pointermove", onLongPressMove);
+  window.addEventListener("pointerup", clearLongPress);
+  window.addEventListener("pointercancel", clearLongPress);
+};
+
+const beginDrag = (
+  block: MergedBlock,
+  event: PointerEvent,
+  source: "grid" | "floating" | "embedded-conflict" = "grid"
+) => {
   event.stopPropagation();
+  suppressCellClickUntil = Date.now() + 600;
 
   dragState.value = {
     scheduleId: block.schedule.id,
@@ -791,6 +955,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearOrbitAnimationTimer();
+  clearLongPress();
   stopDragListeners();
   syncDragTrashState();
   window.removeEventListener("resize", handleWindowResize);
@@ -815,7 +980,8 @@ onUnmounted(() => {
         class="day-header"
         :class="{ 'is-today': todayDayNumber === index + 1 }"
       >
-        {{ day }}
+        <span class="day-name">{{ day }}</span>
+        <span v-if="weekDateLabels[index]" class="day-date">{{ weekDateLabels[index] }}</span>
       </div>
     </div>
 
@@ -840,12 +1006,15 @@ onUnmounted(() => {
             :class="getCellClass(day, slot.period)"
             :data-day="day"
             :data-period="slot.period"
+            @click="handleCellClick(day, slot.period)"
           >
             <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="block.schedule.id">
               <CourseBlock
                 :course="block.course"
                 :schedule="block.schedule"
                 :span="block.span"
+                :dividers="countDividersWithin(block.schedule.startPeriod, block.span)"
+                :deleting="deletingId === block.schedule.id"
                 :is-dragging="isBlockDragging(block.schedule.id)"
                 :drag-offset="getBlockDragOffset(block.schedule.id)"
                 :conflict-count="getConflictMeta(block.schedule.id).count"
@@ -943,6 +1112,12 @@ onUnmounted(() => {
 <style scoped>
 .week-grid {
   --time-col-width: 44px;
+  /* Height of one class period. .period-row uses it as its minimum and CourseBlock
+     multiplies it by its span, so grid rows and blocks stay in lockstep. */
+  --row-height: 50px;
+  /* Vertical space a 午休 / 晚饭 divider occupies between two rows. Blocks that span
+     across one have to add it, otherwise they fall short. */
+  --divider-height: 29px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -981,7 +1156,11 @@ onUnmounted(() => {
 }
 
 .day-header {
-  padding: 9px 2px;
+  padding: 7px 2px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   text-align: center;
   font-size: 12px;
   font-weight: 600;
@@ -991,22 +1170,32 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.day-name {
+  white-space: nowrap;
+}
+
+.day-date {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.62;
+  /* Tabular figures so the seven dates line up in a column instead of jittering. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .day-header.is-today {
   color: var(--theme-card-border-color);
   font-weight: 800;
 }
 
-.day-header.is-today::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 4px;
-  width: 18px;
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-card-border-color) 80%, var(--theme-header-text));
-  transform: translateX(-50%);
+.day-header.is-today .day-date {
+  opacity: 1;
+  font-weight: 700;
 }
+
+/* The today marker used to be an absolutely positioned bar at bottom: 4px. The date line now
+   occupies that space, so today is marked by colour and weight on both lines instead of
+   stacking a bar on top of the text. */
 
 .day-header:last-child {
   border-right: none;
@@ -1015,6 +1204,12 @@ onUnmounted(() => {
 .body {
   position: relative;
   flex: 1;
+  /* Without this the flex item refuses to shrink below its content height (the default
+     for a flex item is min-height: auto). It then grows past .week-grid, which has
+     overflow: hidden, so the rows past the fold are clipped and cannot be reached --
+     the timetable simply does not scroll. TodoPanel.vue:935 already does this; the
+     timetable was missing it. */
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 20px;
 }
@@ -1022,7 +1217,9 @@ onUnmounted(() => {
 .period-row {
   display: grid;
   grid-template-columns: var(--time-col-width) repeat(7, minmax(0, 1fr));
-  min-height: 50px;
+  /* Single source of truth for the row height. CourseBlock reads the same variable for
+     its own height, so the blocks and the grid can no longer drift apart. */
+  min-height: var(--row-height);
 }
 
 .period-row.section-morning .time-col,
@@ -1290,7 +1487,11 @@ onUnmounted(() => {
 .divider {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  /* A declared height rather than one derived from padding (8px 12px used to make it 29px
+     by accident). CourseBlock adds exactly this much when a block spans across a divider,
+     so the value has to be something both sides can name. */
+  height: var(--divider-height);
+  padding: 0 12px;
   gap: 12px;
 }
 

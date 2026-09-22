@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build Android APK
         uses: ./.github/actions/build-android-apk
@@ -42,35 +42,19 @@ jobs:
           fi
           echo "path=$apk" >> "$GITHUB_OUTPUT"
 
-      # Ephemeral keystore: installable, but signature changes per release.
-      # Later: put a fixed keystore in Secrets for seamless upgrades.
+      # Signs with the project keystore from secrets, so a release can upgrade over the
+      # previous one. Falls back to a throwaway key (with a warning) if the secrets are
+      # missing.
       - name: Sign APK
         id: signed
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          KEYSTORE="${RUNNER_TEMP}/release.jks"
-          STORE_PASS="android"
-          KEY_ALIAS="release"
-          OUT="${RUNNER_TEMP}/course-mngr-${TAG}-arm64.apk"
-
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE" \
-            -alias "$KEY_ALIAS" \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass "$STORE_PASS" -keypass "$STORE_PASS" \
-            -dname "CN=Haust Class Schedule, OU=Release, O=HAUST, L=Luoyang, ST=Henan, C=CN"
-
-          BUILD_TOOLS="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | sort -V | tail -n 1)"
-          "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apksigner" sign \
-            --ks "$KEYSTORE" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:${STORE_PASS}" \
-            --key-pass "pass:${STORE_PASS}" \
-            --out "$OUT" \
-            "${{ steps.apk.outputs.path }}"
-
-          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/sign-android-apk
+        with:
+          unsigned-apk: ${{ steps.apk.outputs.path }}
+          output-apk: ${{ runner.temp }}/course-mngr-${{ github.ref_name }}-arm64.apk
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Prepare release icon
         id: icon
@@ -117,10 +101,10 @@ jobs:
           echo "path=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
-            ${{ steps.signed.outputs.path }}
+            ${{ steps.signed.outputs.signed-apk }}
             ${{ steps.icon.outputs.path }}
           body_path: ${{ steps.changelog.outputs.path }}
           draft: false
