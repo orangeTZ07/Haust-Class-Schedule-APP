@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked, RotateCcw } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked, RotateCcw, History } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -32,6 +32,7 @@ const menuItems = [
   { icon: Upload, label: "导出课表", action: "export" },
   { icon: Palette, label: "样式调整", action: "style" },
   { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
+  { icon: History, label: "恢复到导入时", action: "restore-import" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 

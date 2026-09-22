@@ -39,8 +39,20 @@ let nextScheduleId = 1;
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
   CURRENT_WEEK: "course-mngr-current-week",
-  SEMESTER_START: "course-mngr-semester-start"
+  SEMESTER_START: "course-mngr-semester-start",
+  IMPORT_SNAPSHOT: "course-mngr-import-snapshot"
 };
+
+/// Whether there is a snapshot to fall back to. Read once at load; refreshed whenever an import
+/// captures a new one. Declared here rather than beside the other refs because it reads
+/// STORAGE_KEYS, which is initialised just above.
+const hasImportSnapshot = ref(false);
+try {
+  hasImportSnapshot.value = !!localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT);
+} catch {
+  // Storage unavailable. The restore action then reports that there is nothing to restore, which
+  // is the honest answer.
+}
 
 /// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
 /// because the bare date string is read as UTC midnight and would land a day early in every
@@ -560,6 +572,7 @@ export function useCourses() {
         count++;
       }
 
+      captureImportSnapshot();
       return { success: true, message: `成功导入第 ${currentWeek.value} 周的 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
@@ -590,6 +603,7 @@ export function useCourses() {
       }
 
       setCurrentWeek(1);
+      captureImportSnapshot();
 
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
@@ -620,6 +634,7 @@ export function useCourses() {
         }
       }
 
+      captureImportSnapshot();
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `JSON 解析错误: ${(e as Error).message}`, count: 0 };
@@ -700,7 +715,42 @@ export function useCourses() {
     }
   };
 
-  const parsePeriods = (periodsStr: string): number[] => {    if (typeof periodsStr !== 'string') return [];
+  /// Captures the timetable as it stands, so it can be put back later.
+  ///
+  /// Taken after a successful import, because "how it looked when I first imported it" is the state
+  /// people mean by resetting the timetable. Restoring the view alone cannot bring back a course
+  /// that was deleted, which is what the view reset was mistaken for.
+  ///
+  /// The snapshot is the same JSON the export produces, so restoring reuses the path already
+  /// written and tested rather than a second implementation that could drift from it.
+  const captureImportSnapshot = () => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.IMPORT_SNAPSHOT, exportToJsonBackup());
+      hasImportSnapshot.value = true;
+    } catch {
+      // Storage full or blocked. An unavailable snapshot must not fail the import itself.
+    }
+  };
+
+  /// Puts the timetable back to the last snapshot. Destructive: everything added or changed since
+  /// the import is discarded, so the caller confirms before calling this.
+  const restoreImportSnapshot = async (): Promise<{ success: boolean; message: string }> => {
+    let snapshot = "";
+    try {
+      snapshot = localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT) ?? "";
+    } catch {
+      snapshot = "";
+    }
+    if (!snapshot) {
+      return { success: false, message: "还没有可恢复的导入记录" };
+    }
+
+    const result = await importFromJsonBackup(snapshot);
+    return { success: result.success, message: result.message };
+  };
+
+  const parsePeriods = (periodsStr: string): number[] => {
+    if (typeof periodsStr !== 'string') return [];
     if (periodsStr.includes("-")) {
       const [start, end] = periodsStr.split("-").map(Number);
       return Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -763,6 +813,8 @@ export function useCourses() {
     importFromSemesterCsv,
     importFromJson,
     importFromJsonBackup,
+    hasImportSnapshot,
+    restoreImportSnapshot,
     exportToCsv,
     exportToJsonBackup,
     clearAll,

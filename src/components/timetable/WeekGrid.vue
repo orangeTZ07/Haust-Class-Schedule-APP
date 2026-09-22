@@ -95,18 +95,29 @@ const MAX_GRID_ZOOM = 2.2;
 const ORBIT_OPEN_DURATION_MS = 420;
 const ORBIT_CLOSE_DURATION_MS = 280;
 
-/// Puts the grid back to its default width, and reports whether anything actually changed.
+/// Puts the view back to how it looks on a fresh open, and reports whether anything moved.
 ///
-/// gridZoom is driven by a two-finger pinch and had no way back to 1 other than pinching to
-/// exactly the right distance, so an accidental pinch left the timetable stretched for good. The
-/// horizontal scroll offset is a separate concern: it lives on .grid-container in HomeView, which
-/// resets it alongside this.
+/// Three things can carry the view away from that state, and an earlier revision only knew about
+/// the first two: the pinch zoom, the outer container's horizontal offset, and -- the one people
+/// actually hit -- .body's vertical scroll, since scrolling down to the later periods is the
+/// ordinary way the timetable "moves". Leaving it out meant the reset changed nothing while still
+/// reporting success.
 ///
-/// Returning whether it changed anything lets the caller say "already at the default" instead of
-/// claiming a reset that did nothing -- which is indistinguishable from a dead button.
+/// Returning whether anything changed lets the caller distinguish a real reset from a no-op,
+/// because a no-op and a dead button are otherwise the same message.
 const resetView = (): boolean => {
-  const changed = gridZoom.value !== 1;
+  const body = bodyRef.value;
+  const changed =
+    gridZoom.value !== 1 ||
+    (body?.scrollTop ?? 0) !== 0 ||
+    (body?.scrollLeft ?? 0) !== 0;
+
   gridZoom.value = 1;
+  if (body) {
+    body.scrollTop = 0;
+    body.scrollLeft = 0;
+  }
+
   return changed;
 };
 

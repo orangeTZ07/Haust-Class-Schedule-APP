@@ -14,7 +14,7 @@ import CourseForm from "@/components/course/CourseForm.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
-        periodSlots, addCourse, addSchedule } = useCourses();
+        periodSlots, addCourse, addSchedule, hasImportSnapshot, restoreImportSnapshot } = useCourses();
 
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -92,16 +92,36 @@ const weekGridRef = ref<{ resetView: () => boolean } | null>(null);
 // button is dead" look identical otherwise, and the button did appear dead -- for a different
 // reason, a suppressed click, which made this even harder to read from the outside.
 const resetTimetableView = () => {
-  const wasZoomed = weekGridRef.value?.resetView() ?? false;
-  const wasScrolled = (gridContainerRef.value?.scrollLeft ?? 0) !== 0;
+  // resetView reports the pinch zoom and the timetable's own vertical/horizontal scroll; the outer
+  // container has its own horizontal offset, checked here.
+  const wasMoved = weekGridRef.value?.resetView() ?? false;
+  const wasScrolledOuter = (gridContainerRef.value?.scrollLeft ?? 0) !== 0;
   if (gridContainerRef.value) gridContainerRef.value.scrollLeft = 0;
   showToast({
-    message: wasZoomed || wasScrolled ? "课表视图已重置" : "课表视图已是默认状态",
-    type: wasZoomed || wasScrolled ? "success" : "text"
+    message: wasMoved || wasScrolledOuter ? "课表视图已重置" : "课表视图已是默认状态",
+    type: wasMoved || wasScrolledOuter ? "success" : "text"
   });
 };
 
-const handleSidebarAction = (action: string) => {
+/// Puts the timetable data back to how it was right after the last import.
+///
+/// Kept separate from 重置课表视图 on purpose: that one only moves the view and is harmless, while
+/// this discards everything added or edited since the import. One button cannot be both, and
+/// hiding a destructive action behind the word "reset" is how people lose work.
+const restoreImportedTimetable = async () => {
+  if (!hasImportSnapshot.value) {
+    showToast("还没有可恢复的导入记录，需要先导入一次课表");
+    return;
+  }
+  if (!confirm("恢复到导入时的课表？导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。")) {
+    return;
+  }
+
+  const result = await restoreImportSnapshot();
+  showToast({ message: result.message, type: result.success ? "success" : "fail" });
+};
+
+const handleSidebarAction = async (action: string) => {
   if (action === "import") {
     importVisible.value = true;
   } else if (action === "export") {
@@ -110,6 +130,8 @@ const handleSidebarAction = (action: string) => {
     contactVisible.value = true;
   } else if (action === "reset-view") {
     resetTimetableView();
+  } else if (action === "restore-import") {
+    await restoreImportedTimetable();
   }
   closeSidebar();
 };
