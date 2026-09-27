@@ -6,4 +6,25 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+      These receivers were missing entirely, which is why reminders never fired: Android never
+      instantiates a component that is not declared here, so the PendingIntent AlarmScheduler
+      builds had nothing to deliver to. The names are fully qualified rather than relative
+      because a leading dot resolves against the merged manifest's package, which is not this
+      module's namespace.
+    -->
+    <application>
+        <receiver
+            android:name="com.coursemngr.reminder.AlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.coursemngr.reminder.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

@@ -30,10 +30,18 @@ const props = withDefaults(defineProps<{
   allowDrag?: boolean;
   allowExpand?: boolean;
   showConflictTag?: boolean;
+  /// Number of 午休 / 晚饭 dividers strictly inside this block's span. They occupy vertical
+  /// space between the rows, so a block spanning one would otherwise end short of the next
+  /// row's top edge.
+  dividers?: number;
+  /// Playing the delete animation: shrink away and ignore input until the row is gone.
+  deleting?: boolean;
 }>(), {
   allowDrag: true,
   allowExpand: true,
-  showConflictTag: true
+  showConflictTag: true,
+  dividers: 0,
+  deleting: false
 });
 
 const emit = defineEmits<{
@@ -183,7 +191,14 @@ const style = computed(() => {
   }
 
   return {
-    height: `${baseHeight}px`,
+    // Derived from the shared --row-height variable rather than the bare 50px literal it
+    // used to be. `.period-row` is `min-height: var(--row-height)`, i.e. a minimum it can
+    // grow past, so two independent literals drifted apart and the blocks stopped lining
+    // up with the grid (the reported "边框错位"). Floating/orbit cards keep the measured
+    // pixel height, which is what their motion math needs.
+    height: props.floatingFrame
+      ? `${baseHeight}px`
+      : `calc(var(--row-height, 50px) * ${props.span || 1} + ${props.dividers || 0} * var(--divider-height, 29px) - 4px)`,
     width: normalWidth,
     left: normalLeft,
     top: props.floatingFrame ? `${props.floatingFrame.top}px` : '2px',
@@ -212,7 +227,7 @@ const periodText = computed(() => {
     ref="blockRef"
     class="course-block" 
     :data-schedule-id="schedule.id"
-    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1 }"
+    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting }"
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
@@ -250,13 +265,30 @@ const periodText = computed(() => {
   line-height: 1.3;
   overflow: hidden;
   cursor: pointer;
-  touch-action: none;
+  /* pan-y, not none: blocks cover nearly the whole timetable, so `none` meant a
+     single-finger swipe that started on a course could not scroll the page at all.
+     Vertical panning now always belongs to the browser; long-press still starts a
+     drag (see armLongPressDrag in WeekGrid.vue). */
+  touch-action: pan-y;
   user-select: none;
   transition: 
     all 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     z-index 0s 0.3s;
   display: flex;
   flex-direction: column;
+}
+
+/* Shrink away over the same 240ms WeekGrid waits before it drops the row, so the block leaves
+   visibly instead of vanishing between frames. !important is required because the drag offset
+   is written into the element's inline transform, which otherwise wins over this rule. */
+.course-block.is-deleting {
+  transform: scale(0.5) !important;
+  opacity: 0;
+  transition:
+    transform 0.24s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.24s ease;
+  pointer-events: none;
+  z-index: 300;
 }
 
 .course-accent {
@@ -266,8 +298,7 @@ const periodText = computed(() => {
   left: 4px;
   width: 3px;
   border-radius: 999px;
-  opacity: 0.72;
-}
+  opacity: 0.72;}
 
 .course-block.is-conflicting {
   padding-right: 20px;

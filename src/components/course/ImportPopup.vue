@@ -4,7 +4,7 @@ import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
 import { useLearningPlan } from "@/composables/useLearningPlan";
 import { useTheme } from "@/composables/useTheme";
-import { Copy, X, Check, ChevronDown, ChevronUp, HelpCircle, RefreshCcw, Plus, CalendarDays } from '@lucide/vue';
+import { Copy, X, Check, ChevronDown, ChevronUp, HelpCircle, RefreshCcw, Plus, CalendarDays, Database } from '@lucide/vue';
 
 const props = defineProps<{
   show: boolean;
@@ -14,16 +14,20 @@ const emit = defineEmits<{
   "update:show": [value: boolean];
 }>();
 
-const { importFromCsv, importFromSemesterCsv, currentWeek } = useCourses();
+const { importFromCsv, importFromSemesterCsv, importFromJsonBackup, currentWeek } = useCourses();
 const { preference, hasPreference } = useLearningPlan();
 const { cssVariables, isDark } = useTheme();
 
 const csvInput = ref("");
 const showGuide = ref(false);
 const isOverwrite = ref(true);
-const importKind = ref<"weekly" | "semester">("weekly");
+const importKind = ref<"weekly" | "semester" | "backup">("weekly");
 
 const modeHelpText = computed(() => {
+  if (importKind.value === "backup") {
+    return "恢复备份会用备份内容整体替换当前课程表的课程与课段，包含按周覆盖层与单双周设置。原数据不再保留，且无法撤销。";
+  }
+
   if (importKind.value === "weekly") {
     if (isOverwrite.value) {
       return `覆盖导入会重写第 ${currentWeek.value} 周的覆盖层，学期基础课表会保留。`;
@@ -99,8 +103,14 @@ const activePrompt = computed(() => {
   const basePrompt = importKind.value === "weekly" ? weeklyPrompt : semesterPrompt;
   return `${basePrompt}${learningPlanPrompt.value}`;
 });
-const cardTitle = computed(() => importKind.value === "weekly" ? `AI 按周导入 · 第 ${currentWeek.value} 周` : "AI 按学期导入");
-const pastePlaceholder = computed(() => importKind.value === "weekly" ? "在此粘贴按周 CSV..." : "在此粘贴按学期 CSV...");
+const cardTitle = computed(() => {
+  if (importKind.value === "backup") return "从 JSON 备份恢复";
+  return importKind.value === "weekly" ? `AI 按周导入 · 第 ${currentWeek.value} 周` : "AI 按学期导入";
+});
+const pastePlaceholder = computed(() => {
+  if (importKind.value === "backup") return "在此粘贴「完整 JSON」备份内容...";
+  return importKind.value === "weekly" ? "在此粘贴按周 CSV..." : "在此粘贴按学期 CSV...";
+});
 
 const copyPrompt = async () => {
   try {
@@ -117,9 +127,19 @@ const handleImport = async () => {
     return;
   }
 
+  if (importKind.value === "backup") {
+    // The restore replaces everything and there is no undo, so say so while the user can still
+    // back out -- rather than letting them find out afterwards.
+    if (!confirm("恢复备份会清空当前课程表，再写入备份内容，此操作无法撤销。确定继续？")) {
+      return;
+    }
+  }
+
   const result = importKind.value === "weekly"
     ? await importFromCsv(csvInput.value, isOverwrite.value)
-    : await importFromSemesterCsv(csvInput.value, isOverwrite.value);
+    : importKind.value === "semester"
+      ? await importFromSemesterCsv(csvInput.value, isOverwrite.value)
+      : await importFromJsonBackup(csvInput.value);
 
   if (result.success) {
     showToast({ message: result.message, type: "success" });
@@ -170,9 +190,17 @@ const handleImport = async () => {
             <CalendarDays :size="14" />
             <span>按学期</span>
           </button>
+          <button
+            class="kind-option haptics"
+            :class="{ active: importKind === 'backup' }"
+            @click="importKind = 'backup'"
+          >
+            <Database :size="14" />
+            <span>恢复备份</span>
+          </button>
         </div>
 
-        <div class="main-step">
+        <div v-if="importKind !== 'backup'" class="main-step">
           <div class="step-label">
             <span class="dot"></span>
             <span>1. 复制给 AI 的指令</span>
@@ -185,7 +213,7 @@ const handleImport = async () => {
           </div>
         </div>
 
-        <div class="guide-toggle haptics" @click="showGuide = !showGuide">
+        <div v-if="importKind !== 'backup'" class="guide-toggle haptics" @click="showGuide = !showGuide">
           <HelpCircle :size="14" style="margin-right: 4px; opacity: 0.5;" />
           <span>{{ showGuide ? '收起说明' : '如何使用？' }}</span>
           <component :is="showGuide ? ChevronUp : ChevronDown" :size="14" style="margin-left: 2px;" />
@@ -201,7 +229,7 @@ const handleImport = async () => {
         <div class="main-step">
           <div class="step-label">
             <span class="dot"></span>
-            <span>2. 粘贴结果</span>
+            <span>{{ importKind === 'backup' ? '粘贴备份内容' : '2. 粘贴结果' }}</span>
           </div>
           <div class="inset-box">
             <van-field
@@ -215,9 +243,9 @@ const handleImport = async () => {
           </div>
         </div>
 
-        <!-- 导入模式选择 -->
+        <!-- 导入模式选择（恢复备份时固定为整体替换，无需选择） -->
         <div class="mode-section">
-          <div class="import-mode-selector">
+          <div v-if="importKind !== 'backup'" class="import-mode-selector">
             <div 
               class="mode-option" 
               :class="{ active: isOverwrite }" 
@@ -244,7 +272,7 @@ const handleImport = async () => {
       <div class="minimal-actions">
         <button class="minimal-primary-btn haptics" @click="handleImport">
           <Check :size="18" style="margin-right: 6px;" />
-          同步到课表
+          {{ importKind === 'backup' ? '确认恢复' : '同步到课表' }}
         </button>
       </div>
     </div>

@@ -27,13 +27,40 @@ const courseTables = ref<CourseTable[]>([]);
 const activeCourseTableId = ref<number>(1);
 const periodConfig = ref<PeriodTimeConfig>({ ...defaultConfig });
 const currentWeek = ref(1);
+/// Monday of week 1, as "YYYY-MM-DD". 2026-08-31 is the start of this institution's
+/// 2026-2027 first semester -- it is what makes week 4 read 09-21..09-27 -- and it is only a
+/// starting point: 设置 -> 网格设置 lets it be changed, and the value is persisted.
+const DEFAULT_SEMESTER_START = "2026-08-31";
+const semesterStartDate = ref(DEFAULT_SEMESTER_START);
 
 let nextCourseId = 1;
 let nextScheduleId = 1;
 
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
-  CURRENT_WEEK: "course-mngr-current-week"
+  CURRENT_WEEK: "course-mngr-current-week",
+  SEMESTER_START: "course-mngr-semester-start",
+  IMPORT_SNAPSHOT: "course-mngr-import-snapshot"
+};
+
+/// Whether there is a snapshot to fall back to. Read once at load; refreshed whenever an import
+/// captures a new one. Declared here rather than beside the other refs because it reads
+/// STORAGE_KEYS, which is initialised just above.
+const hasImportSnapshot = ref(false);
+try {
+  hasImportSnapshot.value = !!localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT);
+} catch {
+  // Storage unavailable. The restore action then reports that there is nothing to restore, which
+  // is the honest answer.
+}
+
+/// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
+/// because the bare date string is read as UTC midnight and would land a day early in every
+/// timezone behind UTC -- which would show the wrong date to exactly the users who set it.
+const parseIsoDate = (iso: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 };
 
 const getScheduleScope = (schedule: CourseSchedule) => schedule.scope ?? "semester";
@@ -87,6 +114,11 @@ async function loadDataFromDb() {
     if (Number.isFinite(savedCurrentWeek) && savedCurrentWeek > 0) {
       currentWeek.value = savedCurrentWeek;
     }
+
+    const savedSemesterStart = localStorage.getItem(STORAGE_KEYS.SEMESTER_START);
+    if (savedSemesterStart) {
+      semesterStartDate.value = savedSemesterStart;
+    }
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
   }
@@ -105,6 +137,50 @@ export function useCourses() {
     localStorage.setItem(STORAGE_KEYS.CURRENT_WEEK, String(currentWeek.value));
   });
 
+  watch(semesterStartDate, () => {
+    localStorage.setItem(STORAGE_KEYS.SEMESTER_START, semesterStartDate.value);
+  });
+
+  /// "MM-DD" for each of the seven columns of the week on screen, Monday first, or nulls when
+  /// the semester start is unusable. Computed from the week number rather than stored, so the
+  /// dates follow the week selector instead of having to be kept in sync with it.
+  const weekDateLabels = computed<(string | null)[]>(() => {
+    const start = parseIsoDate(semesterStartDate.value);
+    return Array.from({ length: 7 }, (_, index) => {
+      if (!start) return null;
+      const date = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() + (currentWeek.value - 1) * 7 + index
+      );
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${month}-${day}`;
+    });
+  });
+
+  const setSemesterStartDate = (iso: string) => {
+    semesterStartDate.value = iso;
+  };
+
+  /// Which semester week a date falls in, or null when the semester start is missing or the date
+  /// precedes it.
+  ///
+  /// Counted in whole local days rather than by dividing timestamps: across a daylight-saving
+  /// change a calendar day is not 24 hours, so a raw millisecond division lands on the wrong week
+  /// for part of the year. Rounding after subtracting two local midnights absorbs that hour.
+  const weekNumberForDate = (date: Date): number | null => {
+    const start = parseIsoDate(semesterStartDate.value);
+    if (!start) return null;
+
+    const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const to = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const days = Math.round((to.getTime() - from.getTime()) / 86400000);
+    if (days < 0) return null;
+
+    return Math.floor(days / 7) + 1;
+  };
+
   const semesterWeekCount = computed(() => {
     const maxImportedWeek = schedules.value.reduce((max, schedule) => Math.max(max, schedule.endWeek), 0);
     return Math.max(maxImportedWeek, 20);
@@ -114,10 +190,14 @@ export function useCourses() {
     return schedules.value.filter(schedule => getScheduleScope(schedule) === "semester");
   });
 
-  const effectiveSchedules = computed(() => {
-    const baseSchedules = semesterSchedules.value.filter(schedule => isScheduleActiveInWeek(schedule, currentWeek.value));
+  /// The schedules that actually apply in a given week, with weekly overrides suppressing the
+  /// semester entries they replace. effectiveSchedules is this for the displayed week, but the
+  /// reminder scheduler needs arbitrary weeks: a seven-day window starting today does not line up
+  /// with whichever week happens to be on screen.
+  const getSchedulesForWeek = (week: number): CourseSchedule[] => {
+    const baseSchedules = semesterSchedules.value.filter(schedule => isScheduleActiveInWeek(schedule, week));
     const weeklySchedules = schedules.value.filter(schedule => {
-      return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, currentWeek.value);
+      return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, week);
     });
 
     const suppressedBaseIds = new Set(
@@ -135,7 +215,9 @@ export function useCourses() {
         a.endPeriod - b.endPeriod ||
         a.id - b.id;
     });
-  });
+  };
+
+  const effectiveSchedules = computed(() => getSchedulesForWeek(currentWeek.value));
 
   const activeCourseTable = computed(() => {
     return courseTables.value.find(table => table.id === activeCourseTableId.value) || courseTables.value[0] || null;
@@ -149,13 +231,18 @@ export function useCourses() {
     setCurrentWeek(currentWeek.value + offset);
   };
 
-  const getPeriodTime = (period: number): string => {
+  /// Minutes past midnight at which a period begins, or null when the period is outside the
+  /// current period configuration. Split out from getPeriodTime so the reminder scheduler can
+  /// place an alarm at a real clock time without parsing the "08:00-08:45" display string.
+  const getPeriodStartMinutes = (period: number): number | null => {
     const config = periodConfig.value;
+    const totalPeriods = config.morningPeriods + config.afternoonPeriods + (config.eveningPeriods || 0);
+    if (!Number.isFinite(period) || period < 1 || period > totalPeriods) return null;
+
     const [morningH, morningM] = config.morningStart.split(":").map(Number);
     const [afternoonH, afternoonM] = config.afternoonStart.split(":").map(Number);
     const [eveningH, eveningM] = (config.eveningStart || "19:00").split(":").map(Number);
 
-    let startTimeMinutes: number;
     let sectionStartTime: number;
     let localPeriod: number;
 
@@ -172,10 +259,15 @@ export function useCourses() {
 
     const bigBlocks = Math.floor((localPeriod - 1) / 2);
     const isSecondInBlock = (localPeriod - 1) % 2 === 1;
-    
-    startTimeMinutes = sectionStartTime + 
+
+    return sectionStartTime +
       bigBlocks * (config.periodDuration * 2 + config.breakDuration + config.longBreakDuration) +
       (isSecondInBlock ? (config.periodDuration + config.breakDuration) : 0);
+  };
+
+  const getPeriodTime = (period: number): string => {
+    const startTimeMinutes = getPeriodStartMinutes(period);
+    if (startTimeMinutes === null) return "";
 
     const format = (minutes: number) => {
       const h = Math.floor(minutes / 60).toString().padStart(2, "0");
@@ -183,7 +275,7 @@ export function useCourses() {
       return `${h}:${m}`;
     };
 
-    return `${format(startTimeMinutes)}-${format(startTimeMinutes + config.periodDuration)}`;
+    return `${format(startTimeMinutes)}-${format(startTimeMinutes + periodConfig.value.periodDuration)}`;
   };
 
   const periodSlots = computed(() => {
@@ -229,13 +321,15 @@ export function useCourses() {
     return result;
   };
 
-  const addCourse = async (name: string, teacher?: string, location?: string): Promise<Course> => {
+  // color is optional and only supplied when restoring a backup, so that a course comes back
+  // the colour it was. Every other caller still gets the next palette entry.
+  const addCourse = async (name: string, teacher?: string, location?: string, color?: string): Promise<Course> => {
     const colorIndex = courses.value.length % COLORS.length;
     const courseData = {
       name,
       teacher,
       location,
-      color: COLORS[colorIndex]
+      color: color || COLORS[colorIndex]
     };
     
     const id = await courseService.addCourse(courseData);
@@ -478,6 +572,7 @@ export function useCourses() {
         count++;
       }
 
+      captureImportSnapshot();
       return { success: true, message: `成功导入第 ${currentWeek.value} 周的 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
@@ -508,6 +603,7 @@ export function useCourses() {
       }
 
       setCurrentWeek(1);
+      captureImportSnapshot();
 
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
@@ -538,10 +634,119 @@ export function useCourses() {
         }
       }
 
+      captureImportSnapshot();
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `JSON 解析错误: ${(e as Error).message}`, count: 0 };
     }
+  };
+
+  /// Restores a 完整 JSON 备份 written by exportToJsonBackup.
+  ///
+  /// Deliberately not importFromJson: that one parses the flat array of {name, day, periods}
+  /// items the AI prompt emits. A backup is an object holding full Course and CourseSchedule
+  /// records, including everything the flat shape cannot express -- startWeek, endWeek,
+  /// weekType, scope and isCancelled -- which is precisely the per-week override data a user
+  /// would be most upset to lose. Feeding a backup to importFromJson fails outright with
+  /// "JSON 必须是数组格式", so the export had no way back at all.
+  ///
+  /// Courses are re-created through addCourse, which allocates fresh ids, so schedules are
+  /// re-pointed through a map from the backup's ids to the new ones. Skipping that would
+  /// attach each schedule to whichever course happened to share the number.
+  const importFromJsonBackup = async (
+    jsonStr: string
+  ): Promise<{ success: boolean; message: string; count: number }> => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          success: false,
+          message: "这不是备份：顶层应是含 courses 与 schedules 的对象。如果是一组 AI 生成的课表条目，请用上面的按周 / 按学期导入。",
+          count: 0
+        };
+      }
+
+      const backupCourses: Course[] = Array.isArray(parsed.courses) ? parsed.courses : [];
+      const backupSchedules: CourseSchedule[] = Array.isArray(parsed.schedules) ? parsed.schedules : [];
+      if (backupCourses.length === 0) {
+        return { success: false, message: "备份里没有课程数据", count: 0 };
+      }
+
+      // Replace rather than merge: restoring a backup should leave the timetable as it was,
+      // and merging would leave duplicates behind. The caller confirms before we get here.
+      await clearAll();
+
+      const idMap = new Map<number, number>();
+      let courseCount = 0;
+      for (const course of backupCourses) {
+        const newId = (await addCourse(course.name ?? "未命名课程", course.teacher, course.location, course.color)).id;
+        courseCount++;
+        // Only courses that carried an id can be remapped. Counting through the map instead of
+        // here would report "restored 0 courses" for a backup whose courses have no ids, even
+        // though they were created.
+        if (typeof course.id === "number") idMap.set(course.id, newId);
+      }
+
+      let scheduleCount = 0;
+      for (const schedule of backupSchedules) {
+        const newCourseId = idMap.get(schedule.courseId);
+        if (newCourseId === undefined) continue;
+        await addSchedule(newCourseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, {
+          startWeek: schedule.startWeek,
+          endWeek: schedule.endWeek,
+          weekType: schedule.weekType,
+          scope: schedule.scope,
+          isCancelled: schedule.isCancelled
+        });
+        scheduleCount++;
+      }
+
+      // Report dropped rows rather than swallowing them: a restore that quietly loses part of
+      // the data is worse than one that says what it could not place.
+      const dropped = backupSchedules.length - scheduleCount;
+      return {
+        success: true,
+        message: `已恢复 ${courseCount} 门课程、${scheduleCount} 条课段` +
+          (dropped > 0 ? `，跳过 ${dropped} 条找不到对应课程的课段` : ""),
+        count: courseCount
+      };
+    } catch (e) {
+      return { success: false, message: `恢复失败: ${(e as Error).message}`, count: 0 };
+    }
+  };
+
+  /// Captures the timetable as it stands, so it can be put back later.
+  ///
+  /// Taken after a successful import, because "how it looked when I first imported it" is the state
+  /// people mean by resetting the timetable. Restoring the view alone cannot bring back a course
+  /// that was deleted, which is what the view reset was mistaken for.
+  ///
+  /// The snapshot is the same JSON the export produces, so restoring reuses the path already
+  /// written and tested rather than a second implementation that could drift from it.
+  const captureImportSnapshot = () => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.IMPORT_SNAPSHOT, exportToJsonBackup());
+      hasImportSnapshot.value = true;
+    } catch {
+      // Storage full or blocked. An unavailable snapshot must not fail the import itself.
+    }
+  };
+
+  /// Puts the timetable back to the last snapshot. Destructive: everything added or changed since
+  /// the import is discarded, so the caller confirms before calling this.
+  const restoreImportSnapshot = async (): Promise<{ success: boolean; message: string }> => {
+    let snapshot = "";
+    try {
+      snapshot = localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT) ?? "";
+    } catch {
+      snapshot = "";
+    }
+    if (!snapshot) {
+      return { success: false, message: "还没有可恢复的导入记录" };
+    }
+
+    const result = await importFromJsonBackup(snapshot);
+    return { success: result.success, message: result.message };
   };
 
   const parsePeriods = (periodsStr: string): number[] => {
@@ -589,6 +794,12 @@ export function useCourses() {
     currentWeek,
     semesterWeekCount,
     setCurrentWeek,
+    semesterStartDate,
+    setSemesterStartDate,
+    weekDateLabels,
+    weekNumberForDate,
+    getSchedulesForWeek,
+    getPeriodStartMinutes,
     shiftCurrentWeek,
     getDaySchedules,
     getCellCourses,
@@ -601,6 +812,9 @@ export function useCourses() {
     importFromCsv,
     importFromSemesterCsv,
     importFromJson,
+    importFromJsonBackup,
+    hasImportSnapshot,
+    restoreImportSnapshot,
     exportToCsv,
     exportToJsonBackup,
     clearAll,

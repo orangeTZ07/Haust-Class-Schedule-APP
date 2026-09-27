@@ -104,7 +104,11 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  /* env(safe-area-inset-top) comes back as 0 inside the Android WebView, so the bar sat 12px
+     from the screen edge and its controls ended up underneath the status bar, where the
+     system swallows the tap -- 第几周 and the menu were awkward or impossible to hit. The
+     floor keeps them reachable; max() still honours a real inset when one is reported. */
+  padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 26px));
   background: color-mix(in srgb, var(--theme-header-bg) 85%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -154,7 +158,7 @@ onBeforeUnmount(() => {
 .week-switcher {
   position: absolute;
   left: 50%;
-  top: calc(12px + env(safe-area-inset-top, 0px));
+  top: calc(12px + max(env(safe-area-inset-top, 0px), 26px));
   transform: translateX(-50%);
   height: 34px;
   display: flex;
@@ -242,8 +246,10 @@ onBeforeUnmount(() => {
 }
 
 .trash-target {
-  width: 36px;
-  height: 36px;
+  /* 36px was a small target for a finger and it is also the visual promise the drop test
+     keeps (see TRASH_TARGET_SLOP in WeekGrid.vue). */
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
   background: color-mix(in srgb, var(--theme-header-bg) 74%, transparent);
