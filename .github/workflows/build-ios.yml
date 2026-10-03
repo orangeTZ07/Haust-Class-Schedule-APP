@@ -1,0 +1,55 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Xcode build configuration.
+        required: false
+        default: Release
+        type: choice
+        options: [Release, Debug]
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Status check name in GitHub: "iOS"
+  # Use this exact name when configuring branch rulesets.
+  ios:
+    name: iOS
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build iOS IPA
+        id: build
+        uses: ./.github/actions/build-ios-ipa
+        # github.event.inputs, not inputs: the `inputs` context only exists for
+        # workflow_dispatch / workflow_call, so a push-triggered run fails validation with
+        # "Unrecognized named-value: 'inputs'" and dies in seconds. The event payload exists on
+        # every trigger and is simply empty on push, which falls through to the default.
+        with:
+          configuration: ${{ github.event.inputs.configuration || 'Release' }}
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: course-mngr-ios-${{ github.run_number }}
+          path: ${{ steps.build.outputs.ipa-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # The artifact is unsigned on purpose: signing needs an Apple Developer certificate,
+      # which CI does not have. It has to be re-signed before a device will accept it --
+      # Sideloadly or AltStore with a free Apple ID does that, and a free-account signature
+      # expires after 7 days. Without this note the artifact looks installable and is not.
+      - name: Note on signing
+        run: |
+          echo "::notice::Built ${{ steps.build.outputs.app-name }} unsigned. Re-sign with Sideloadly/AltStore (free Apple ID, 7-day expiry) before installing."
