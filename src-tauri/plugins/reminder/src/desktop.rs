@@ -18,7 +18,7 @@ pub fn init<R: Runtime, C: serde::de::DeserializeOwned>(
 }
 
 pub struct Reminder<R: Runtime> {
-    _runtime: std::marker::PhantomData<R>,
+    _runtime: std::marker::PhantomData<fn() -> R>,
 }
 
 const UNSUPPORTED: &str = "上课提醒仅在 Android 上可用";
