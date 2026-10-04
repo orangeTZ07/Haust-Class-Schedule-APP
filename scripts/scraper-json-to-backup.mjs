@@ -135,10 +135,23 @@ const convert = (rows) => {
     const name = asText(row.course_name) || "未命名课程";
     const teacher = asText(row.teacher);
     const room = asText(row.room);
-    const key = `${name}\u0000${teacher}\u0000${room}`;
 
-    if (!groups.has(key)) groups.set(key, { name, teacher, room, rows: [] });
-    groups.get(key).rows.push({ day, start, end, weeks: row.weeks });
+    // 只按**课名**分组。教室和教师都不进分组键，两个原因都来自真实数据：
+    //
+    //   1. 教室：数据库原理有 11 条活动、散在 10 个教室；按教室分组会让它变成 11 门同名课。
+    //   2. 教师：同一门课的不同活动本来就可能挂不同教师（不同周次/教室由不同老师上）。
+    //      数据库原理的 11 条活动挂了 6 位教师，按教师分组会变成 6 门。
+    //
+    // 应用的数据模型里 location 和 teacher 都挂在 Course 上、日程上没有，所以这两项只能各取
+    // 一个代表值。取"出现次数最多的"，并在报告里说明有分歧的课 —— 丢掉换教室/换老师的细节，
+    // 也远好过把一门课变成十几门。
+    const key = name;
+
+    if (!groups.has(key)) groups.set(key, { name, teachers: new Map(), rooms: new Map(), rows: [] });
+    const group = groups.get(key);
+    if (teacher) group.teachers.set(teacher, (group.teachers.get(teacher) ?? 0) + 1);
+    if (room) group.rooms.set(room, (group.rooms.get(room) ?? 0) + 1);
+    group.rows.push({ day, start, end, weeks: row.weeks });
   });
 
   const courses = [];
@@ -148,11 +161,32 @@ const convert = (rows) => {
 
   for (const group of groups.values()) {
     const courseId = nextCourseId++;
+
+    // 出现次数最多的教室/教师。平手时取名字排序靠前的，保证同样的输入总是得到同样的输出。
+    const rank = (map) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const rankedRooms = rank(group.rooms);
+    const rankedTeachers = rank(group.teachers);
+    const primaryRoom = rankedRooms.length ? rankedRooms[0][0] : "";
+    const primaryTeacher = rankedTeachers.length ? rankedTeachers[0][0] : "";
+
+    if (rankedRooms.length > 1) {
+      notes.push(
+        `「${group.name}」在 ${rankedRooms.length} 个教室上过课（${rankedRooms.map(([r, n]) => `${r}×${n}`).join("、")}），` +
+        `地点取了最多的「${primaryRoom}」。`
+      );
+    }
+    if (rankedTeachers.length > 1) {
+      notes.push(
+        `「${group.name}」有 ${rankedTeachers.length} 位教师（${rankedTeachers.map(([t, n]) => `${t}×${n}`).join("、")}），` +
+        `教师取了最多的「${primaryTeacher}」。`
+      );
+    }
+
     courses.push({
       id: courseId,
       name: group.name,
-      teacher: group.teacher || undefined,
-      location: group.room || undefined
+      teacher: primaryTeacher || undefined,
+      location: primaryRoom || undefined
       // 不给 color：留空时应用会按调色板自动分配，和手动导入的效果一致。
     });
 
