@@ -653,8 +653,20 @@ export function useCourses() {
   /// Courses are re-created through addCourse, which allocates fresh ids, so schedules are
   /// re-pointed through a map from the backup's ids to the new ones. Skipping that would
   /// attach each schedule to whichever course happened to share the number.
+  /// 从备份 JSON 恢复。
+  ///
+  /// `capture` 控制**恢复成功后要不要更新"导入时快照"**，默认要（与 CSV 导入一致）。
+  ///
+  /// 这个开关是修一个真实的数据丢失问题加上的：原先只有 CSV 导入会记录快照，
+  /// `importFromJsonBackup` 不记录 —— 于是"导入一份备份"**不会**建立新的存档点，
+  /// 快照还停留在上一次 CSV 导入的状态（甚至可能是空的）。用户再点「恢复到导入时」，
+  /// 就会用那份陈旧快照覆盖掉刚导入的备份 —— 而用户的意图恰恰是"导入备份 = 存一个安全点"。
+  ///
+  /// 但「恢复到导入时」自己也会走到这里，那一次**不能**记录：恢复可能是有损的
+  /// （备份里有对不上课程的课段会被跳过），若拿恢复结果反过来覆盖快照，快照会一次比一次差。
   const importFromJsonBackup = async (
-    jsonStr: string
+    jsonStr: string,
+    options: { capture?: boolean } = {}
   ): Promise<{ success: boolean; message: string; count: number }> => {
     try {
       const parsed = JSON.parse(jsonStr);
@@ -704,6 +716,10 @@ export function useCourses() {
       // Report dropped rows rather than swallowing them: a restore that quietly loses part of
       // the data is worse than one that says what it could not place.
       const dropped = backupSchedules.length - scheduleCount;
+
+      // 导入成功之后才记录快照 —— 与 CSV 导入的位置一致，失败路径一概不记录。
+      if (options.capture !== false) captureImportSnapshot();
+
       return {
         success: true,
         message: `已恢复 ${courseCount} 门课程、${scheduleCount} 条课段` +
@@ -734,6 +750,10 @@ export function useCourses() {
 
   /// Puts the timetable back to the last snapshot. Destructive: everything added or changed since
   /// the import is discarded, so the caller confirms before calling this.
+  ///
+  /// 恢复时传 `capture: false`：**不要把恢复结果当成新的存档点**。恢复可能是有损的
+  /// （备份里对不上课程的课段会被跳过），如果拿它反过来覆盖快照，快照会一次比一次差，
+  /// 最后"恢复到导入时"就再也回不到用户当初导入的那份课表了。
   const restoreImportSnapshot = async (): Promise<{ success: boolean; message: string }> => {
     let snapshot = "";
     try {
@@ -745,7 +765,7 @@ export function useCourses() {
       return { success: false, message: "还没有可恢复的导入记录" };
     }
 
-    const result = await importFromJsonBackup(snapshot);
+    const result = await importFromJsonBackup(snapshot, { capture: false });
     return { success: result.success, message: result.message };
   };
 
