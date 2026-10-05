@@ -1,6 +1,7 @@
 import { ref, watch } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { cancelReminder, setReminder } from "@/services/reminderService";
+import { describeError } from "@/utils/describeError";
 
 /// 只排未来这么多天。一周七天里，同一门课恰好出现一次，而 Kotlin 侧是用 schedule id 作为
 /// PendingIntent 的 request code —— 也就是「一个日程只能挂一个闹钟」。两者刚好对上，所以七天
@@ -125,8 +126,10 @@ export function useReminder() {
           scheduled.push(schedule.id);
         } catch (e) {
           // Keep the first failure rather than dropping it; the caller shows it verbatim.
+          // 用 describeError 而不是 `(e as Error).message`：Tauri 拒绝 Promise 时给的是错误值
+          // 本身（对 Err(String) 就是字符串），取 .message 会得到 undefined，把真实原因吞掉。
           if (!firstError) {
-            firstError = (e as Error)?.message || String(e);
+            firstError = describeError(e);
           }
         }
       }
