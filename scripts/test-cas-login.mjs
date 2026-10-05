@@ -213,7 +213,7 @@ console.log("=== 6. 已经登录过的情况：不能再被误报成「页面结
   const trace = [];
   const r = await mod.casLogin(fakeDeps2, jar3, "u", "p", trace);
   check("★ 落在门户上 -> 判定为已登录（不是报错）", r.ok === true, r);
-  check("★ 且没有去提交表单", trace.length === 1, trace.map((t) => t.step));
+  check("★ 且没有去提交表单（轨迹里只有取页 + 判断两条）", trace.length === 2 && !trace.some((t) => t.step.includes("提交")), trace.map((t) => t.step));
   check("轨迹里记下了实际拿到的标题", trace[0]?.title === "河南科技大学", trace[0]?.title);
 }
 
