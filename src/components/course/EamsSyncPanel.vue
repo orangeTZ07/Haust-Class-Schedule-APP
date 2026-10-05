@@ -69,7 +69,11 @@ const sync = async () => {
 
     if (!result.ok) {
       messageKind.value = "err";
-      message.value = describeFailure(result);
+      // **把诊断信息一起显示出来。** 之前只显示 message，detail 被丢掉了 —— 而真正有用的是
+      // detail：服务端的原话、HTTP 状态、最终地址。第一版的归类还把一个"页面里存在验证码变量"
+      // 误判成"需要验证码"，于是用户照着错误提示试了三种办法都没用。信息必须完整地给出来。
+      const detail = result.detail ? `\n\n诊断信息（请把这部分发给我）：\n${result.detail}` : "";
+      message.value = describeFailure(result) + detail;
       return;
     }
 

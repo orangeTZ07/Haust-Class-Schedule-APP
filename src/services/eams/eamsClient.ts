@@ -86,7 +86,11 @@ export const fetchTimetable = async (
     };
   }
 
-  const authHeaders = () => ({ Cookie: jar.header() });
+  // 不手动传 Cookie 头：Tauri 的 http 插件按 fetch 规范把它列为「禁止的请求头」并静默丢弃，
+  // 写了也是无用功。会话由插件的 cookie 罐（Cargo 默认特性 cookies）维持。
+  // 这里仍然保留 CookieJar 的 absorb 调用，是因为它能读到 Set-Cookie 时至少无害，且回放测试
+  // 需要它来验证"我们确实把同一个会话串下来了"。真正起作用的是插件那一侧。
+  const authHeaders = () => ({});
 
   // ---- 2. SSO 进教务系统 ----
   const sso = await deps.http.request(`${JWC_BASE}/sso/login.action`, { headers: authHeaders() });

@@ -145,10 +145,10 @@ console.log("=== 1. 完整同步（回放真实响应）===");
   }
 
   check("请求顺序合理：先探连通再登录", seen[0]?.url.includes("/eams/login.action"), seen[0]?.url);
-  check("登录后的请求都带上了 cookie", (() => {
-    const afterLogin = seen.slice(seen.findIndex((s) => s.method === "POST") + 1);
-    return afterLogin.length > 0 && afterLogin.every((s) => s.cookie.includes("JSESSIONID"));
-  })(), seen.map((s) => `${s.method} ${s.cookie || "(无cookie)"}`).slice(0, 6));
+  // **不**手动发 Cookie 头 —— Tauri 的 http 插件按 fetch 规范把它列为禁止的请求头并静默丢弃，
+  // 所以写了也是无用功（这一点是查插件 Rust 源码确认的，不是猜的）。会话由插件的 cookie 罐维持。
+  check("没有手动发 Cookie 头（发了也会被静默丢弃）", seen.every((s) => !s.cookie), seen.filter((s) => s.cookie).map((s) => s.url));
+  check("登录后的请求确实发生了", seen.filter((s) => s.url.includes("/eams/")).length >= 3, seen.length);
 }
 
 console.log("");

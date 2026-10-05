@@ -62,8 +62,16 @@ if (!live.body) {
     check("没有误取 drcom 那套", form.fields["_eventId"] !== "submitDrcomIPLogin");
     check("没有误取免密那套", form.fields["_eventId"] !== "submitPasswordlessToken");
     check("字段里含 username 与 password", "username" in form.fields && "password" in form.fields);
-    check("字段数量 > 5（说明是真的照搬了整个表单）", Object.keys(form.fields).length > 5, Object.keys(form.fields));
-    console.log("   读到的字段: " + Object.keys(form.fields).join(", "));
+    // ★ 关键回归断言：绝不能把提交按钮一起发出去。
+    //   这个 CAS 是 Struts 的，会按提交按钮的名字分派到不同的登录分支；同时带上三个，
+    //   服务端就不知道走哪条路，把请求弹回登录页。能跑通的 Python 脚本从不发它们。
+    const sent = Object.keys(form.fields);
+    check("★ 没有发提交按钮 submit / submit1 / submit2",
+      !sent.includes("submit") && !sent.includes("submit1") && !sent.includes("submit2"), sent);
+    check("★ 没有发其它登录方式的字段",
+      !sent.includes("drcomUsername") && !sent.includes("qrCodeKey") && !sent.includes("mfaState") && !sent.includes("_eventId_success"), sent);
+    check("发的就是实测能通的那十来个字段", sent.length === 10, sent);
+    console.log("   将发送的字段: " + sent.join(", "));
   }
 }
 
@@ -98,18 +106,33 @@ const diffPicked = mod.parseCasLoginForm(differing);
 check("取值不同时报出多个候选", diffPicked && diffPicked.executionCandidates.length === 2, diffPicked && diffPicked.executionCandidates);
 
 console.log("");
-console.log("=== 3. 失败原因必须分类（不能一律说'密码不对'）===");
+console.log("=== 3. 失败原因必须分类（不能一律说'密码不对'，也不能误报）===");
 const cases = [
   ["密码错", '<div>用户名或密码错误</div>', "学号或密码"],
-  ["验证码", '<script>var __captchaImgUrl = "/cas/captcha.jpg";</script>', "验证码"],
+  ["真要求验证码", "<div>请输入验证码</div>", "验证码"],
   ["锁定", "<div>失败次数过多，请稍后再试</div>", "锁定"],
   ["无法识别", "<html>出了点问题</html>", "没有给出可识别的原因"]
 ];
 cases.forEach(([label, html, expect]) => {
-  const r = mod.classifyLoginFailure(html, "https://cas.haust.edu.cn/cas/login");
+  const r = mod.classifyLoginFailure(html, "https://cas.haust.edu.cn/cas/login", 200);
   check(`${label} -> 归类正确`, !r.ok && String(r.reason).includes(expect), r.reason);
 });
-check("无法识别时给出原文片段而不是猜", !!mod.classifyLoginFailure("<html>xyz</html>", "u").detail);
+
+// ★ 守着那个已经犯过一次的错误：页面上**永远存在** __captchaImgUrl（它是静态图片路径），
+//   第一版把它当成了"现在需要验证码"，于是每次失败都误报成验证码，把真正的原因盖住了。
+const falsePositive = mod.classifyLoginFailure(
+  '<script>var __captchaImgUrl = "/cas/captcha.jpg";</script><html>未知情况</html>',
+  "https://cas.haust.edu.cn/cas/login",
+  200
+);
+check("★ 只有 __captchaImgUrl 时不得误报为验证码", !falsePositive.reason.includes("验证码"), falsePositive.reason);
+check("★ 认不出来时如实说认不出来", falsePositive.reason.includes("没有给出可识别的原因"), falsePositive.reason);
+
+check("无法识别时给出原文片段而不是猜", !!mod.classifyLoginFailure("<html>xyz</html>", "u", 200).detail);
+check("诊断信息里带上了 HTTP 状态与最终地址", (() => {
+  const d = JSON.parse(mod.classifyLoginFailure("<html>x</html>", "https://example.com/final", 500).detail);
+  return d.status === 500 && d.finalUrl === "https://example.com/final" && typeof d.snippet === "string";
+})(), mod.classifyLoginFailure("<html>x</html>", "https://example.com/final", 500).detail);
 
 console.log("");
 console.log("=== 4. cookie 必须自己管（http 插件不保存 cookie）===");
@@ -157,7 +180,9 @@ console.log("=== 5. 端到端：用假网络走一遍登录（不碰真实凭据
   const result = await mod.casLogin(fakeDeps, jar2, "测试学号", "测试密码");
   check("成功路径返回 ok", result.ok === true, result);
   check("确实发了 POST", calls.some((c) => c.method === "POST"));
-  check("POST 之后带上了 cookie", calls.find((c) => c.method === "POST")?.hasCookie === true);
+  // 不再手动发 Cookie：Tauri 的 http 插件按 fetch 规范把它列为禁止的请求头并静默丢弃，
+  // 发了也是无用功。会话由插件自己的 cookie 罐维持（Cargo 默认特性 cookies）。
+  check("没有手动发 Cookie 头", calls.every((c) => !c.hasCookie), calls.filter((c) => c.hasCookie).length);
   check("公钥地址被请求过", calls.some((c) => c.url.includes("publicKey")));
 }
 

@@ -91,8 +91,34 @@ export class CookieJar {
 export const PASSWORD_LOGIN_EVENT_ID = "submit";
 export const PASSWORD_LOGIN_MENU = "2";
 
+/// 要发给 CAS 的字段白名单。
+///
+/// **这是从"实际跑通的字段集"倒推出来的，不是从页面上抄的。**
+///
+/// 第一版图省事，把页面上所有 input 都发过去 —— 包括三个提交按钮 `submit` / `submit1` /
+/// `submit2`。这个 CAS 是 Struts 做的，而 Struts **会按提交按钮的名字分派到不同的处理分支**；
+/// 同时带上三个，服务端就不知道该走哪条路，于是把请求弹回登录页。
+///
+/// 对照证据：能正常登录的 Python 脚本只发这十来个字段，从不发提交按钮。
+///
+/// 所以这里既不是"写死全部"也不是"抄全页"，而是**照实测能通的集合**，并且保留从页面动态取
+/// execution 的能力（它每次都不一样）。页面上属于其它登录方式的字段（drcomUsername /
+/// qrCodeKey / mfaState / _eventId_success）也一并排除 —— 它们同样不该出现在密码登录的请求里。
+const PASSWORD_LOGIN_FIELDS = [
+  "execution",
+  "_eventId",
+  "geolocation",
+  "fpVisitorId",
+  "username",
+  "password",
+  "captcha",
+  "rememberMe",
+  "currentMenu",
+  "failN"
+] as const;
+
 export const parseCasLoginForm = (html: string): CasLoginForm | null => {
-  const fields: Record<string, string> = {};
+  const pageFields: Record<string, string> = {};
   const executions: string[] = [];
 
   for (const input of html.matchAll(/<input\b[^>]*>/gi)) {
@@ -100,19 +126,20 @@ export const parseCasLoginForm = (html: string): CasLoginForm | null => {
     const name = (tag.match(/name=["']([^"']*)["']/i) || [, ""])[1];
     if (!name) continue;
     const value = (tag.match(/value=["']([^"']*)["']/i) || [, ""])[1];
-    // 同名取第一个非空值。
-    if (!(name in fields) || (!fields[name] && value)) fields[name] = value;
+    if (!(name in pageFields) || (!pageFields[name] && value)) pageFields[name] = value;
     if (name === "execution" && value) executions.push(value);
   }
 
   // 认不出这是登录页时不要硬凑一个表单出来。
-  if (!("execution" in fields) || !("username" in fields)) return null;
+  if (!("execution" in pageFields) || !("username" in pageFields)) return null;
 
+  const fields: Record<string, string> = {};
+  for (const name of PASSWORD_LOGIN_FIELDS) {
+    fields[name] = pageFields[name] ?? "";
+  }
   fields["_eventId"] = PASSWORD_LOGIN_EVENT_ID;
   fields["currentMenu"] = PASSWORD_LOGIN_MENU;
-  // 验证码这一栏留空：如果学校确实要求验证码，那这次登录会被拒，并由 classifyLoginFailure
-  // 明确告诉用户"需要验证码"，而不是含糊地说密码不对。
-  if (!("captcha" in fields)) fields["captcha"] = "";
+  if (!fields["rememberMe"]) fields["rememberMe"] = "true";
 
   const action = (html.match(/<form\b[^>]*action=["']([^"']*)["']/i) || [, ""])[1];
   return { action, fields, executionCandidates: [...new Set(executions)] };
@@ -137,10 +164,39 @@ export interface LoginResult {
 
 /// 失败原因的归类。
 ///
-/// **这是这个文件里最值钱的一段。** 今天那次失败，脚本把所有情况都说成"学号或密码不对"，
-/// 而真实原因是缺字段 + 验证码，全被这句错误的话带偏了。分类清楚，问题就能一次定位。
-export const classifyLoginFailure = (html: string, finalUrl: string): LoginResult => {
+/// **这个函数的第一版犯过一次很典型的错，值得留着当教训。**
+///
+/// 它把"页面里有 `__captchaImgUrl` 这个变量"当成了"现在需要验证码"。但那个变量在 CAS 登录页上
+/// **永远存在** —— 它的值是静态图片路径 `/cas/captcha.jpg`，页面无论要不要验证码都会写上它。
+/// 于是每一次登录失败都被报成"需要验证码"，而真正的原因被这句话盖住了，用户照着提示试了三种
+/// 办法都没用。这和"一律说密码不对"是同一个毛病：**自信地报一个错误的原因，比不报更糟**，
+/// 因为它把排查引向错误的方向。
+///
+/// 所以现在的原则是：
+///   1. 只在页面**明确写了**要验证码 / 密码错 / 被锁定时才归类（要求出现具体措辞，而不是变量存在）；
+///   2. 认不出来就说认不出来，并把**服务端原话**附上，让人自己看。
+export interface LoginDiagnostics {
+  status: number;
+  finalUrl: string;
+  /// 服务端返回内容里可读的一段（去掉标签与多余空白）。
+  snippet: string;
+}
+
+export const classifyLoginFailure = (html: string, finalUrl: string, status = 0): LoginResult => {
   const text = html.replace(/\s+/g, " ");
+  const visible = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const diagnostics: LoginDiagnostics = {
+    status,
+    finalUrl,
+    snippet: visible.slice(0, 240)
+  };
+  const detail = JSON.stringify(diagnostics);
 
   const firstMatch = (patterns: Array<[RegExp, string]>): string => {
     for (const [re, label] of patterns) {
@@ -149,15 +205,16 @@ export const classifyLoginFailure = (html: string, finalUrl: string): LoginResul
     return "";
   };
 
+  // 要求出现**具体措辞**，而不是"页面上有这个变量"。
   const captcha = firstMatch([
-    [/__captchaImgUrl\s*=\s*["']?(?!["';])\S/, "页面要求输入验证码"],
-    [/验证码错误|请输入验证码/, "页面提示验证码错误"]
+    [/验证码错误|请输入验证码|验证码不能为空|验证码已过期/, "页面明确提示验证码"],
+    [/id=["']captchaImg["'][^>]*src=["'][^"']+["']/, "页面上渲染了验证码图片"]
   ]);
   if (captcha) {
     return {
       ok: false,
-      reason: "学校要求验证码，脚本无法自动通过。请先在浏览器里成功登录一次，再回来重试。",
-      detail: captcha
+      reason: "学校要求输入验证码，自动登录过不去。请先在浏览器里成功登录一次，再回来重试。",
+      detail: `${captcha}｜${detail}`
     };
   }
 
@@ -169,7 +226,7 @@ export const classifyLoginFailure = (html: string, finalUrl: string): LoginResul
     return {
       ok: false,
       reason: "登录失败次数过多，账号可能被暂时锁定。请先在浏览器里登录一次。",
-      detail: locked
+      detail: `${locked}｜${detail}`
     };
   }
 
@@ -179,16 +236,15 @@ export const classifyLoginFailure = (html: string, finalUrl: string): LoginResul
     [/账号或密码(?:错误|不正确)/, "页面提示账号或密码错误"]
   ]);
   if (badCredential) {
-    return { ok: false, reason: "学号或密码不对（学校明确这么提示的）。", detail: badCredential };
+    return { ok: false, reason: "学号或密码不对（学校明确这么提示的）。", detail: `${badCredential}｜${detail}` };
   }
 
-  // 没有可识别的提示。这种情况必须老实说"不知道"，而不是挑一个可能性最大的说法 ——
-  // 猜一个原因比不猜更糟，因为它会把排查引到错误的方向。
-  const snippet = text.slice(0, 300);
+  // 认不出来就老实说认不出来，并附上服务端原话与最终地址。
+  // 猜一个原因比不猜更糟 —— 今天已经为此付过两次代价。
   return {
     ok: false,
-    reason: `登录被拒绝，但学校没有给出可识别的原因（仍停在 ${finalUrl}）。`,
-    detail: snippet
+    reason: `登录没有成功，但学校没有给出可识别的原因。下面是服务端的原话，请把它发给我。`,
+    detail
   };
 };
 
@@ -222,22 +278,23 @@ export const casLogin = async (
   const result = await deps.http.request(loginUrl, {
     method: "POST",
     body,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Cookie: jar.header()
-    }
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   jar.absorb(result);
 
   // 成功与否看最终落在哪：回到统一门户即为成功；仍在 cas/login 即失败。
+  //
+  // 注意这里**不再手动发 Cookie 头**。Tauri 的 http 插件按 fetch 规范把 Cookie 列为「禁止的
+  // 请求头」并**静默丢弃** —— 也就是说那行代码一直在做无用功，看起来在管会话，其实没有。
+  // 插件自己有 cookie 罐（Cargo 默认特性 cookies），会话由它维持，不需要我们插手。
   const landedOnPortal = result.url.includes("i.haust.edu.cn") && !/cas\/login/i.test(result.url);
   if (landedOnPortal) return { ok: true };
 
-  const failure = classifyLoginFailure(result.body, result.url);
+  const failure = classifyLoginFailure(result.body, result.url, result.status);
   // 如果页面上原本就有多个不同的 execution，那么"取错 token"也是失败的一种可能，
   // 必须说出来 —— 否则用户会去反复确认一个没写错的密码。
   if (form.executionCandidates.length > 1) {
-    failure.detail = `${failure.detail ?? ""}\n页面里有 ${form.executionCandidates.length} 个不同的 execution，登录可能取错了那一个。`;
+    failure.detail = `${failure.detail ?? ""}\n另外：页面里有 ${form.executionCandidates.length} 个不同的 execution，登录可能取错了那一个。`;
   }
   return failure;
 };
