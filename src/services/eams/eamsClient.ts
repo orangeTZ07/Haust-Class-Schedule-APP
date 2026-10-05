@@ -55,7 +55,22 @@ export type SyncResult = SyncSuccess | SyncFailure;
 /// 拿着一个正确密码反复确认半天，而真正的问题只是 aTrust 没连上。
 export const probeReachability = async (http: EamsHttp): Promise<{ ok: true } | SyncFailure> => {
   try {
-    await http.request(`${JWC_BASE}/login.action`);
+    const response = await http.request(`${JWC_BASE}/login.action`);
+    // **不能只看有没有抛异常。** 403 不会抛异常 —— 第一版因此一路放行，直到 SSO 那一步才拿到
+    // 403，而那时已经很难判断是"没登录"还是"这台机器根本没让我们进来"。所以这里看状态码：
+    // 连登录页都拿不到 4xx/5xx，说明是网络或权限层面的问题，和账号密码无关。
+    if (response.status >= 400) {
+      const snippet = response.body.replace(/\s+/g, " ").trim().slice(0, 160);
+      return {
+        ok: false,
+        kind: "unreachable",
+        message:
+          `能连到 ${JWC_HOST}，但它拒绝了请求（HTTP ${response.status}），连登录页都拿不到。` +
+          `这通常是 aTrust 这一层的问题，而不是账号密码 —— 请在手机浏览器里打开 ` +
+          `https://${JWC_HOST}/eams/login.action 确认能不能看到登录页。`,
+        detail: `HTTP ${response.status}｜标题「${pageTitle(response.body)}」｜正文开头 → ${snippet}`
+      };
+    }
     return { ok: true };
   } catch (error) {
     return {
@@ -82,6 +97,9 @@ export const fetchTimetable = async (
   // 加它的原因：第一版只报告正文片段，于是"这个页面到底是从哪来的"完全看不出来 —— 直到用户
   // 截图里偶然出现标题「河南科技大学」，才发现请求拿到的根本不是 CAS 登录页，而是学校门户。
   const trace: TraceEntry[] = [];
+  /// 非 2xx 时把正文开头也记下来 —— 403 的正文会说明是谁拒的（aTrust 还是教务系统）。
+  const snippetOf = (body: string, status: number) =>
+    status >= 400 ? body.replace(/\s+/g, " ").trim().slice(0, 160) : undefined;
   const withTrace = (failure: SyncFailure): SyncFailure => ({
     ...failure,
     detail: [failure.detail, formatTrace(trace)].filter(Boolean).join("\n\n")
@@ -105,12 +123,15 @@ export const fetchTimetable = async (
   const ssoUrl = `${JWC_BASE}/sso/login.action`;
   const sso = await deps.http.request(ssoUrl);
   jar.absorb(sso);
-  trace.push({ step: "SSO 进教务系统", url: ssoUrl, status: sso.status, finalUrl: sso.url, title: pageTitle(sso.body) });
+  trace.push({ step: "SSO 进教务系统", url: ssoUrl, status: sso.status, finalUrl: sso.url, title: pageTitle(sso.body), snippet: snippetOf(sso.body, sso.status) });
   if (sso.status >= 400) {
     return withTrace({
       ok: false,
       kind: "session",
-      message: "登录成功，但教务系统没有接受这个会话。可能需要在浏览器里先登录一次教务系统。",
+      message:
+        `登录是通过了，但教务系统这一步被拒（HTTP ${sso.status}），而且它没有跳到登录页。` +
+        `这更像是 aTrust 这一层没放行 ${JWC_HOST}，而不是登录问题。` +
+        `请在手机浏览器里打开 https://${JWC_HOST}/eams/login.action 确认能不能看到登录页。`,
       detail: `SSO 返回 HTTP ${sso.status}`
     });
   }

@@ -263,12 +263,18 @@ export interface TraceEntry {
   status: number;
   finalUrl: string;
   title: string;
+  /// 非 2xx 时附带响应正文开头。403 这类状态**正文里通常写着是谁拒的**
+  /// （aTrust 的页面 vs 教务系统自己的页面），没有它就分不清是网络层还是应用层。
+  snippet?: string;
 }
 
 export const formatTrace = (trace: TraceEntry[]): string =>
   trace
-    .map((t) => `${t.step}：HTTP ${t.status}\n  请求 → ${t.url}\n  落在 → ${t.finalUrl}\n  标题 → 「${t.title || "(无)"}」`)
-    .join("\n");
+    .map((t) => {
+      const head = `${t.step}：HTTP ${t.status}\n  请求 → ${t.url}\n  落在 → ${t.finalUrl}\n  标题 → 「${t.title || "(无)"}」`;
+      return t.snippet ? `${head}\n  正文开头 → ${t.snippet}` : head;
+    })
+    .join("\n\n");
 
 /// 完整的 CAS 登录。成功返回 true，失败返回可读的原因。
 export const casLogin = async (

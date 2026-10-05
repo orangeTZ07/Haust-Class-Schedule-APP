@@ -76,6 +76,11 @@ const makeReplayHttp = (options = {}) => {
       if (options.failReachability && url.includes("/eams/login.action")) {
         throw new Error("模拟：连不上主机");
       }
+      // 真服务器对 /eams/login.action 返回 302 跳到 loginExt.action（带 jsessionid）。
+      // 这里必须照实模拟：探测现在会检查状态码，用 404 冒充会让整条回放被误判成"连不上"。
+      if (url.includes("/eams/login.action") && method === "GET") {
+        return { status: 302, url: url.replace("/login.action", "/loginExt.action;jsessionid=REPLAY"), headers: {}, body: "" };
+      }
       if (url.includes("/cas/jwt/publicKey")) {
         return { status: 200, url, headers: {}, body: publicKey.body };
       }
