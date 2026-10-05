@@ -248,31 +248,74 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
   };
 };
 
+/// 从 HTML 里取标题。诊断时它比正文片段有用得多 —— 一眼就能看出拿到的是登录页还是别的页面。
+export const pageTitle = (html: string): string =>
+  ((html.match(/<title[^>]*>([^<]*)<\/title>/i) || [, ""])[1] || "").trim().slice(0, 80);
+
+/// 请求轨迹，用于诊断。
+///
+/// 加它的原因很具体：第一版失败时只报告正文片段，于是"这个页面是哪来的"完全看不出来。直到用户
+/// 的截图里偶然带上了标题「河南科技大学」，才发现请求拿到的**根本不是 CAS 登录页**。
+/// 标题 + 请求地址 + 最终地址 + 状态码放在一起，这类问题一眼可辨。
+export interface TraceEntry {
+  step: string;
+  url: string;
+  status: number;
+  finalUrl: string;
+  title: string;
+}
+
+export const formatTrace = (trace: TraceEntry[]): string =>
+  trace
+    .map((t) => `${t.step}：HTTP ${t.status}\n  请求 → ${t.url}\n  落在 → ${t.finalUrl}\n  标题 → 「${t.title || "(无)"}」`)
+    .join("\n");
+
 /// 完整的 CAS 登录。成功返回 true，失败返回可读的原因。
 export const casLogin = async (
   deps: EamsDeps,
   jar: CookieJar,
   username: string,
-  password: string
+  password: string,
+  trace: TraceEntry[] = []
 ): Promise<LoginResult> => {
   const loginUrl = `${CAS_URL}?service=${encodeURIComponent(CAS_SERVICE)}`;
 
-  const page = await deps.http.request(loginUrl, { headers: { Cookie: jar.header() } });
+  const page = await deps.http.request(loginUrl);
   jar.absorb(page);
+  trace.push({
+    step: "取 CAS 登录页",
+    url: loginUrl,
+    status: page.status,
+    finalUrl: page.url,
+    title: pageTitle(page.body)
+  });
 
   const form = parseCasLoginForm(page.body);
+
+  // **已经登录过的情况。**
+  //
+  // 手机连上 aTrust 之后，请求 CAS 登录页有可能被直接跳到统一门户（用户此前在 aTrust 里登录过）。
+  // 那种情况下页面里当然没有登录表单 —— 但那不是"页面结构变了"，而是**根本不需要再登录**。
+  //
+  // 第一版把两种情况混为一谈，一律报"找不到用户名密码表单"，于是用户无论密码对错都看到同一句、
+  // 且毫无线索。同样的现象今天已经出现过一次（把"缺字段"报成"密码错"），所以这里先分辨清楚。
+  const landedOnPortal = page.url.includes("i.haust.edu.cn") && !/cas\/login/i.test(page.url);
+
   if (!form) {
+    if (landedOnPortal) {
+      trace.push({ step: "判断为已登录（已落在统一门户）", url: page.url, status: page.status, finalUrl: page.url, title: "" });
+      return { ok: true };
+    }
     return {
       ok: false,
-      reason: "登录页里找不到用户名密码表单，页面结构可能又变了。",
-      detail: page.body.slice(0, 300)
+      reason: "取到的不是登录页，所以没法登录。下面的诊断信息会显示实际拿到了哪一页。",
+      detail: formatTrace(trace)
     };
   }
 
   const publicKey = await fetchPublicKey(deps, jar);
   const encrypted = await deps.encryptPassword(password, publicKey);
 
-  // 页面上读到的字段全部照搬，只覆盖这两个 —— 这样学校加字段不会漏。
   const body = new URLSearchParams({ ...form.fields, username, password: encrypted }).toString();
 
   const result = await deps.http.request(loginUrl, {
@@ -281,20 +324,28 @@ export const casLogin = async (
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   jar.absorb(result);
+  trace.push({
+    step: "提交登录表单",
+    url: loginUrl,
+    status: result.status,
+    finalUrl: result.url,
+    title: pageTitle(result.body)
+  });
 
   // 成功与否看最终落在哪：回到统一门户即为成功；仍在 cas/login 即失败。
   //
   // 注意这里**不再手动发 Cookie 头**。Tauri 的 http 插件按 fetch 规范把 Cookie 列为「禁止的
-  // 请求头」并**静默丢弃** —— 也就是说那行代码一直在做无用功，看起来在管会话，其实没有。
+  // 请求头」并**静默丢弃** —— 那行代码一直在做无用功，看起来在管会话，其实没有。
   // 插件自己有 cookie 罐（Cargo 默认特性 cookies），会话由它维持，不需要我们插手。
-  const landedOnPortal = result.url.includes("i.haust.edu.cn") && !/cas\/login/i.test(result.url);
-  if (landedOnPortal) return { ok: true };
+  if (result.url.includes("i.haust.edu.cn") && !/cas\/login/i.test(result.url)) return { ok: true };
 
   const failure = classifyLoginFailure(result.body, result.url, result.status);
-  // 如果页面上原本就有多个不同的 execution，那么"取错 token"也是失败的一种可能，
-  // 必须说出来 —— 否则用户会去反复确认一个没写错的密码。
-  if (form.executionCandidates.length > 1) {
-    failure.detail = `${failure.detail ?? ""}\n另外：页面里有 ${form.executionCandidates.length} 个不同的 execution，登录可能取错了那一个。`;
-  }
+  const extras = [
+    formatTrace(trace),
+    form.executionCandidates.length > 1
+      ? `另外：页面里有 ${form.executionCandidates.length} 个不同的 execution，登录可能取错了那一个。`
+      : ""
+  ].filter(Boolean);
+  failure.detail = `${failure.detail ?? ""}\n\n${extras.join("\n")}`;
   return failure;
 };

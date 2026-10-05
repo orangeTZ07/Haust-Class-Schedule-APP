@@ -187,5 +187,58 @@ console.log("=== 5. 端到端：用假网络走一遍登录（不碰真实凭据
 }
 
 console.log("");
+console.log("=== 6. 已经登录过的情况：不能再被误报成「页面结构变了」===");
+// 用户在 aTrust 里登录过之后，请求 CAS 登录页会被直接跳到统一门户 —— 那种页面里当然没有登录
+// 表单，但这不是"页面结构变了"，而是根本不需要再登录。第一版把两者混为一谈，于是用户无论密码
+// 对错都看到同一句"找不到用户名密码表单"，毫无线索。
+{
+  const jar3 = new mod.CookieJar();
+  const fakeDeps2 = {
+    http: {
+      request: async (url, init) => {
+        if (url.includes("cas/login") && !init?.method) {
+          // 直接落在门户上，内容是学校门户首页（标题就是「河南科技大学」）
+          return {
+            status: 200,
+            url: "https://i.haust.edu.cn/portal/index",
+            headers: {},
+            body: '<!doctype html><html><head><title>河南科技大学</title></head><body>门户</body></html>'
+          };
+        }
+        throw new Error("不该走到这里：" + url);
+      }
+    },
+    encryptPassword: async () => "__RSA__x"
+  };
+  const trace = [];
+  const r = await mod.casLogin(fakeDeps2, jar3, "u", "p", trace);
+  check("★ 落在门户上 -> 判定为已登录（不是报错）", r.ok === true, r);
+  check("★ 且没有去提交表单", trace.length === 1, trace.map((t) => t.step));
+  check("轨迹里记下了实际拿到的标题", trace[0]?.title === "河南科技大学", trace[0]?.title);
+}
+
+console.log("");
+console.log("=== 7. 拿到完全无关的页面时，诊断里要有地址与标题 ===");
+{
+  const jar4 = new mod.CookieJar();
+  const fakeDeps3 = {
+    http: {
+      request: async () => ({
+        status: 200,
+        url: "https://cas.haust.edu.cn/somewhere-else",
+        headers: {},
+        body: '<html><head><title>某个别的页面</title></head><body>不是登录页</body></html>'
+      })
+    },
+    encryptPassword: async () => "__RSA__x"
+  };
+  const trace = [];
+  const r = await mod.casLogin(fakeDeps3, jar4, "u", "p", trace);
+  check("不是登录页 -> 报错", r.ok === false);
+  check("★ 诊断里带上了实际标题", String(r.detail).includes("某个别的页面"), r.detail);
+  check("★ 诊断里带上了请求地址与最终地址", String(r.detail).includes("cas.haust.edu.cn") && String(r.detail).includes("落在"), r.detail);
+}
+
+console.log("");
 console.log(failures === 0 ? "  ALL CHECKS PASSED" : "  " + failures + " CHECK(S) FAILED");
 process.exit(failures ? 1 : 0);

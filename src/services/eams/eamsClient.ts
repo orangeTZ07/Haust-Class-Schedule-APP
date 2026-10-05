@@ -12,8 +12,11 @@
 import {
   CookieJar,
   casLogin,
+  formatTrace,
+  pageTitle,
   type EamsDeps,
-  type EamsHttp
+  type EamsHttp,
+  type TraceEntry
 } from "./casLogin";
 import { extractCoursePageParams, parseCourseTable, rowsToBackup, type Backup, type ConvertReport } from "./courseTableParser";
 
@@ -75,48 +78,64 @@ export const fetchTimetable = async (
 
   const jar = new CookieJar();
 
+  // 每一步的地址、状态码、标题都记下来，失败时附在诊断里。
+  // 加它的原因：第一版只报告正文片段，于是"这个页面到底是从哪来的"完全看不出来 —— 直到用户
+  // 截图里偶然出现标题「河南科技大学」，才发现请求拿到的根本不是 CAS 登录页，而是学校门户。
+  const trace: TraceEntry[] = [];
+  const withTrace = (failure: SyncFailure): SyncFailure => ({
+    ...failure,
+    detail: [failure.detail, formatTrace(trace)].filter(Boolean).join("\n\n")
+  });
+
   // ---- 1. CAS 登录 ----
-  const login = await casLogin(deps, jar, username, password);
+  const login = await casLogin(deps, jar, username, password, trace);
   if (!login.ok) {
-    return {
+    return withTrace({
       ok: false,
       kind: "login",
       message: login.reason ?? "登录失败",
       detail: login.detail
-    };
+    });
   }
 
   // 不手动传 Cookie 头：Tauri 的 http 插件按 fetch 规范把它列为「禁止的请求头」并静默丢弃，
   // 写了也是无用功。会话由插件的 cookie 罐（Cargo 默认特性 cookies）维持。
-  // 这里仍然保留 CookieJar 的 absorb 调用，是因为它能读到 Set-Cookie 时至少无害，且回放测试
-  // 需要它来验证"我们确实把同一个会话串下来了"。真正起作用的是插件那一侧。
-  const authHeaders = () => ({});
 
   // ---- 2. SSO 进教务系统 ----
-  const sso = await deps.http.request(`${JWC_BASE}/sso/login.action`, { headers: authHeaders() });
+  const ssoUrl = `${JWC_BASE}/sso/login.action`;
+  const sso = await deps.http.request(ssoUrl);
   jar.absorb(sso);
+  trace.push({ step: "SSO 进教务系统", url: ssoUrl, status: sso.status, finalUrl: sso.url, title: pageTitle(sso.body) });
   if (sso.status >= 400) {
-    return {
+    return withTrace({
       ok: false,
       kind: "session",
       message: "登录成功，但教务系统没有接受这个会话。可能需要在浏览器里先登录一次教务系统。",
       detail: `SSO 返回 HTTP ${sso.status}`
-    };
+    });
   }
 
   // ---- 3. 取课表页，并从页面里解析出请求参数 ----
-  const coursePage = await deps.http.request(`${JWC_BASE}/courseTableForStd.action`, { headers: authHeaders() });
+  const coursePageUrl = `${JWC_BASE}/courseTableForStd.action`;
+  const coursePage = await deps.http.request(coursePageUrl);
   jar.absorb(coursePage);
+  trace.push({
+    step: "取课表页",
+    url: coursePageUrl,
+    status: coursePage.status,
+    finalUrl: coursePage.url,
+    title: pageTitle(coursePage.body)
+  });
 
   const params = extractCoursePageParams(coursePage.body);
   if (!params) {
     // 不拿空值硬发请求 —— 那只会换回一个看不懂的 500（今天已经这样绕过一圈）。
-    return {
+    return withTrace({
       ok: false,
       kind: "params",
-      message: "课表页面里找不到必要的请求参数（页面结构可能变了）。",
-      detail: coursePage.body.slice(0, 300)
-    };
+      message: "课表页面里找不到必要的请求参数（可能拿到的是登录页或别的页面）。",
+      detail: `页面标题「${pageTitle(coursePage.body)}」，长度 ${coursePage.body.length}`
+    });
   }
 
   // ---- 4. 拉课表 ----
@@ -129,31 +148,39 @@ export const fetchTimetable = async (
     ids: params.ids
   }).toString();
 
-  const table = await deps.http.request(`${JWC_BASE}/courseTableForStd!courseTable.action`, {
+  const tableUrl = `${JWC_BASE}/courseTableForStd!courseTable.action`;
+  const table = await deps.http.request(tableUrl, {
     method: "POST",
     body,
-    headers: { ...authHeaders(), "Content-Type": "application/x-www-form-urlencoded" }
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   jar.absorb(table);
+  trace.push({
+    step: "拉取课表",
+    url: tableUrl,
+    status: table.status,
+    finalUrl: table.url,
+    title: pageTitle(table.body)
+  });
 
   if (table.status >= 400) {
-    return {
+    return withTrace({
       ok: false,
       kind: "course-table",
       message: `教务系统返回 HTTP ${table.status}，没能取到课表。`,
       detail: table.body.slice(0, 400)
-    };
+    });
   }
 
   // ---- 5. 解析 ----
   const { rows, problems } = parseCourseTable(table.body);
   if (!rows.length) {
-    return {
+    return withTrace({
       ok: false,
       kind: "empty",
-      message: "课表是空的 —— 可能这个学期的课还没排，或者教务系统返回的不是课表页面。",
-      detail: problems.join("；") || table.body.slice(0, 300)
-    };
+      message: "课表是空的 —— 可能这个学期的课还没排，或者拿到的不是课表页面。",
+      detail: problems.join("；") || `页面标题「${pageTitle(table.body)}」，长度 ${table.body.length}`
+    });
   }
 
   const { backup, report } = rowsToBackup(rows);
