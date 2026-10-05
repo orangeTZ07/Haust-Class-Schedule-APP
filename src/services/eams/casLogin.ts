@@ -20,7 +20,13 @@ export interface EamsResponse {
 export interface EamsHttp {
   request(
     url: string,
-    init?: { method?: string; body?: string; headers?: Record<string, string> }
+    init?: {
+      method?: string;
+      body?: string;
+      headers?: Record<string, string>;
+      /// 跳转策略。诊断连通性时用 "manual"，好把每一跳单独看清楚 —— 见 probeReachability。
+      redirect?: "follow" | "manual";
+    }
   ): Promise<EamsResponse>;
 }
 

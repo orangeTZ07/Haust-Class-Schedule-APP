@@ -55,20 +55,34 @@ export type SyncResult = SyncSuccess | SyncFailure;
 /// 拿着一个正确密码反复确认半天，而真正的问题只是 aTrust 没连上。
 export const probeReachability = async (http: EamsHttp): Promise<{ ok: true } | SyncFailure> => {
   try {
-    const response = await http.request(`${JWC_BASE}/login.action`);
-    // **不能只看有没有抛异常。** 403 不会抛异常 —— 第一版因此一路放行，直到 SSO 那一步才拿到
-    // 403，而那时已经很难判断是"没登录"还是"这台机器根本没让我们进来"。所以这里看状态码：
-    // 连登录页都拿不到 4xx/5xx，说明是网络或权限层面的问题，和账号密码无关。
-    if (response.status >= 400) {
-      const snippet = response.body.replace(/\s+/g, " ").trim().slice(0, 160);
+    // **不跟随跳转**，把每一跳单独看清楚。
+    //
+    // 为什么：真服务器对 /eams/login.action 返回 302 跳到 /eams/loginExt.action;jsessionid=...，
+    // 而 app 拿到的是 403 且正文为空。浏览器和微信走同一条路却是 200 —— 所以嫌疑落在"跟随跳转"
+    // 这一步上：要么跳转后的地址被拒，要么跳转过程中丢了东西。
+    //
+    // 与其猜，不如把跳转关掉，把每一跳的状态码和 Location 都摆出来。这样"谁拒的、在哪一跳拒的"
+    // 就是明摆的事实，不需要再推理。
+    const first = await http.request(`${JWC_BASE}/login.action`, { redirect: "manual" });
+
+    const lines = [
+      `第 1 跳：HTTP ${first.status}  ${JWC_BASE}/login.action`,
+      `  标题「${pageTitle(first.body)}」`,
+      first.headers.location ? `  Location → ${first.headers.location}` : "  （没有 Location，说明没有跳转）"
+    ];
+
+    // 拿不到 2xx/3xx 才算真失败；3xx 说明服务器愿意继续，是好事。
+    if (first.status >= 400) {
+      const snippet = first.body.replace(/\s+/g, " ").trim().slice(0, 200);
+      lines.push(`  正文开头 → ${snippet || "(空)"}`);
+      lines.push(`  Set-Cookie → ${first.headers["set-cookie"] ? "有" : "没有"}`);
       return {
         ok: false,
         kind: "unreachable",
         message:
-          `能连到 ${JWC_HOST}，但它拒绝了请求（HTTP ${response.status}），连登录页都拿不到。` +
-          `这通常是 aTrust 这一层的问题，而不是账号密码 —— 请在手机浏览器里打开 ` +
-          `https://${JWC_HOST}/eams/login.action 确认能不能看到登录页。`,
-        detail: `HTTP ${response.status}｜标题「${pageTitle(response.body)}」｜正文开头 → ${snippet}`
+          `教务系统的登录页直接返回了 HTTP ${first.status}（没有跳转、正文为空）——` +
+          `而手机浏览器和微信打开同一个地址都是正常的。请把下面的诊断发我。`,
+        detail: lines.join("\n")
       };
     }
     return { ok: true };

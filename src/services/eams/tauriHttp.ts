@@ -48,8 +48,8 @@ export const createTauriHttp = (): EamsHttp => ({
         body: init?.body,
         // 调用方指定的头优先，其余补上浏览器头。
         headers: { ...BROWSER_HEADERS, ...(init?.headers ?? {}) },
-        // 手动跟随跳转，好在成功判断里拿到最终 URL；这里保持自动跟随但把 URL 读回来。
-        redirect: "follow",
+        // 默认跟随跳转；诊断连通性时传 "manual" 以便逐跳观察。
+        redirect: init?.redirect ?? "follow",
         signal: controller.signal
       });
 
