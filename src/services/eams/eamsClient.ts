@@ -124,15 +124,21 @@ export const fetchTimetable = async (
   const sso = await deps.http.request(ssoUrl);
   jar.absorb(sso);
   trace.push({ step: "SSO 进教务系统", url: ssoUrl, status: sso.status, finalUrl: sso.url, title: pageTitle(sso.body), snippet: snippetOf(sso.body, sso.status) });
+  // **这一步失败不再中止整个流程。**
+  //
+  // 实测：浏览器能正常打开教务系统，但 app 直接请求 sso/login.action 会拿到 403 且没有跳转。
+  // 而这一步本来就不是必需的 —— 浏览器并不"访问"它，浏览器是直接打开课表页的。我当初把它写死
+  // 成必经步骤，是照着 Python 脚本抄的，而 Python 能过只是因为它恰好带了别的上下文。
+  //
+  // 所以这里改成：403 记下来、继续往下走，让课表页自己去判断。真正决定成败的是课表页 ——
+  // 如果它也拿不到，失败信息里会同时包含这一步和下一步，两边的状态都看得见。
   if (sso.status >= 400) {
-    return withTrace({
-      ok: false,
-      kind: "session",
-      message:
-        `登录是通过了，但教务系统这一步被拒（HTTP ${sso.status}），而且它没有跳到登录页。` +
-        `这更像是 aTrust 这一层没放行 ${JWC_HOST}，而不是登录问题。` +
-        `请在手机浏览器里打开 https://${JWC_HOST}/eams/login.action 确认能不能看到登录页。`,
-      detail: `SSO 返回 HTTP ${sso.status}`
+    trace.push({
+      step: "SSO 返回非 2xx，按非必需步骤处理，继续尝试课表页",
+      url: ssoUrl,
+      status: sso.status,
+      finalUrl: sso.url,
+      title: ""
     });
   }
 
