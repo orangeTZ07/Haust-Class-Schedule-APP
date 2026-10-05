@@ -8,6 +8,7 @@ import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
 import ImportPopup from "@/components/course/ImportPopup.vue";
+import EamsSyncPanel from "@/components/course/EamsSyncPanel.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm from "@/components/course/CourseForm.vue";
@@ -24,6 +25,7 @@ const sidebarOffset = ref(0);
 /// Suppresses the transition while dragging, so the drawer tracks the finger instead of lagging.
 const sidebarDragging = ref(false);
 const importVisible = ref(false);
+const eamsSyncVisible = ref(false);
 const exportVisible = ref(false);
 const contactVisible = ref(false);
 const trashTargetState = ref({
@@ -132,6 +134,8 @@ const handleSidebarAction = async (action: string) => {
     resetTimetableView();
   } else if (action === "restore-import") {
     await restoreImportedTimetable();
+  } else if (action === "eams-sync") {
+    eamsSyncVisible.value = true;
   }
   closeSidebar();
 };
@@ -367,6 +371,9 @@ const onEdgeTouchEnd = () => {
 
     <!-- 导入弹窗 -->
     <ImportPopup v-model:show="importVisible" />
+
+    <!-- 从教务系统同步 -->
+    <EamsSyncPanel v-model:show="eamsSyncVisible" />
 
     <!-- 导出弹窗 -->
     <ExportPopup v-model:show="exportVisible" />
