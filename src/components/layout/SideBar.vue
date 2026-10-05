@@ -33,7 +33,7 @@ const menuItems = [
   { icon: Palette, label: "样式调整", action: "style" },
   { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
   { icon: History, label: "恢复到导入时", action: "restore-import" },
-  { icon: DownloadCloud, label: "从教务系统同步", action: "eams-sync" },
+  { icon: DownloadCloud, label: "导入课表（文件 / 同步）", action: "eams-sync" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 
