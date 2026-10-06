@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ChevronDown, ChevronLeft, ChevronRight, Menu, Trash2 } from "@lucide/vue";
+import { useRouter } from "vue-router";
 import { useToday } from "@/composables/useToday";
+import { useCourses } from "@/composables/useCourses";
 
 const props = defineProps<{
   showTrashTarget?: boolean;
@@ -16,6 +18,20 @@ const emit = defineEmits<{
 }>();
 
 const { actualWeek } = useToday();
+const { semesterStartDate } = useCourses();
+const router = useRouter();
+
+/// "8月31日" for the picker's footer. Every week number in the picker is counted from this date,
+/// so the place where people pick a week is also where they can see it and go fix it.
+const semesterStartLabel = computed(() => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(semesterStartDate.value);
+  return match ? `${Number(match[2])}月${Number(match[3])}日` : "";
+});
+
+const editSemesterStart = () => {
+  weekPickerOpen.value = false;
+  router.push("/settings");
+};
 
 const topBarRef = ref<HTMLElement | null>(null);
 const weekLabelRef = ref<HTMLElement | null>(null);
@@ -197,6 +213,10 @@ onBeforeUnmount(() => {
           >
             <span>第 {{ week }} 周</span>
             <span v-if="week === realWeek" class="week-option-tag">本周</span>
+          </button>
+          <button type="button" class="week-picker-footer" @click="editSemesterStart">
+            <span>{{ semesterStartLabel ? `第 1 周从 ${semesterStartLabel}开始` : "还没设开学日期" }}</span>
+            <span class="week-picker-footer-action">改开学日期 ›</span>
           </button>
         </div>
       </transition>
@@ -445,6 +465,32 @@ onBeforeUnmount(() => {
 .week-option.active .week-option-tag {
   color: var(--theme-on-accent);
   opacity: 0.8;
+}
+
+/* Sticky so it stays reachable while the twenty-odd weeks above it scroll. The bottom offset
+   cancels the popover's 10px padding, letting the footer sit flush on the edge. */
+.week-picker-footer {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: -10px;
+  margin: 2px -10px -10px;
+  padding: 10px 14px;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+  border-radius: 0 0 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: color-mix(in srgb, var(--theme-bg-color) 94%, transparent);
+  color: color-mix(in srgb, var(--theme-body-text) 70%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.week-picker-footer-action {
+  color: var(--theme-accent);
+  font-weight: 600;
 }
 
 .week-picker-enter-active {

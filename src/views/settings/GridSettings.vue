@@ -9,16 +9,34 @@ import { describeError } from "@/utils/describeError";
 const {
   periodConfig,
   semesterStartDate,
-  setSemesterStartDate
+  setSemesterStartDate,
+  weekNumberForDate,
+  semesterWeekCount,
+  setCurrentWeek
 } = useCourses();
 
 /// Bound through a change handler rather than v-model so the stored value stays exactly the
 /// "YYYY-MM-DD" the input produces; useCourses parses it from parts to dodge the UTC-midnight
 /// shift a bare date string would otherwise get.
+///
+/// After a change the timetable moves to the week the new date makes it, so the effect shows at
+/// once instead of waiting for the next cold start.
 const onSemesterStartChange = (event: Event) => {
   const value = (event.target as HTMLInputElement).value;
-  if (value) setSemesterStartDate(value);
+  if (!value) return;
+  setSemesterStartDate(value);
+  const week = weekNumberForDate(new Date());
+  if (week !== null && week <= semesterWeekCount.value) setCurrentWeek(week);
 };
+
+/// One line under the date picker saying what the date currently works out to, so a wrong date is
+/// visible right where it is entered.
+const semesterStatus = computed(() => {
+  const week = weekNumberForDate(new Date());
+  if (week === null) return "按这个日期算，现在还没开学";
+  if (week > semesterWeekCount.value) return `按这个日期算，现在是第 ${week} 周，这学期已经结束了`;
+  return `按这个日期算，今天是第 ${week} 周`;
+});
 
 const { themeConfig, isDark } = useTheme();
 
@@ -147,6 +165,25 @@ const applyReminders = async () => {
 
 <template>
   <div class="grid-settings">
+    <!-- First on the page: today, 本周, the opening week and the class reminders all hang off
+         this one date, and a wrong one quietly puts every course in the wrong week. -->
+    <div class="section semester-section">
+      <div class="section-title">开学日期</div>
+      <div class="config-item">
+        <span class="label">第 1 周的星期一</span>
+        <input
+          class="date-input"
+          type="date"
+          :value="semesterStartDate"
+          @change="onSemesterStartChange"
+        />
+      </div>
+      <div class="semester-status">{{ semesterStatus }}</div>
+      <div class="section-hint">
+        选这学期第 1 周星期一是几号。应用靠它算出今天是第几周：打开时直接显示本周、标出今天、按时发上课提醒。周数不对时改这里。
+      </div>
+    </div>
+
     <div class="header-row">
       <div class="section-title">课程节数</div>
       <van-button 
@@ -171,22 +208,6 @@ const applyReminders = async () => {
       <div class="config-item">
         <span class="label">晚课节数</span>
         <van-stepper v-model="periodConfig.eveningPeriods" :min="0" :max="6" integer theme="round" button-size="22" />
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">学期日期</div>
-      <div class="config-item">
-        <span class="label">第 1 周周一</span>
-        <input
-          class="date-input"
-          type="date"
-          :value="semesterStartDate"
-          @change="onSemesterStartChange"
-        />
-      </div>
-      <div class="section-hint">
-        课表会在星期下方显示本周日期，按这个日期与当前周数推算。改完周数切换一下即可看到效果。
       </div>
     </div>
 
@@ -473,13 +494,32 @@ const applyReminders = async () => {
   filter: invert(0.45);
 }
 
+.semester-status {
+  padding: 10px 16px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-accent);
+}
+
+/* Same 16px inset as .config-item: these lines sit inside the card, and without it they ran
+   flush against the card's left edge while the rows above them were indented. */
 .section-hint {
+  padding: 0 16px;
   font-size: 11px;
   line-height: 1.6;
   /* No colour was set, so the text inherited the page's fixed #333 and disappeared on dark themes. */
   color: var(--theme-body-text);
   opacity: 0.6;
   margin-top: 8px;
+}
+
+.section-hint:last-child {
+  padding-bottom: 12px;
+}
+
+/* Vant's switch is its own fixed blue otherwise; follow the theme like every other control. */
+.grid-settings :deep(.van-switch--on) {
+  background: var(--theme-accent);
 }
 
 .mini-link {
