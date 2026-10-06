@@ -461,6 +461,10 @@ const onEdgeTouchEnd = () => {
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Landscape only: keeps the first and last column out from under a cutout. The top bar and the
+     bottom padding above already clear the other two edges. */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
   scrollbar-width: thin;
 }
 

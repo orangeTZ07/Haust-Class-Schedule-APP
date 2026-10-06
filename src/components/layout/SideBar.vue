@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Users, SquareCheckBig, RotateCcw } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Users, RotateCcw } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -41,7 +41,6 @@ const groups: { title: string; items: MenuItem[] }[] = [
       { icon: Download, label: "导入课表", action: "import" },
       { icon: Upload, label: "导出课表", action: "export" },
       { icon: CalendarRange, label: "选择课程表", route: "/tables" },
-      { icon: SquareCheckBig, label: "待办列表", route: "/todo" },
     ]
   },
   {
@@ -189,6 +188,8 @@ const handleOverlayClick = () => {
 .sidebar-header {
   padding: 24px 20px;
   padding-top: calc(24px + var(--safe-top));
+  /* The drawer slides in from the left edge, so in landscape that is the side a cutout can be on. */
+  padding-left: calc(20px + var(--safe-left));
   /* The same band colour as the top bar. The title is header-text, which is only guaranteed to be
      readable on header-bg: on the Vant blue preset it is white, and on the bare drawer background
      it vanished. */
@@ -206,6 +207,7 @@ const handleOverlayClick = () => {
 .menu-list {
   flex: 1;
   padding: 12px 10px;
+  padding-left: calc(10px + var(--safe-left));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -231,6 +233,7 @@ const handleOverlayClick = () => {
 .menu-footer {
   padding: 8px 10px;
   padding-bottom: calc(8px + var(--safe-bottom));
+  padding-left: calc(10px + var(--safe-left));
   display: flex;
   flex-direction: column;
   gap: 2px;

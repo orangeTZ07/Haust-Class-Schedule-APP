@@ -102,6 +102,8 @@ const formatSchedule = (s: any) => {
   background: var(--theme-bg-color);
   padding: 16px;
   padding-top: calc(16px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   display: flex;
   align-items: center;
   gap: 12px;
@@ -125,6 +127,9 @@ const formatSchedule = (s: any) => {
 
 .content {
   padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
 }
 
 .empty-state {

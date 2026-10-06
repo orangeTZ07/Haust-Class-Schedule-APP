@@ -66,6 +66,8 @@ const handleSelect = (id: string) => {
   background: var(--theme-bg-color);
   padding: 16px;
   padding-top: calc(16px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -91,6 +93,9 @@ const handleSelect = (id: string) => {
 
 .content {
   padding: 20px;
+  padding-bottom: calc(20px + var(--safe-bottom));
+  padding-left: calc(20px + var(--safe-left));
+  padding-right: calc(20px + var(--safe-right));
 }
 
 .preset-list {

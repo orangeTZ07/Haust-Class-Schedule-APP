@@ -51,6 +51,8 @@ const goBack = () => {
   align-items: center;
   padding: 16px;
   padding-top: calc(16px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   background: var(--theme-header-bg);
   border-bottom: 1px solid var(--theme-grid-line-color);
 }
@@ -67,8 +69,10 @@ const goBack = () => {
   color: var(--theme-header-text);
 }
 
+/* The sections inside bring their own side padding; this only keeps them out of the cutout and
+   the last one above the navigation bar. */
 .content {
-  padding-bottom: 80px;
+  padding: 0 var(--safe-right) calc(24px + var(--safe-bottom)) var(--safe-left);
 }
 
 /* Same card look as the sections in GridSettings, so the row reads as one more setting. The 12px

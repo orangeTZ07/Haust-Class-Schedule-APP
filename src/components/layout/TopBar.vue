@@ -210,11 +210,14 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  /* env(safe-area-inset-top) comes back as 0 inside the Android WebView, so the bar sat 12px
-     from the screen edge and its controls ended up underneath the status bar, where the
-     system swallows the tap -- 第几周 and the menu were awkward or impossible to hit. The
-     floor keeps them reachable; max() still honours a real inset when one is reported. */
-  padding-top: calc(12px + max(var(--safe-top), 26px));
+  /* The bar is painted under the status bar (the window is edge-to-edge), so its controls start
+     below it. --safe-top is the real height: the native system-bars plugin measures it, because
+     env(safe-area-inset-top) is 0 in older Android WebViews and the controls used to end up under
+     the status bar, where the system swallows the tap. */
+  padding-top: calc(12px + var(--safe-top));
+  /* Landscape: keep the controls out from under a display cutout or the navigation bar. */
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   background: color-mix(in srgb, var(--theme-header-bg) 85%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -269,8 +272,10 @@ onBeforeUnmount(() => {
 
 .week-switcher {
   position: absolute;
-  left: 50%;
-  top: calc(12px + max(var(--safe-top), 26px));
+  /* Centred in the space between the insets, not in the whole screen, so it stays level with the
+     menu button and the trash target when one side has a cutout. */
+  left: calc(50% + (var(--safe-left) - var(--safe-right)) / 2);
+  top: calc(12px + var(--safe-top));
   transform: translateX(-50%);
   height: 34px;
   display: flex;

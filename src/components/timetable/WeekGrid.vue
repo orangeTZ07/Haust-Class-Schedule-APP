@@ -1272,8 +1272,7 @@ onUnmounted(() => {
   /* Without this the flex item refuses to shrink below its content height (the default
      for a flex item is min-height: auto). It then grows past .week-grid, which has
      overflow: hidden, so the rows past the fold are clipped and cannot be reached --
-     the timetable simply does not scroll. TodoPanel.vue:935 already does this; the
-     timetable was missing it. */
+     the timetable simply does not scroll. */
   min-height: 0;
   overflow-y: auto;
   padding-bottom: 20px;

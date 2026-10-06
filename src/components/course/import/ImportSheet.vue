@@ -73,8 +73,8 @@ const close = () => emit("update:show", false);
 
       <div class="sheet-body">
         <!-- v-show rather than v-if: switching tabs must not throw away what was typed. -->
-        <EamsSyncSection v-show="method === 'eams'" :overwrite="overwrite" @use-file="method = 'file'" />
-        <FileImportSection v-show="method === 'file'" :overwrite="overwrite" />
+        <EamsSyncSection v-show="method === 'eams'" :overwrite="overwrite" @use-file="method = 'file'" @close="close" />
+        <FileImportSection v-show="method === 'file'" :overwrite="overwrite" @close="close" />
         <AiImportSection v-show="method === 'ai'" @close="close" />
       </div>
 
