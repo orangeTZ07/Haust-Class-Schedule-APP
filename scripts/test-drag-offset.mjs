@@ -27,6 +27,30 @@ console.log("=== 拖动只动目标课 ===");
   check("所有旁观课共用同一个零对象", other === again && other === drag.DRAG_ZERO);
 }
 
+console.log("=== 落点穿过正在拖的卡片 ===");
+{
+  const cell = (day, period) => {
+    const node = { dataset: { day: String(day), period: String(period) } };
+    node.closest = (selector) => {
+      if (selector === ".cell[data-day][data-period]") return node;
+      return null;
+    };
+    return node;
+  };
+  const dragging = {
+    closest: (selector) => selector === ".course-block.is-dragging" ? dragging : null
+  };
+  const orbit = {
+    closest: (selector) => selector === ".conflict-orbit-center" ? orbit : null
+  };
+  const original = cell(1, 1);
+  const target = cell(5, 1);
+  check("跳过正在拖的卡片，落到指针下面的格子", drag.cellFromHitStack([dragging, target]) === target);
+  check("没有拖卡片时格子照常命中", drag.cellFromHitStack([original]) === original);
+  check("冲突中心也不当格子", drag.cellFromHitStack([orbit, target]) === target);
+  check("没有格子就是 null", drag.cellFromHitStack([dragging, orbit]) === null);
+}
+
 if (failed) {
   console.error(`\n${failed} FAILED`);
   process.exit(1);

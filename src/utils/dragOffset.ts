@@ -23,3 +23,17 @@ export const offsetForSchedule = (
   if (!drag || drag.scheduleId !== scheduleId) return DRAG_ZERO;
   return { x: drag.offsetX, y: drag.offsetY };
 };
+
+/// elementsFromPoint 从上到下。正在拖的卡片还要接着指针事件（捕获 pointerup），
+/// 所以它会盖住指针下面真正的格子；找落点时跳过它和冲突轨道中心。
+export const cellFromHitStack = (
+  elements: Array<{ closest: (selector: string) => { dataset: DOMStringMap } | null }>
+): { dataset: DOMStringMap } | null => {
+  for (const element of elements) {
+    if (element.closest(".conflict-orbit-center")) continue;
+    if (element.closest(".course-block.is-dragging")) continue;
+    const cell = element.closest(".cell[data-day][data-period]");
+    if (cell) return cell;
+  }
+  return null;
+};

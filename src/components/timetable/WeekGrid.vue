@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useToday } from "@/composables/useToday";
-import { isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
+import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
 const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, commitEdit } = useCourses();
@@ -669,10 +669,9 @@ const getOrbitLineStyle = (block: MergedBlock, index: number, total: number) => 
 };
 
 const readCellFromPoint = (clientX: number, clientY: number) => {
-  const elements = document.elementsFromPoint(clientX, clientY);
-  const cell = elements
-    .find(element => !(element instanceof HTMLElement) || !element.closest(".conflict-orbit-center"))
-    ?.closest<HTMLElement>(".cell[data-day][data-period]");
+  const elements = document.elementsFromPoint(clientX, clientY)
+    .filter((element): element is HTMLElement => element instanceof HTMLElement);
+  const cell = cellFromHitStack(elements) as HTMLElement | null;
   if (!cell) return null;
 
   const day = Number(cell.dataset.day);
