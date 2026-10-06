@@ -72,6 +72,8 @@ async function initDb(db: Database) {
       week_type TEXT NOT NULL,
       scope TEXT NOT NULL DEFAULT 'semester',
       is_cancelled INTEGER NOT NULL DEFAULT 0,
+      source TEXT,
+      parser_version INTEGER,
       FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
     );
   `);
@@ -87,6 +89,14 @@ async function initDb(db: Database) {
   }
   if (!scheduleColumns.some(column => column.name === "is_cancelled")) {
     await db.execute("ALTER TABLE schedules ADD COLUMN is_cancelled INTEGER NOT NULL DEFAULT 0");
+  }
+  // Nullable on purpose: rows written before provenance existed, and hand-entered segments,
+  // stay null. A default of "eams" would make a later migration rewrite the wrong courses.
+  if (!scheduleColumns.some(column => column.name === "source")) {
+    await db.execute("ALTER TABLE schedules ADD COLUMN source TEXT");
+  }
+  if (!scheduleColumns.some(column => column.name === "parser_version")) {
+    await db.execute("ALTER TABLE schedules ADD COLUMN parser_version INTEGER");
   }
 
   // One row per action group (the timetable after one user gesture), capped per course table.
@@ -126,7 +136,11 @@ function normalizeSchedule(row: any): CourseSchedule {
     endWeek: row.end_week ?? row.endWeek,
     weekType: row.week_type ?? row.weekType,
     scope: (row.scope ?? "semester") as CourseSchedule["scope"],
-    isCancelled: Boolean(row.is_cancelled ?? row.isCancelled ?? false)
+    isCancelled: Boolean(row.is_cancelled ?? row.isCancelled ?? false),
+    source: typeof row.source === "string" && row.source ? row.source : undefined,
+    parserVersion: typeof (row.parser_version ?? row.parserVersion) === "number"
+      ? (row.parser_version ?? row.parserVersion)
+      : undefined
   };
 }
 
@@ -319,8 +333,8 @@ export async function addSchedule(schedule: Omit<CourseSchedule, "id">): Promise
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     const result = await db.execute(
-      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled]
+      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled, schedule.source ?? null, schedule.parserVersion ?? null]
     );
     return result.lastInsertId ?? 0;
   } else {
@@ -338,7 +352,7 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     await db.execute(
-      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9 WHERE id = $10",
+      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9, source = $10, parser_version = $11 WHERE id = $12",
       [
         schedule.courseId,
         schedule.dayOfWeek,
@@ -349,6 +363,8 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
         schedule.weekType,
         scope,
         isCancelled,
+        schedule.source ?? null,
+        schedule.parserVersion ?? null,
         schedule.id
       ]
     );

@@ -1,10 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
 import { confirmAction } from "@/utils/confirm";
+import {
+  addSeenStepIds,
+  autoCoachQueue,
+  isEmptyCellDeferred,
+  manualCoachQueue,
+  readSeenStepIds,
+  rememberEmptyCellUnanchored,
+  timetableFingerprint,
+  type CoachPresentation
+} from "@/utils/featureCoach";
+import {
+  markReimportPrompted,
+  semesterNeedsReimport,
+  wasReimportPrompted,
+  WEEK_OFFSET_PROMPT
+} from "@/utils/weekOffsetPrompt";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
@@ -13,12 +29,13 @@ import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
 import EditModeBar from "@/components/edit/EditModeBar.vue";
+import FeatureCoach from "@/components/coach/FeatureCoach.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
-        periodSlots, addCourse, addSchedule, editing, sessionCount, canUndoEdit, canRedoEdit,
+        periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
+        coursesReady, editing, sessionCount, canUndoEdit, canRedoEdit,
         commitEdit, undoEdit, redoEdit, exitEditMode } = useCourses();
-
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
 /// How far the drawer is out, in px, from 0 (closed) to SIDEBAR_WIDTH (open). While a finger is
@@ -44,15 +61,6 @@ const onEditKey = (event: KeyboardEvent) => {
   if (event.key !== "Escape" || !editing.value) return;
   exitEditMode();
 };
-
-onMounted(() => {
-  document.addEventListener("keydown", onEditKey);
-  refreshReminders();
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener("keydown", onEditKey);
-});
 
 const toggleSidebar = () => {
   setSidebar(!sidebarVisible.value);
@@ -146,6 +154,8 @@ const handleSidebarAction = (action: string) => {
     contactVisible.value = true;
   } else if (action === "reset-view") {
     resetTimetableView();
+  } else if (action === "coach") {
+    startManualCoach();
   }
   closeSidebar();
 };
@@ -222,6 +232,155 @@ const setSidebar = (open: boolean) => {
   sidebarVisible.value = open;
   sidebarOffset.value = open ? SIDEBAR_WIDTH : 0;
 };
+
+const coachMode = ref<"auto" | "manual" | null>(null);
+const coachQueue = ref<CoachPresentation[]>([]);
+const coachIndex = ref(0);
+const coachPhase = ref<"cue" | "spotlight">("spotlight");
+const bootstrapped = ref(false);
+let promptingReimport = false;
+
+const coachStep = computed(() => coachQueue.value[coachIndex.value] ?? null);
+const coachIsLast = computed(() => coachQueue.value.length > 0 && coachIndex.value >= coachQueue.value.length - 1);
+const coachFingerprint = computed(() => timetableFingerprint(activeCourseTableId.value, schedules.value));
+
+const syncCoachChrome = () => {
+  const step = coachStep.value;
+  if (!step) return;
+  if (step.offHome && coachPhase.value === "spotlight") setSidebar(true);
+  else setSidebar(false);
+};
+
+const startQueue = (mode: "auto" | "manual", steps: CoachPresentation[]) => {
+  if (steps.length === 0) {
+    coachMode.value = null;
+    coachQueue.value = [];
+    return;
+  }
+  coachMode.value = mode;
+  coachQueue.value = steps;
+  coachIndex.value = 0;
+  coachPhase.value = steps[0].offHome ? "cue" : "spotlight";
+  syncCoachChrome();
+};
+
+/// Auto tour. Does not include a deferred step, and does not mark that step seen.
+const startAutoCoach = () => {
+  if (coachMode.value || importVisible.value) return;
+  startQueue("auto", autoCoachQueue({
+    seenIds: readSeenStepIds(localStorage),
+    hasCoursesOnCurrentWeek: effectiveSchedules.value.length > 0,
+    deferEmptyCell: isEmptyCellDeferred(currentWeek.value, coachFingerprint.value)
+  }));
+};
+
+/// Full tutorial from the menu. Does not clear the seen-id record.
+const startManualCoach = () => {
+  startQueue("manual", manualCoachQueue());
+};
+
+const finishCoach = () => {
+  const wasAuto = coachMode.value === "auto";
+  const ids = coachQueue.value.map(step => step.id);
+  coachMode.value = null;
+  coachQueue.value = [];
+  if (wasAuto) addSeenStepIds(localStorage, ids);
+  setSidebar(false);
+  if (wasAuto) startAutoCoach();
+};
+
+const advanceCoach = () => {
+  if (coachIndex.value < coachQueue.value.length - 1) {
+    coachIndex.value += 1;
+    const step = coachQueue.value[coachIndex.value];
+    coachPhase.value = step.offHome ? "cue" : "spotlight";
+    syncCoachChrome();
+    return;
+  }
+  finishCoach();
+};
+
+const followCoachCue = () => {
+  coachPhase.value = "spotlight";
+  syncCoachChrome();
+};
+
+const onCoachUnanchored = () => {
+  if (coachStep.value?.target === "empty-cell") {
+    rememberEmptyCellUnanchored(currentWeek.value, coachFingerprint.value);
+  }
+  const next = coachQueue.value.filter((_, index) => index !== coachIndex.value);
+  coachQueue.value = next;
+  if (next.length === 0) {
+    coachMode.value = null;
+    return;
+  }
+  if (coachIndex.value >= next.length) coachIndex.value = next.length - 1;
+  const step = next[coachIndex.value];
+  coachPhase.value = step.offHome ? "cue" : "spotlight";
+  syncCoachChrome();
+};
+
+const considerReimportPrompt = async (): Promise<boolean> => {
+  const tableId = activeCourseTableId.value;
+  if (promptingReimport || wasReimportPrompted(tableId, localStorage)) return false;
+  if (!semesterNeedsReimport(schedules.value)) return false;
+  promptingReimport = true;
+  try {
+    const go = await confirmAction({
+      title: WEEK_OFFSET_PROMPT.title,
+      message: WEEK_OFFSET_PROMPT.message,
+      confirmText: WEEK_OFFSET_PROMPT.confirmText,
+      cancelText: WEEK_OFFSET_PROMPT.cancelText
+    });
+    markReimportPrompted(tableId, localStorage);
+    return go;
+  } finally {
+    promptingReimport = false;
+  }
+};
+
+onMounted(async () => {
+  document.addEventListener("keydown", onEditKey);
+  refreshReminders();
+  await coursesReady;
+  const openImport = await considerReimportPrompt();
+  bootstrapped.value = true;
+  if (openImport) importVisible.value = true;
+  else startAutoCoach();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onEditKey);
+});
+
+watch(importVisible, (open) => {
+  if (!open && bootstrapped.value) startAutoCoach();
+});
+
+watch(effectiveSchedules, () => {
+  if (!bootstrapped.value) return;
+  startAutoCoach();
+});
+
+/// Flipping week must re-run auto coach even when this week's courses look the same as
+/// last week's: the empty-cell step was deferred for that week, and a new week may have
+/// a free cell. effectiveSchedules above covers data edits; this covers the week itself.
+watch(currentWeek, () => {
+  if (!bootstrapped.value) return;
+  startAutoCoach();
+});
+
+watch(activeCourseTableId, async () => {
+  if (!bootstrapped.value) return;
+  if (await considerReimportPrompt()) importVisible.value = true;
+});
+
+watch(sidebarVisible, (open) => {
+  const step = coachStep.value;
+  if (!step?.offHome) return;
+  coachPhase.value = open ? "spotlight" : "cue";
+});
 
 const onEdgeTouchStart = (event: TouchEvent) => {
   const touch = event.touches[0];
@@ -371,6 +530,17 @@ const onEdgeTouchEnd = () => {
         filter: `blur(${themeConfig.bgBlur}px)`,
         transform: themeConfig.bgBlur > 0 ? 'scale(1.1)' : 'none'
       }"
+    />
+
+    <FeatureCoach
+      :step="coachStep"
+      :phase="coachPhase"
+      :is-last="coachIsLast"
+      @next="advanceCoach"
+      @skip="finishCoach"
+      @close="finishCoach"
+      @follow-cue="followCoachCue"
+      @unanchored="onCoachUnanchored"
     />
 
     <!-- 侧边栏 -->
