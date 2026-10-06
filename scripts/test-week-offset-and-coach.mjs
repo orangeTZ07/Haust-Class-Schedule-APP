@@ -2,6 +2,7 @@
 //
 // 用法: node scripts/test-week-offset-and-coach.mjs
 
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -119,6 +120,11 @@ console.log("=== 引导步骤 ===");
   check(
     "不推迟时双击加课仍在最前",
     coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: true, deferEmptyCell: false })[0]?.id === "double-tap-empty-add-v1"
+  );
+  const home = readFileSync(join(here, "..", "src/views/HomeView.vue"), "utf8");
+  check(
+    "翻周会重新跑自动引导（不只靠课表数据）",
+    /watch\(\s*currentWeek\s*,/.test(home) && home.includes("startAutoCoach")
   );
   coach.resetEmptyCellDeferral();
 

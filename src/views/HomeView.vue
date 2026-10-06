@@ -352,6 +352,14 @@ watch(effectiveSchedules, () => {
   startAutoCoach();
 });
 
+/// Flipping week must re-run auto coach even when this week's courses look the same as
+/// last week's: the empty-cell step was deferred for that week, and a new week may have
+/// a free cell. effectiveSchedules above covers data edits; this covers the week itself.
+watch(currentWeek, () => {
+  if (!bootstrapped.value) return;
+  startAutoCoach();
+});
+
 watch(activeCourseTableId, async () => {
   if (!bootstrapped.value) return;
   if (await considerReimportPrompt()) importVisible.value = true;
