@@ -48,6 +48,12 @@ export async function openBatterySettings(): Promise<void> {
   await invoke(`${PREFIX}|open_battery_settings`);
 }
 
+/// Opens this app's notification page in the system Settings app.
+/// Public settings screen only: vendor autostart activities are not stable enough to call.
+export async function openNotificationSettings(): Promise<void> {
+  await invoke(`${PREFIX}|open_notification_settings`);
+}
+
 /// What the OS currently says about showing notifications. "prompt" means it has not been asked
 /// yet (or, on Android 13+, was refused once and may be asked again).
 export type NotificationPermissionState = "granted" | "denied" | "prompt";

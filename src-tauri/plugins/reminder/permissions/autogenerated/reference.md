@@ -8,6 +8,7 @@ Allows setting and canceling reminders
 - `allow-cancel-reminder`
 - `allow-check-battery-optimization`
 - `allow-open-battery-settings`
+- `allow-open-notification-settings`
 
 ## Permission Table
 
@@ -92,6 +93,32 @@ Enables the open_battery_settings command without any pre-configured scope.
 <td>
 
 Denies the open_battery_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`reminder:allow-open-notification-settings`
+
+</td>
+<td>
+
+Enables the open_notification_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`reminder:deny-open-notification-settings`
+
+</td>
+<td>
+
+Denies the open_notification_settings command without any pre-configured scope.
 
 </td>
 </tr>

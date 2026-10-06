@@ -40,4 +40,8 @@ impl<R: Runtime> Reminder<R> {
     pub fn open_battery_settings(&self) -> Result<(), String> {
         Err(UNSUPPORTED.to_string())
     }
+
+    pub fn open_notification_settings(&self) -> Result<(), String> {
+        Err(UNSUPPORTED.to_string())
+    }
 }

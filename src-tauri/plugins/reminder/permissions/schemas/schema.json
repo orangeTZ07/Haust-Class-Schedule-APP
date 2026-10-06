@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the open_battery_settings command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_notification_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-notification-settings",
+          "markdownDescription": "Enables the open_notification_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_notification_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-notification-settings",
+          "markdownDescription": "Denies the open_notification_settings command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_reminder command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-reminder",
@@ -343,10 +355,10 @@
           "markdownDescription": "Denies the set_reminder command without any pre-configured scope."
         },
         {
-          "description": "Allows setting and canceling reminders\n#### This default permission set includes:\n\n- `allow-set-reminder`\n- `allow-cancel-reminder`\n- `allow-check-battery-optimization`\n- `allow-open-battery-settings`",
+          "description": "Allows setting and canceling reminders\n#### This default permission set includes:\n\n- `allow-set-reminder`\n- `allow-cancel-reminder`\n- `allow-check-battery-optimization`\n- `allow-open-battery-settings`\n- `allow-open-notification-settings`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows setting and canceling reminders\n#### This default permission set includes:\n\n- `allow-set-reminder`\n- `allow-cancel-reminder`\n- `allow-check-battery-optimization`\n- `allow-open-battery-settings`"
+          "markdownDescription": "Allows setting and canceling reminders\n#### This default permission set includes:\n\n- `allow-set-reminder`\n- `allow-cancel-reminder`\n- `allow-check-battery-optimization`\n- `allow-open-battery-settings`\n- `allow-open-notification-settings`"
         }
       ]
     }
