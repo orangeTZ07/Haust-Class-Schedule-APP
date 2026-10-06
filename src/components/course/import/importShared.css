@@ -1,0 +1,167 @@
+/* Shared look for the three import sections. Plain (unscoped) CSS on purpose: the sections are
+   separate components and would otherwise each carry a copy of the same button and input rules.
+   Everything is prefixed `imp-` so nothing here can leak onto another screen by accident.
+
+   Colours come only from the --theme-* variables (plus the fixed semantic --color-*), never from
+   hard-coded greys: the previous sync panel fell back to #646566 and #fff, which is unreadable on
+   the dark themes. */
+
+.imp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--theme-bg-color), var(--theme-body-text) 4%);
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+}
+
+.imp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.imp-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--theme-body-text);
+}
+
+.imp-tag {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  border-radius: 999px;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-body-text) 9%, transparent);
+}
+
+.imp-tag.ok {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+}
+
+.imp-tag.warn {
+  background: color-mix(in srgb, var(--color-warning) 22%, transparent);
+}
+
+.imp-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--theme-body-text) 72%, transparent);
+}
+
+.imp-hint strong {
+  font-weight: 600;
+  color: var(--theme-body-text);
+}
+
+.imp-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+}
+
+.imp-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-body-text);
+  opacity: 0.7;
+}
+
+/* 16px or larger: below that iOS zooms the page when the field is focused. */
+.imp-input,
+.imp-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 14px;
+  font-size: 16px;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-bg-color), var(--theme-body-text) 5%);
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 14%, transparent);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.imp-input {
+  height: 46px;
+}
+
+.imp-textarea {
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  font-family: inherit;
+}
+
+.imp-input:focus,
+.imp-textarea:focus {
+  border-color: color-mix(in srgb, var(--theme-body-text) 45%, transparent);
+}
+
+.imp-input::placeholder,
+.imp-textarea::placeholder {
+  color: var(--theme-body-text);
+  opacity: 0.32;
+}
+
+/* One main action per section, filled with the body text colour and lettered in the page
+   background: that pair is the one the theme guarantees to be readable against each other, so the
+   button stands out on every preset. The header colours are not safe here -- on the minimal themes
+   header-bg is the page background itself, and on the Vant blue preset header-text is white on a
+   white page. Same reason none of the sheet's headings use header-text. */
+.imp-primary-btn,
+.imp-secondary-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 12px;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.imp-primary-btn {
+  color: var(--theme-bg-color);
+  background: var(--theme-body-text);
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 25%, transparent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--theme-body-text) 22%, transparent);
+}
+
+.imp-secondary-btn {
+  height: 44px;
+  font-size: 14px;
+  color: var(--theme-body-text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
+}
+
+.imp-primary-btn:active:not(:disabled),
+.imp-secondary-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  opacity: 0.85;
+}
+
+.imp-primary-btn:disabled,
+.imp-secondary-btn:disabled {
+  opacity: 0.55;
+}
+
+.imp-spin {
+  animation: imp-spin 1s linear infinite;
+}
+
+@keyframes imp-spin {
+  to { transform: rotate(360deg); }
+}
