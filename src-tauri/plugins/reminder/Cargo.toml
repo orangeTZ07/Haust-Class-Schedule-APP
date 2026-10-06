@@ -13,5 +13,11 @@ thiserror = "2"
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
+# register_ios_plugin only exists with tauri's `wry` feature. It is on by default, but the official
+# plugins (tauri-plugin-notification) spell it out for iOS so that an app disabling default
+# features cannot silently remove the call this crate depends on.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri = { version = "2", features = ["wry"] }
+
 [build-dependencies]
 tauri-plugin = { version = "2", features = [] }

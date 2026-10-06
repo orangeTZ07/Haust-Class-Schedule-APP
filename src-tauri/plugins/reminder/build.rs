@@ -6,5 +6,6 @@ fn main() {
         "open_battery_settings",
     ])
     .android_path("android")
+    .ios_path("ios")
     .build();
 }

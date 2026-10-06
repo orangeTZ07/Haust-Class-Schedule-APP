@@ -3,11 +3,12 @@ use tauri::{AppHandle, Runtime};
 
 use crate::{BatteryStatus, CancelReminderArgs, SetReminderArgs};
 
-/// Desktop, and any non-Android mobile target, has no reminder implementation.
+/// Desktop has no reminder implementation; Android and iOS are covered by mobile.rs.
 ///
 /// The commands still exist so the plugin loads everywhere and the frontend receives a readable
 /// message rather than a missing-command error. `check_battery_optimization` answers rather than
-/// failing because it only drives a hint in the UI.
+/// failing because it only drives a hint in the UI, and "nothing to optimise" is the answer that
+/// keeps that hint hidden.
 pub fn init<R: Runtime, C: serde::de::DeserializeOwned>(
     _app: &AppHandle<R>,
     _api: PluginApi<R, C>,
@@ -21,7 +22,7 @@ pub struct Reminder<R: Runtime> {
     _runtime: std::marker::PhantomData<fn() -> R>,
 }
 
-const UNSUPPORTED: &str = "上课提醒仅在 Android 上可用";
+const UNSUPPORTED: &str = "当前平台不支持上课提醒";
 
 impl<R: Runtime> Reminder<R> {
     pub fn set_reminder(&self, _args: SetReminderArgs) -> Result<(), String> {
@@ -33,7 +34,7 @@ impl<R: Runtime> Reminder<R> {
     }
 
     pub fn check_battery_optimization(&self) -> Result<BatteryStatus, String> {
-        Ok(BatteryStatus { is_ignoring: false })
+        Ok(BatteryStatus { is_ignoring: true })
     }
 
     pub fn open_battery_settings(&self) -> Result<(), String> {
