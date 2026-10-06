@@ -38,6 +38,14 @@ src-tauri/gen/android/local.properties
 src-tauri/plugins/**/android/build/
 src-tauri/plugins/**/android/.tauri/
 
+# iOS (plugin Swift packages)
+# tauri-plugin's build script copies the Tauri iOS API to <plugin>/.tauri/tauri-api, one level
+# above ios/, so this pattern is not the same as the android/.tauri one above.
+src-tauri/plugins/**/.tauri/
+src-tauri/plugins/**/ios/.build/
+src-tauri/plugins/**/ios/.swiftpm/
+src-tauri/plugins/**/ios/Package.resolved
+
 # Logs
 *.log
 npm-debug.log*
