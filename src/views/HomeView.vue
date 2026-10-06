@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
@@ -26,11 +26,13 @@ import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
+import EditModeBar from "@/components/edit/EditModeBar.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
-        coursesReady } = useCourses();
+        coursesReady, editing, deepHistory, canUndoEdit, canRedoEdit, commitEdit, undoEdit, redoEdit,
+        exitEditMode, setDeepHistory } = useCourses();
 
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -99,6 +101,7 @@ const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
         };
 
   await addSchedule(course.id, slot.day, slot.period, endPeriod, scheduleOptions);
+  commitEdit();
   addVisible.value = false;
   addSlot.value = null;
   const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
@@ -326,13 +329,23 @@ const considerReimportPrompt = async (): Promise<boolean> => {
   }
 };
 
+const onEditKey = (event: KeyboardEvent) => {
+  if (event.key !== "Escape" || !editing.value || coachStep.value) return;
+  exitEditMode();
+};
+
 onMounted(async () => {
+  document.addEventListener("keydown", onEditKey);
   refreshReminders();
   await coursesReady;
   const openImport = await considerReimportPrompt();
   bootstrapped.value = true;
   if (openImport) importVisible.value = true;
   else startAutoCoach();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onEditKey);
 });
 
 watch(importVisible, (open) => {
@@ -568,6 +581,17 @@ const onEdgeTouchEnd = () => {
           @request-add="onRequestAdd"
         />
       </div>
+
+      <EditModeBar
+        v-if="editing"
+        :can-undo="canUndoEdit"
+        :can-redo="canRedoEdit"
+        :deep="deepHistory"
+        @undo="undoEdit"
+        @redo="redoEdit"
+        @set-deep="setDeepHistory"
+        @exit="exitEditMode"
+      />
     </div>
   </div>
 </template>
