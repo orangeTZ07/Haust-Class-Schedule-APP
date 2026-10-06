@@ -15,8 +15,15 @@ const {
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
+/// Back to wherever the user came from: this page is reached from 设置 now, but a stale link or a
+/// reload can land here with nothing behind it, and router.back() would then leave the app.
+/// vue-router keeps the previous route in history.state.back for exactly this check.
 const goBack = () => {
-  router.push("/");
+  if (window.history.state?.back) {
+    router.back();
+  } else {
+    router.push("/settings");
+  }
 };
 
 const goToPresets = () => {
