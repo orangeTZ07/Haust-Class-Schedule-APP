@@ -1152,10 +1152,6 @@ onUnmounted(() => {
   height: 100%;
   width: 100%;
   min-width: max(100%, var(--week-grid-min-width));
-  /* One wash for the whole today column. Header cell and body cells read the same token,
-     so the band cannot grow a border, a radius, or a stronger header tint of its own.
-     8% of --theme-accent is light enough that 白金 / 黑金 / 网易云 / B站 keep their header lettering. */
-  --today-column-wash: color-mix(in srgb, var(--theme-accent) 8%, transparent);
   background: transparent;
   border-radius: 0;
   overflow: hidden;
@@ -1202,7 +1198,8 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* Name and date stay stacked. Today is marked on the header cell itself, not on this block. */
+/* The name and the date sit in one rounded block so that today can be marked by filling the whole
+   block, rather than by recolouring two lines of text or washing the header cell. */
 .day-pill {
   width: 100%;
   display: flex;
@@ -1210,6 +1207,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 1px;
   padding: 4px 0 5px;
+  border-radius: 10px;
 }
 
 .day-name {
@@ -1225,12 +1223,39 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* Today, and only while the week on screen is the real one (todayDayNumber is 0 otherwise).
-   The header cell is filled edge to edge with the same wash as the cells below. No pill, no radius. */
-.day-header.is-today,
-.cell.is-today {
-  border-radius: 0;
-  box-shadow: inset 0 0 0 999px var(--today-column-wash);
+/* Today, and only on the week that is actually current (see todayDayNumber): a rounded pill in the
+   header, and a separate faint wash on the body cells. The wash must not paint the header. A tint
+   that continues from the column up into the header cell clashes with the pill.
+   The pill sits on the header band, so it uses that band's own pair, inverted (header-text fill,
+   header-bg lettering): that pair is the one guaranteed to contrast *there*. The page accent is not:
+   on the Vant preset the band is itself the accent blue, and a blue pill on a blue band was
+   invisible. On every other preset header-text is the accent anyway. The cells below sit on the
+   page, so they use --theme-accent (see useTheme). */
+.day-header.is-today .day-pill {
+  background: var(--theme-header-text);
+  color: var(--theme-header-bg);
+  font-weight: 800;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--theme-header-text) 30%, transparent);
+  animation:
+    today-pill-scale var(--dur-slow) var(--ease-spring) backwards,
+    today-pill-fade var(--dur-fast) ease-out backwards;
+}
+
+.day-header.is-today .day-date {
+  opacity: 0.88;
+  font-weight: 700;
+}
+
+/* Pops in when the week on screen becomes the real one (jumping back with 回到本周, or the first
+   paint). Scale and fade are separate animations so the spring cannot flicker the opacity. */
+@keyframes today-pill-scale {
+  from { transform: scale(0.82); }
+  to { transform: scale(1); }
+}
+
+@keyframes today-pill-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .day-header:last-child {
@@ -1296,6 +1321,12 @@ onUnmounted(() => {
   border-right: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 20%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 20%, transparent);
   position: relative;
+}
+
+/* Body only. An inset shadow rather than a background, so it lays over the morning / afternoon /
+   evening tint instead of replacing it, and it never continues up into the header pill. */
+.cell.is-today {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
 
 .cell:last-child {
