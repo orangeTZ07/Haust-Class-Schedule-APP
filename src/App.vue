@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
 import { useTheme } from "./composables/useTheme";
+import { useSystemBars } from "./composables/useSystemBars";
 import { useUpdateCheck } from "./composables/useUpdateCheck";
 import UpdateDialog from "./components/layout/UpdateDialog.vue";
 
 const { themeConfig, cssVariables } = useTheme();
+// 把安卓状态栏 / 导航栏的真实尺寸写进 --native-safe-*，并让栏上的图标颜色跟着主题走；失败静默。
+useSystemBars();
 const { startAutoCheck } = useUpdateCheck();
 
 // 版本检查在后台跑，不挡首屏；失败静默。弹窗挂在这一层，所以任何页面都能弹。

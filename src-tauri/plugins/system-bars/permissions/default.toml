@@ -1,0 +1,3 @@
+[default]
+description = "Allows reading the system bar insets, listening for changes to them, and choosing the status and navigation bar icon style"
+permissions = ["allow-get-insets", "allow-set-bar-style", "allow-register-listener", "allow-remove-listener"]

@@ -1,0 +1,31 @@
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.coursemngr.systembars"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 24
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    // ViewCompat, WindowCompat, WindowInsetsCompat and WindowInsetsControllerCompat. The app's own
+    // androidx.appcompat / activity dependencies pull core in as well, but a library module has to
+    // declare what it compiles against; Gradle then resolves the highest version across modules.
+    implementation("androidx.core:core-ktx:1.13.1")
+    // Where app.tauri.plugin.Plugin, Invoke and JSObject come from; see the reminder plugin.
+    implementation(project(":tauri-android"))
+}

@@ -40,6 +40,10 @@ pub fn run() {
         // `plugin:reminder|set_reminder`. Four stubs of the same name used to be registered here
         // as app commands, which meant `invoke("set_reminder")` resolved to a function that
         // returned Ok(()) having done nothing -- a second, silently useless copy of the API.
+        // system-bars is independent of everything above, so its position here does not matter. It
+        // reads the Android status bar, navigation bar and cutout sizes and writes them into the
+        // page as --native-safe-* CSS variables.
+        .plugin(tauri_plugin_system_bars::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

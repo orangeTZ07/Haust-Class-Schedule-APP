@@ -16,6 +16,7 @@
     "dialog:default",
     "dialog:allow-open",
     "reminder:default",
+    "system-bars:default",
     {
       "identifier": "opener:allow-open-url",
       "description": "「检查更新」把 Release 页面或 APK 下载链接交给系统浏览器。只放行 github.com，不用 opener:default（它放行所有 http/https 网址）。",
