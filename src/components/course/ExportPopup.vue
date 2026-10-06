@@ -3,7 +3,7 @@ import { ref, computed } from "vue";
 import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
-import { Copy, X, Share2, Info, CalendarDays, Database, FileJson } from '@lucide/vue';
+import { Copy, X, Share2, Info, CalendarDays, Database } from '@lucide/vue';
 
 const props = defineProps<{
   show: boolean;
@@ -13,32 +13,24 @@ const emit = defineEmits<{
   "update:show": [value: boolean];
 }>();
 
-const { exportToCsv, exportToJsonBackup, currentWeek } = useCourses();
+const { exportToCsv, currentWeek } = useCourses();
 const { cssVariables } = useTheme();
 
-const exportMode = ref<"current-week" | "semester-base" | "json-backup">("current-week");
+const exportMode = ref<"current-week" | "semester-base">("current-week");
 
 const exportData = computed(() => {
   if (exportMode.value === "semester-base") {
     return exportToCsv("semester-base");
-  }
-  if (exportMode.value === "json-backup") {
-    return exportToJsonBackup();
   }
   return exportToCsv("current-week");
 });
 
 const modeDescription = computed(() => {
   if (exportMode.value === "semester-base") {
-    return "导出学期基础课表，不包含按周覆盖层。";
+    return "导出学期基础课表（CSV 格式），不包含按周临时调整。";
   }
-  if (exportMode.value === "json-backup") {
-    return "导出当前课表的完整备份，包含基础课表和按周覆盖层。";
-  }
-  return `导出第 ${currentWeek.value} 周当前实际生效的课表。`;
+  return `导出第 ${currentWeek.value} 周当前实际生效的课表（CSV 格式）。`;
 });
-
-const copyLabel = computed(() => exportMode.value === "json-backup" ? "一键复制 JSON" : "一键复制 CSV");
 
 const copyData = async () => {
   try {
@@ -92,14 +84,6 @@ const copyData = async () => {
           <Database :size="14" />
           <span>学期 CSV</span>
         </button>
-        <button
-          class="mode-option"
-          :class="{ active: exportMode === 'json-backup' }"
-          @click="exportMode = 'json-backup'"
-        >
-          <FileJson :size="14" />
-          <span>完整 JSON</span>
-        </button>
       </div>
 
       <div class="data-preview">
@@ -108,7 +92,7 @@ const copyData = async () => {
 
       <button class="app-btn app-btn--primary export-copy" @click="copyData">
         <Copy :size="18" />
-        {{ copyLabel }}
+        一键复制 CSV
       </button>
     </div>
   </van-popup>
@@ -135,8 +119,8 @@ const copyData = async () => {
 
 .export-mode-selector {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin-bottom: 12px;
 }
 

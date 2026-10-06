@@ -215,8 +215,8 @@ onBeforeUnmount(() => {
             <span v-if="week === realWeek" class="week-option-tag">本周</span>
           </button>
           <button type="button" class="week-picker-footer" @click="editSemesterStart">
-            <span>{{ semesterStartLabel ? `第 1 周从 ${semesterStartLabel}开始` : "还没设开学日期" }}</span>
-            <span class="week-picker-footer-action">改开学日期 ›</span>
+            <span>{{ semesterStartLabel ? `第一周起始于 ${semesterStartLabel}` : "未设置开学日期" }}</span>
+            <span class="week-picker-footer-action">调整开学日期 ›</span>
           </button>
         </div>
       </transition>

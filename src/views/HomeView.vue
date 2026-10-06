@@ -350,7 +350,7 @@ const onEdgeTouchEnd = () => {
       @action="handleSidebarAction"
     />
 
-    <!-- 导入面板：教务系统同步 / 选文件 / AI 识别，以及「撤销导入」 -->
+    <!-- 导入面板：教务系统同步 / AI 识别 -->
     <ImportSheet v-model:show="importVisible" />
 
     <!-- 导出弹窗 -->

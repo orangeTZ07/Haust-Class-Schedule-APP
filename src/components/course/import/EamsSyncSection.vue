@@ -15,8 +15,6 @@ import { importDateLabel, newTableNotice, newTableToast, skippedNotice, type Imp
 import "./importShared.css";
 
 const emit = defineEmits<{
-  /// The 连不上 hint points at the file route, which needs no network at all.
-  "use-file": [];
   /// Asked when the sync went through and left nothing the user has to read.
   close: [];
 }>();
@@ -237,10 +235,7 @@ const sync = async () => {
       <div v-if="showTrouble" class="trouble-body">
         <ul class="trouble-list">
           <li>确认 aTrust 已经显示「已连接」，再重新点「开始同步」。</li>
-          <li>
-            手机一直连不上教务系统时，可以改用
-            <button class="link-btn" @click="emit('use-file')">选文件导入</button>，不需要任何网络。
-          </li>
+          <li>若手机连不上教务系统，可改用顶部的「AI 识别」直接导入课表文本或截图。</li>
           <li>还是不行，点下面的「网络诊断」，把结果发给开发者。</li>
         </ul>
 

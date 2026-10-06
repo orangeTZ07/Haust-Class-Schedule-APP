@@ -33,9 +33,9 @@ const onSemesterStartChange = (event: Event) => {
 /// visible right where it is entered.
 const semesterStatus = computed(() => {
   const week = weekNumberForDate(new Date());
-  if (week === null) return "按这个日期算，现在还没开学";
-  if (week > semesterWeekCount.value) return `按这个日期算，现在是第 ${week} 周，这学期已经结束了`;
-  return `按这个日期算，今天是第 ${week} 周`;
+  if (week === null) return "当前尚未开学（早于学期起始日期）";
+  if (week > semesterWeekCount.value) return `当前为第 ${week} 周（学期教学周已结束）`;
+  return `当前教学周次：第 ${week} 周`;
 });
 
 const { themeConfig, isDark } = useTheme();
@@ -170,7 +170,7 @@ const applyReminders = async () => {
     <div class="section semester-section">
       <div class="section-title">开学日期</div>
       <div class="config-item">
-        <span class="label">第 1 周的星期一</span>
+        <span class="label">第一周周一（学期起始）</span>
         <input
           class="date-input"
           type="date"
@@ -180,7 +180,7 @@ const applyReminders = async () => {
       </div>
       <div class="semester-status">{{ semesterStatus }}</div>
       <div class="section-hint">
-        选这学期第 1 周星期一是几号。应用靠它算出今天是第几周：打开时直接显示本周、标出今天、按时发上课提醒。周数不对时改这里。
+        请选择本学期第一周周一的日期。系统将依据该基准自动计算教学周次，用于默认显示周、当日课程高亮及上课日程提醒。若周次与校历不一致可在此调整。
       </div>
     </div>
 

@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { DownloadCloud, FolderOpen, Sparkles, X } from "@lucide/vue";
+import { DownloadCloud, Sparkles, X } from "@lucide/vue";
 
 import { useTheme } from "@/composables/useTheme";
 import SegmentedControl from "./SegmentedControl.vue";
 import EamsSyncSection from "./EamsSyncSection.vue";
-import FileImportSection from "./FileImportSection.vue";
 import AiImportSection from "./AiImportSection.vue";
 
 const props = defineProps<{
@@ -18,20 +17,19 @@ const emit = defineEmits<{
 
 const { cssVariables } = useTheme();
 
-type ImportMethod = "eams" | "file" | "ai";
+type ImportMethod = "eams" | "ai";
 
 /// 教务系统同步排第一，也是每次打开时默认选中的那个。刻意不记住上次的选择：这是最省事的一条路，
 /// 不该因为某次走了别的办法，下次还得手动切回来。
 const method = ref<ImportMethod>("eams");
 
-/// Whether 教务同步 and 选文件 replace the current timetable instead of importing into a new one.
-/// Shared by both tabs, so it lives here, and it is switched off again every time the sheet opens:
+/// Whether 教务同步 replaces the current timetable instead of importing into a new one.
+/// It is switched off again every time the sheet opens:
 /// the default has to be the choice that destroys nothing, whatever the last import did.
 const overwrite = ref(false);
 
 const methodOptions = [
   { value: "eams" as const, label: "教务同步", icon: DownloadCloud, badge: "推荐" },
-  { value: "file" as const, label: "选文件", icon: FolderOpen },
   { value: "ai" as const, label: "AI 识别", icon: Sparkles },
 ];
 
@@ -73,8 +71,7 @@ const close = () => emit("update:show", false);
 
       <div class="sheet-body">
         <!-- v-show rather than v-if: switching tabs must not throw away what was typed. -->
-        <EamsSyncSection v-show="method === 'eams'" :overwrite="overwrite" @use-file="method = 'file'" @close="close" />
-        <FileImportSection v-show="method === 'file'" :overwrite="overwrite" @close="close" />
+        <EamsSyncSection v-show="method === 'eams'" :overwrite="overwrite" @close="close" />
         <AiImportSection v-show="method === 'ai'" @close="close" />
       </div>
 
