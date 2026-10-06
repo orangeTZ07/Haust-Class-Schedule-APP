@@ -4,18 +4,18 @@ import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
+import { confirmAction } from "@/utils/confirm";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
-import ImportPopup from "@/components/course/ImportPopup.vue";
-import EamsSyncPanel from "@/components/course/EamsSyncPanel.vue";
+import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
-import CourseForm from "@/components/course/CourseForm.vue";
+import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
-        periodSlots, addCourse, addSchedule, hasImportSnapshot, restoreImportSnapshot } = useCourses();
+        periodSlots, addCourse, addSchedule } = useCourses();
 
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -25,7 +25,6 @@ const sidebarOffset = ref(0);
 /// Suppresses the transition while dragging, so the drawer tracks the finger instead of lagging.
 const sidebarDragging = ref(false);
 const importVisible = ref(false);
-const eamsSyncVisible = ref(false);
 const exportVisible = ref(false);
 const contactVisible = ref(false);
 const trashTargetState = ref({
@@ -34,12 +33,12 @@ const trashTargetState = ref({
 });
 
 // Reminders cover a rolling seven-day window rather than the whole semester, so the window is
-// renewed every time the app opens. Failures are swallowed deliberately: not being able to
-// schedule a reminder must never get in the way of using the timetable.
-const { reschedule: rescheduleReminders } = useReminder();
-onMounted(() => {
-  rescheduleReminders().catch(() => {});
-});
+// renewed every time the home screen opens. useReminder also renews it by itself when the
+// timetable changes or the app comes back to the foreground. This is debounced and swallows its
+// own failures: not being able to schedule a reminder must never get in the way of using the
+// timetable.
+const { refreshReminders } = useReminder();
+onMounted(refreshReminders);
 
 const toggleSidebar = () => {
   setSidebar(!sidebarVisible.value);
@@ -57,21 +56,39 @@ const onRequestAdd = (slot: { day: number; period: number }) => {
   addVisible.value = true;
 };
 
-const onAddSubmit = async (payload: {
-  name: string;
-  teacher?: string;
-  location?: string;
-  span: number;
-}) => {
+const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
   const slot = addSlot.value;
   if (!slot) return;
   // endPeriod is inclusive here -- WeekGrid derives a block's span as end - start + 1.
   const endPeriod = slot.period + payload.span - 1;
   const course = await addCourse(payload.name, payload.teacher, payload.location);
-  await addSchedule(course.id, slot.day, slot.period, endPeriod);
+
+  const scheduleOptions = payload.weekScope === "current"
+    ? {
+        startWeek: currentWeek.value,
+        endWeek: currentWeek.value,
+        weekType: "all" as const,
+        scope: "weekly" as const
+      }
+    : payload.weekScope === "custom"
+      ? {
+          startWeek: payload.startWeek ?? 1,
+          endWeek: payload.endWeek ?? semesterWeekCount.value,
+          weekType: payload.weekType ?? ("all" as const),
+          scope: "semester" as const
+        }
+      : {
+          startWeek: 1,
+          endWeek: semesterWeekCount.value,
+          weekType: "all" as const,
+          scope: "semester" as const
+        };
+
+  await addSchedule(course.id, slot.day, slot.period, endPeriod, scheduleOptions);
   addVisible.value = false;
   addSlot.value = null;
-  showToast({ message: `已添加「${payload.name}」`, type: "success" });
+  const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
+  showToast({ message: `已添加「${payload.name}」${scopeDesc}`, type: "success" });
 };
 
 /// Set when a drawer drag ends. A touch can still deliver a click on release, and if that click
@@ -105,25 +122,7 @@ const resetTimetableView = () => {
   });
 };
 
-/// Puts the timetable data back to how it was right after the last import.
-///
-/// Kept separate from 重置课表视图 on purpose: that one only moves the view and is harmless, while
-/// this discards everything added or edited since the import. One button cannot be both, and
-/// hiding a destructive action behind the word "reset" is how people lose work.
-const restoreImportedTimetable = async () => {
-  if (!hasImportSnapshot.value) {
-    showToast("还没有可恢复的导入记录，需要先导入一次课表");
-    return;
-  }
-  if (!confirm("恢复到导入时的课表？导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。")) {
-    return;
-  }
-
-  const result = await restoreImportSnapshot();
-  showToast({ message: result.message, type: result.success ? "success" : "fail" });
-};
-
-const handleSidebarAction = async (action: string) => {
+const handleSidebarAction = (action: string) => {
   if (action === "import") {
     importVisible.value = true;
   } else if (action === "export") {
@@ -132,10 +131,6 @@ const handleSidebarAction = async (action: string) => {
     contactVisible.value = true;
   } else if (action === "reset-view") {
     resetTimetableView();
-  } else if (action === "restore-import") {
-    await restoreImportedTimetable();
-  } else if (action === "eams-sync") {
-    eamsSyncVisible.value = true;
   }
   closeSidebar();
 };
@@ -151,16 +146,20 @@ const sampleJson = `[
 const loadSample = async () => {
   const result = await importFromJson(sampleJson);
   if (result.success) {
-    alert(result.message);
+    showToast(result.message);
   }
   closeSidebar();
 };
 
-const handleClear = () => {
-  if (confirm("确定清空所有课程？")) {
-    clearAll();
-  }
+const handleClear = async () => {
   closeSidebar();
+  const confirmed = await confirmAction({
+    title: "清空所有课程？",
+    message: "课程和课段都会被删除，此操作无法撤销。",
+    confirmText: "清空",
+    danger: true,
+  });
+  if (confirmed) clearAll();
 };
 
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }) => {
@@ -369,11 +368,8 @@ const onEdgeTouchEnd = () => {
       @action="handleSidebarAction"
     />
 
-    <!-- 导入弹窗 -->
-    <ImportPopup v-model:show="importVisible" />
-
-    <!-- 从教务系统同步 -->
-    <EamsSyncPanel v-model:show="eamsSyncVisible" />
+    <!-- 导入面板：教务系统同步 / AI 识别 -->
+    <ImportSheet v-model:show="importVisible" />
 
     <!-- 导出弹窗 -->
     <ExportPopup v-model:show="exportVisible" />
@@ -386,6 +382,8 @@ const onEdgeTouchEnd = () => {
       v-model:show="addVisible"
       :day="addSlot?.day ?? 1"
       :period="addSlot?.period ?? 1"
+      :current-week="currentWeek"
+      :total-weeks="semesterWeekCount"
       :max-period="lastPeriod"
       @submit="onAddSubmit"
     />
@@ -393,7 +391,7 @@ const onEdgeTouchEnd = () => {
     <!-- 内容层 -->
     <div
       class="content-layer"
-      :class="{ 'is-dragging': sidebarDragging }"
+      :class="{ 'is-dragging': sidebarDragging, 'is-open': sidebarVisible }"
       :style="{ transform: `translateX(${sidebarOffset}px)` }"
     >
       <TopBar
@@ -457,10 +455,16 @@ const onEdgeTouchEnd = () => {
      .home-view so the background layers still bleed to the true screen edge. Every other
      view in this app already handled its safe-area insets; this screen did not, even
      though it is the one users spend their time on. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-bottom);
   /* Promoted so the per-frame transform during a drag stays on the compositor. */
   will-change: transform;
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* The drawer is a big surface: smooth, no overshoot, and the way back (the base rule) is quicker
+     than the way out. SideBar uses the same pair so drawer, overlay and page settle together. */
+  transition: transform var(--dur-base) var(--ease-smooth);
+}
+
+.content-layer.is-open {
+  transition-duration: var(--dur-slow);
 }
 
 /* While the finger is down the offset is written every move; a transition on top of that makes
@@ -477,6 +481,10 @@ const onEdgeTouchEnd = () => {
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Landscape only: keeps the first and last column out from under a cutout. The top bar and the
+     bottom padding above already clear the other two edges. */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
   scrollbar-width: thin;
 }
 

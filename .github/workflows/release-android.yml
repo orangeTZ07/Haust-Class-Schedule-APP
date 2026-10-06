@@ -1,4 +1,4 @@
-name: Release Android
+name: Release
 
 on:
   push:
@@ -24,6 +24,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # Fail before the build, not after it: the notes for this tag are produced from CHANGELOG.md
+      # only at the end of the job, so without this a malformed or missing section is discovered
+      # after the whole APK has been built. The script needs plain Node, which the runner image
+      # already has.
+      - name: Check changelog format
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/check-changelog.mjs --release "${TAG#v}"
 
       - name: Build Android APK
         uses: ./.github/actions/build-android-apk
@@ -60,7 +69,9 @@ jobs:
         id: icon
         run: |
           set -euo pipefail
-          SRC="src-tauri/icons/icon.png"
+          # app-icon.png, not icon.png: the older exports have black corners outside the rounded
+          # square, which show up as a dark frame on the Release page.
+          SRC="src-tauri/icons/app-icon.png"
           if [ ! -f "$SRC" ]; then
             echo "Missing app icon at $SRC"
             exit 1
@@ -109,5 +120,30 @@ jobs:
           body_path: ${{ steps.changelog.outputs.path }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Temporarily disabled: we are not shipping iOS packages right now.
+  # Flip `if` back to always-run (or delete it) when IPA CD is needed again.
+  ios:
+    name: Attach unsigned IPA
+    if: false
+    runs-on: macos-15
+    needs: release
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build iOS IPA
+        id: build
+        uses: ./.github/actions/build-ios-ipa
+
+      - name: Attach IPA to the release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.build.outputs.ipa-path }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

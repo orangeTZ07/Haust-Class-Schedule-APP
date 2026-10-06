@@ -7,23 +7,33 @@ use crate::{BatteryStatus, CancelReminderArgs, SetReminderArgs};
 /// The package the Kotlin classes live in. It has to match `namespace` in android/build.gradle and
 /// the `package` line of ReminderPlugin.kt -- register_android_plugin resolves the class through
 /// this string, and a mismatch registers nothing while still reporting success upstream.
+#[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "com.coursemngr.reminder";
 
-/// Registers the Kotlin plugin with the mobile runtime.
+// Declares the extern the Swift side exports with `@_cdecl("init_plugin_reminder")` in
+// ios/Sources/ReminderPlugin.swift. The name has to match that string exactly: a mismatch is a
+// link error, not a runtime one.
+#[cfg(target_os = "ios")]
+tauri::ios_plugin_binding!(init_plugin_reminder);
+
+/// Registers the Kotlin (Android) or Swift (iOS) plugin with the mobile runtime.
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
 ) -> Result<Reminder<R>, Box<dyn std::error::Error>> {
+    #[cfg(target_os = "android")]
     let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "ReminderPlugin")?;
+    #[cfg(target_os = "ios")]
+    let handle = api.register_ios_plugin(init_plugin_reminder)?;
     Ok(Reminder(handle))
 }
 
-/// Handle to the Kotlin plugin.
+/// Handle to the native plugin.
 pub struct Reminder<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Reminder<R> {
-    // run_mobile_plugin takes the Kotlin method name, which is camelCase; the snake_case names are
-    // what the frontend invokes, and Tauri maps between the two on its side.
+    // run_mobile_plugin takes the native method name, which is camelCase on both platforms; the
+    // snake_case names are what the frontend invokes, and Tauri maps between the two on its side.
 
     pub fn set_reminder(&self, args: SetReminderArgs) -> Result<(), String> {
         self.0

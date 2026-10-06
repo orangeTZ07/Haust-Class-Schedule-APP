@@ -1,25 +1,42 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import { useReminder } from "@/composables/useReminder";
 import { checkBatteryOptimization, openBatterySettings } from "@/services/reminderService";
 import { describeError } from "@/utils/describeError";
-import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 
 const {
   periodConfig,
   semesterStartDate,
-  setSemesterStartDate
+  setSemesterStartDate,
+  weekNumberForDate,
+  semesterWeekCount,
+  setCurrentWeek
 } = useCourses();
 
 /// Bound through a change handler rather than v-model so the stored value stays exactly the
 /// "YYYY-MM-DD" the input produces; useCourses parses it from parts to dodge the UTC-midnight
 /// shift a bare date string would otherwise get.
+///
+/// After a change the timetable moves to the week the new date makes it, so the effect shows at
+/// once instead of waiting for the next cold start.
 const onSemesterStartChange = (event: Event) => {
   const value = (event.target as HTMLInputElement).value;
-  if (value) setSemesterStartDate(value);
+  if (!value) return;
+  setSemesterStartDate(value);
+  const week = weekNumberForDate(new Date());
+  if (week !== null && week <= semesterWeekCount.value) setCurrentWeek(week);
 };
+
+/// One line under the date picker saying what the date currently works out to, so a wrong date is
+/// visible right where it is entered.
+const semesterStatus = computed(() => {
+  const week = weekNumberForDate(new Date());
+  if (week === null) return "当前尚未开学（早于学期起始日期）";
+  if (week > semesterWeekCount.value) return `当前为第 ${week} 周（学期教学周已结束）`;
+  return `当前教学周次：第 ${week} 周`;
+});
 
 const { themeConfig, isDark } = useTheme();
 
@@ -53,37 +70,50 @@ const resetToDefaults = () => {
   };
 };
 
-const { prefs: reminderPrefs, maxMinutesBefore, reschedule } = useReminder();
+const {
+  prefs: reminderPrefs,
+  permission: reminderPermission,
+  maxMinutesBefore,
+  reschedule,
+  refreshPermission,
+  ensurePermission
+} = useReminder();
 
 const reminderBusy = ref(false);
 const reminderMessage = ref("");
 const batteryExempt = ref(true);
 
+const NO_PERMISSION_MESSAGE = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
+
 const refreshBatteryState = async () => {
   batteryExempt.value = await checkBatteryOptimization();
 };
 
-onMounted(refreshBatteryState);
+/// Reminders are on by default, so the switch can be on while the system still refuses
+/// notifications. This is what the "没有通知权限" hint below keys off.
+const permissionMissing = computed(
+  () => reminderPermission.value === "denied" || reminderPermission.value === "prompt"
+);
+
+onMounted(() => {
+  refreshBatteryState();
+  // Failing to read the permission only means the hint stays hidden.
+  refreshPermission().catch(() => {});
+});
 
 /// Called after the switch flips, so reminderPrefs already holds the new value.
 ///
 /// The notification permission is requested before anything is scheduled: on Android 13+ the
-/// alarm would otherwise fire into a notification the system drops, and the feature would look
-/// broken rather than unpermitted.
+/// alarm would otherwise fire into a notification the system drops, and on iOS the request would
+/// be refused outright, so the feature would look broken rather than unpermitted.
 const onToggleReminder = async () => {
   if (reminderBusy.value) return;
   reminderBusy.value = true;
   try {
-    if (reminderPrefs.value.enabled) {
-      let granted = await isPermissionGranted();
-      if (!granted) {
-        granted = (await requestPermission()) === "granted";
-      }
-      if (!granted) {
-        reminderPrefs.value.enabled = false;
-        reminderMessage.value = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
-        return;
-      }
+    if (reminderPrefs.value.enabled && !(await ensurePermission())) {
+      reminderPrefs.value.enabled = false;
+      reminderMessage.value = NO_PERMISSION_MESSAGE;
+      return;
     }
     await applyReminders();
   } catch (e) {
@@ -96,10 +126,32 @@ const onToggleReminder = async () => {
   }
 };
 
+/// The 去授权 link next to the missing-permission hint. Unlike the switch it leaves the preference
+/// alone: the user already wants reminders, they only need the permission.
+const onRequestPermission = async () => {
+  if (reminderBusy.value) return;
+  reminderBusy.value = true;
+  try {
+    if (await ensurePermission()) {
+      await applyReminders();
+    } else {
+      reminderMessage.value = NO_PERMISSION_MESSAGE;
+    }
+  } catch (e) {
+    reminderMessage.value = `设置提醒失败：${describeError(e)}`;
+  } finally {
+    reminderBusy.value = false;
+  }
+};
+
 /// Also used when the lead time changes: the trigger times are computed from it, so every alarm
 /// in the window has to be rewritten.
 const applyReminders = async () => {
   const result = await reschedule();
+  if (result.noPermission) {
+    reminderMessage.value = "没有通知权限，提醒没有排上。";
+    return;
+  }
   const summary = reminderPrefs.value.enabled
     ? `已为未来 7 天注册 ${result.scheduled} 个提醒`
     : `已关闭，并取消 ${result.cancelled} 个提醒`;
@@ -113,6 +165,25 @@ const applyReminders = async () => {
 
 <template>
   <div class="grid-settings">
+    <!-- First on the page: today, 本周, the opening week and the class reminders all hang off
+         this one date, and a wrong one quietly puts every course in the wrong week. -->
+    <div class="section semester-section">
+      <div class="section-title">开学日期</div>
+      <div class="config-item">
+        <span class="label">第一周周一（学期起始）</span>
+        <input
+          class="date-input"
+          type="date"
+          :value="semesterStartDate"
+          @change="onSemesterStartChange"
+        />
+      </div>
+      <div class="semester-status">{{ semesterStatus }}</div>
+      <div class="section-hint">
+        请选择本学期第一周周一的日期。系统将依据该基准自动计算教学周次，用于默认显示周、当日课程高亮及上课日程提醒。若周次与校历不一致可在此调整。
+      </div>
+    </div>
+
     <div class="header-row">
       <div class="section-title">课程节数</div>
       <van-button 
@@ -137,22 +208,6 @@ const applyReminders = async () => {
       <div class="config-item">
         <span class="label">晚课节数</span>
         <van-stepper v-model="periodConfig.eveningPeriods" :min="0" :max="6" integer theme="round" button-size="22" />
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">学期日期</div>
-      <div class="config-item">
-        <span class="label">第 1 周周一</span>
-        <input
-          class="date-input"
-          type="date"
-          :value="semesterStartDate"
-          @change="onSemesterStartChange"
-        />
-      </div>
-      <div class="section-hint">
-        课表会在星期下方显示本周日期，按这个日期与当前周数推算。改完周数切换一下即可看到效果。
       </div>
     </div>
 
@@ -183,12 +238,17 @@ const applyReminders = async () => {
         </div>
       </div>
       <div v-if="reminderMessage" class="section-hint">{{ reminderMessage }}</div>
+      <div v-if="reminderPrefs.enabled && permissionMissing" class="section-hint">
+        没有通知权限，提醒不会发出。
+        <button class="mini-link haptics" @click="onRequestPermission">去授权</button>
+        系统不再弹窗时，请到系统设置里允许本应用发送通知，回到应用后会自动恢复。
+      </div>
       <div v-if="reminderPrefs.enabled && !batteryExempt" class="section-hint">
         系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
         <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
       </div>
       <div v-if="reminderPrefs.enabled" class="section-hint">
-        每次打开应用会为未来 7 天重新排一遍提醒；超过一周不开应用，后面的提醒不会自动排上。
+        打开应用、从后台切回来、或者课表和上课时间有改动时，会为未来 7 天重新排一遍提醒；超过一周不打开应用，后面的提醒不会自动排上。
       </div>
     </div>
 
@@ -238,13 +298,21 @@ const applyReminders = async () => {
       </div>
     </div>
 
-    <van-popup v-model:show="showPicker" position="bottom" round>
+    <van-popup
+      v-model:show="showPicker"
+      position="bottom"
+      round
+      class="app-popup app-popup--sheet"
+      :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"
+    >
+      <div class="app-sheet-handle" />
       <van-time-picker
         v-model="currentTime"
         title="选择时间"
         @confirm="onConfirm"
         @cancel="showPicker = false"
       />
+      <div class="app-sheet-safe" />
     </van-popup>
   </div>
 </template>
@@ -261,15 +329,17 @@ const applyReminders = async () => {
   margin-bottom: 16px;
 }
 
+/* The small controls below sit on the page, not on the header band, so they are tinted with and
+   lettered in body-text. header-text is white on the Vant preset, which left them blank. */
 .reset-btn {
   height: 24px;
   padding: 0 10px;
   font-size: 11px;
-  background: var(--theme-header-bg); /* Fallback */
-  background: color-mix(in srgb, var(--theme-header-bg) 10%, transparent);
+  background: var(--theme-bg-color); /* Fallback */
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
   border: 1px solid var(--theme-grid-line-color); /* Fallback */
   border: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .section {
@@ -337,17 +407,17 @@ const applyReminders = async () => {
 .time-value {
   font-size: 15px;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   font-family: 'Monaco', 'Courier New', monospace;
   padding: 4px 8px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--theme-header-bg) 8%, transparent);
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
 }
 
 /* 适配 Vant 组件的主题色偏移 */
 :deep(.van-stepper__plus), :deep(.van-stepper__minus) {
-  background-color: color-mix(in srgb, var(--theme-header-bg) 15%, transparent) !important;
-  color: var(--theme-header-text) !important;
+  background-color: color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+  color: var(--theme-body-text) !important;
   border: none !important; /* 移除可能的默认边框 */
   opacity: 1 !important;
 }
@@ -363,8 +433,9 @@ const applyReminders = async () => {
   margin: 0 4px !important;
 }
 
+/* Transparent, so the sheet's own glass shows through instead of an opaque block inside it. */
 :deep(.van-picker) {
-  background-color: var(--theme-bg-color) !important;
+  background-color: transparent !important;
 }
 
 :deep(.van-picker__mask) {
@@ -372,14 +443,25 @@ const applyReminders = async () => {
 }
 
 :deep(.van-picker__hairline) {
-  border-top: 1px solid color-mix(in srgb, var(--theme-primary-color, #1989fa) 30%, transparent) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-primary-color, #1989fa) 30%, transparent) !important;
-  background-color: color-mix(in srgb, var(--theme-primary-color, #1989fa) 5%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
+  background-color: color-mix(in srgb, var(--theme-accent) 6%, transparent);
 }
 
 :deep(.van-picker__toolbar) {
-  border-bottom: 1px solid var(--theme-grid-line-color);
-  background-color: var(--theme-bg-color) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+  background-color: transparent !important;
+}
+
+:deep(.van-picker__cancel) {
+  color: var(--theme-body-text) !important;
+  opacity: 0.6;
+}
+
+/* The accent, not Vant's default blue, so 确定 matches the other confirm buttons. */
+:deep(.van-picker__confirm) {
+  color: var(--theme-accent) !important;
+  font-weight: 700;
 }
 
 :deep(.van-picker-column__item) {
@@ -388,7 +470,7 @@ const applyReminders = async () => {
 }
 
 :deep(.van-picker-column__item--selected) {
-  color: var(--theme-primary-color, #1989fa) !important;
+  color: var(--theme-accent) !important;
   opacity: 1;
   font-weight: 700;
 }
@@ -399,8 +481,8 @@ const applyReminders = async () => {
 
 .date-input {
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
-  background: color-mix(in srgb, var(--theme-header-bg) 8%, transparent);
-  color: var(--theme-header-text);
+  background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
+  color: var(--theme-body-text);
   font-family: 'Monaco', 'Courier New', monospace;
   font-size: 14px;
   padding: 6px 8px;
@@ -412,11 +494,32 @@ const applyReminders = async () => {
   filter: invert(0.45);
 }
 
+.semester-status {
+  padding: 10px 16px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-accent);
+}
+
+/* Same 16px inset as .config-item: these lines sit inside the card, and without it they ran
+   flush against the card's left edge while the rows above them were indented. */
 .section-hint {
+  padding: 0 16px;
   font-size: 11px;
   line-height: 1.6;
-  opacity: 0.5;
+  /* No colour was set, so the text inherited the page's fixed #333 and disappeared on dark themes. */
+  color: var(--theme-body-text);
+  opacity: 0.6;
   margin-top: 8px;
+}
+
+.section-hint:last-child {
+  padding-bottom: 12px;
+}
+
+/* Vant's switch is its own fixed blue otherwise; follow the theme like every other control. */
+.grid-settings :deep(.van-switch--on) {
+  background: var(--theme-accent);
 }
 
 .mini-link {
@@ -425,7 +528,9 @@ const applyReminders = async () => {
   padding: 0 2px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--theme-card-border-color);
+  /* The accent: the card border colour is pale on the light presets and dim on the dark ones, which
+     made this link hard to find. */
+  color: var(--theme-accent);
   text-decoration: underline;
 }
 </style>

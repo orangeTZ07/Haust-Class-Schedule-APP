@@ -10,8 +10,14 @@ import { resolve } from "node:path";
 // minify enabled -- producing exactly the APK this script exists to prevent, with nothing in
 // the log to suggest it. Failing here is strictly better: a red build is cheaper than a
 // release that crashes on launch.
+//
+// Two template shapes are supported:
+// - Tauri CLI 2.11.x (and earlier): `isMinifyEnabled = true`
+// - newer Android templates: `optimization { enable = true }`
 
 const buildGradlePath = resolve("src-tauri/gen/android/app/build.gradle.kts");
+const DISABLE_COMMENT =
+  "// Tauri Android startup uses JNI/reflection paths that currently break when R8 minifies release builds.\n";
 
 if (!existsSync(buildGradlePath)) {
   console.error(
@@ -33,20 +39,39 @@ if (!releaseBlockMatch) {
   process.exit(1);
 }
 
-if (/isMinifyEnabled\s*=\s*false/.test(releaseBlockMatch[0])) {
+const releaseBlock = releaseBlockMatch[0];
+
+const alreadyOff =
+  /isMinifyEnabled\s*=\s*false/.test(releaseBlock) ||
+  /optimization\s*\{[\s\S]*?\benable\s*=\s*false/.test(releaseBlock);
+
+if (alreadyOff) {
   console.log("[android-release-patch] Android release minify is already disabled.");
   process.exit(0);
 }
 
-const patched = source.replace(
-  /(getByName\("release"\)\s*\{[\s\S]*?)isMinifyEnabled\s*=\s*true/,
-  `$1// Tauri Android startup uses JNI/reflection paths that currently break when R8 minifies release builds.\n            isMinifyEnabled = false`,
-);
+let patched = source;
+let mode = null;
 
-if (patched === source) {
+if (/isMinifyEnabled\s*=\s*true/.test(releaseBlock)) {
+  mode = "isMinifyEnabled";
+  patched = source.replace(
+    /(getByName\("release"\)\s*\{[\s\S]*?)isMinifyEnabled\s*=\s*true/,
+    `$1${DISABLE_COMMENT}            isMinifyEnabled = false`,
+  );
+} else if (/optimization\s*\{[\s\S]*?\benable\s*=\s*true/.test(releaseBlock)) {
+  mode = "optimization.enable";
+  patched = source.replace(
+    /(getByName\("release"\)\s*\{[\s\S]*?optimization\s*\{[\s\S]*?)\benable\s*=\s*true/,
+    `$1${DISABLE_COMMENT}                enable = false`,
+  );
+}
+
+if (patched === source || !mode) {
   console.error(
     `[android-release-patch] FATAL: cannot find the release minify setting in ${buildGradlePath}.\n` +
-    `  Expected "isMinifyEnabled = true" inside the release block and did not find it.`,
+    `  Expected either "isMinifyEnabled = true" or "optimization { enable = true }" inside the\n` +
+    `  release block and did not find either.`,
   );
   process.exit(1);
 }
@@ -54,7 +79,12 @@ if (patched === source) {
 // Confirm against the patched text before writing anything, so a regex that matched the wrong
 // block cannot half-apply and leave a build that still minifies.
 const verifyMatch = patched.match(/getByName\("release"\)\s*\{[\s\S]*?^\s*\}/m);
-if (!verifyMatch || /isMinifyEnabled\s*=\s*true/.test(verifyMatch[0])) {
+const stillOn =
+  !verifyMatch ||
+  /isMinifyEnabled\s*=\s*true/.test(verifyMatch[0]) ||
+  /optimization\s*\{[\s\S]*?\benable\s*=\s*true/.test(verifyMatch[0]);
+
+if (stillOn) {
   console.error(
     `[android-release-patch] FATAL: the release block still enables minification after patching.\n` +
     `  Refusing to write a build config that would produce a crashing release APK.`,
@@ -63,4 +93,4 @@ if (!verifyMatch || /isMinifyEnabled\s*=\s*true/.test(verifyMatch[0])) {
 }
 
 writeFileSync(buildGradlePath, patched);
-console.log("[android-release-patch] Disabled Android release minify.");
+console.log(`[android-release-patch] Disabled Android release minify (${mode}).`);

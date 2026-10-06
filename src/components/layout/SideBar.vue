@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked, RotateCcw, History, DownloadCloud } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Users } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -23,41 +24,40 @@ const emit = defineEmits<{
 
 const router = useRouter();
 
-const menuItems = [
-  { icon: SquareCheckBig, label: "待办列表", action: "todo" },
-  { icon: CalendarRange, label: "选择课程表", action: "tables" },
-  { icon: Settings, label: "设置", action: "settings" },
-  { icon: BookMarked, label: "自定义学习计划", action: "learning-plan" },
-  { icon: Download, label: "导入课表", action: "import" },
-  { icon: Upload, label: "导出课表", action: "export" },
-  { icon: Palette, label: "样式调整", action: "style" },
-  { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
-  { icon: History, label: "恢复到导入时", action: "restore-import" },
-  { icon: DownloadCloud, label: "导入课表（文件 / 同步）", action: "eams-sync" },
+/// An entry either opens a page (`route`) or asks the home view to do something (`action`).
+interface MenuItem {
+  icon: Component;
+  label: string;
+  route?: string;
+  action?: string;
+}
+
+/// Grouped so the drawer reads as clean sections rather than one long list. The 样式调整 entry
+/// now lives under 设置, and the duplicate 导入 entry was dropped.
+const groups: { title: string; items: MenuItem[] }[] = [
+  {
+    title: "课表",
+    items: [
+      { icon: Download, label: "导入课表", action: "import" },
+      { icon: Upload, label: "导出课表", action: "export" },
+      { icon: CalendarRange, label: "选择课程表", route: "/tables" },
+    ]
+  },
+];
+
+/// Pinned to the bottom of the drawer, away from the everyday actions above.
+const footerItems: MenuItem[] = [
+  { icon: Settings, label: "设置", route: "/settings" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 
-const handleItemClick = (action: string) => {
-  if (action === "settings") {
-    router.push("/settings");
+const handleItemClick = (item: MenuItem) => {
+  if (item.route) {
+    router.push(item.route);
     emit("close");
-  } else if (action === "todo") {
-    router.push("/todo");
-    emit("close");
-  } else if (action === "tables") {
-    router.push("/tables");
-    emit("close");
-  } else if (action === "style") {
-    router.push("/style");
-    emit("close");
-  } else if (action === "learning-plan") {
-    router.push("/learning-plan");
-    emit("close");
-  } else if (action === "import" || action === "export" || action === "contact") {
-    emit("action", action);
-    emit("close");
-  } else {
-    emit("action", action);
+  } else if (item.action) {
+    // The home view closes the drawer itself once it has handled the action.
+    emit("action", item.action);
   }
 };
 
@@ -83,15 +83,30 @@ const handleOverlayClick = () => {
       :style="{ width: `${width}px`, transform: `translateX(${offset - width}px)` }"
     >
       <div class="sidebar-header">
-        <span class="app-title">课程表</span>
+        <span class="app-title">Haust课程表</span>
       </div>
 
       <div class="menu-list">
+        <div v-for="group in groups" :key="group.title" class="menu-group">
+          <div class="group-title">{{ group.title }}</div>
+          <div
+            v-for="item in group.items"
+            :key="item.label"
+            class="menu-item"
+            @click="handleItemClick(item)"
+          >
+            <component :is="item.icon" :size="20" />
+            <span class="menu-label">{{ item.label }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-footer">
         <div
-          v-for="item in menuItems"
-          :key="item.action"
+          v-for="item in footerItems"
+          :key="item.label"
           class="menu-item"
-          @click="handleItemClick(item.action)"
+          @click="handleItemClick(item)"
         >
           <component :is="item.icon" :size="20" />
           <span class="menu-label">{{ item.label }}</span>
@@ -113,20 +128,24 @@ const handleOverlayClick = () => {
   left: 0;
   right: 0;
   bottom: 0;
+  /* No backdrop blur here. The overlay's opacity is rewritten on every touchmove while the drawer is
+     dragged, and re-blurring a full-screen layer each frame for a 2px blur nobody could see was the
+     most expensive thing on this screen. */
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   opacity: 0;
   visibility: hidden;
   /* Same duration and easing as .content-layer in HomeView: the drawer and the page behind it
      have to settle together, or the two halves of the same motion look disconnected. */
-  transition: opacity 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0.28s ease;
+  transition:
+    opacity var(--dur-base) var(--ease-smooth),
+    visibility var(--dur-base) linear;
   z-index: 101;
 }
 
 .overlay.visible {
   opacity: 1;
   visibility: visible;
+  transition-duration: var(--dur-slow);
 }
 
 .sidebar {
@@ -140,7 +159,7 @@ const handleOverlayClick = () => {
   -webkit-backdrop-filter: blur(20px);
   transform: translateX(-100%);
   will-change: transform;
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: transform var(--dur-base) var(--ease-smooth);
   z-index: 102;
   display: flex;
   flex-direction: column;
@@ -150,6 +169,7 @@ const handleOverlayClick = () => {
 
 .sidebar.visible {
   transform: translateX(0);
+  transition-duration: var(--dur-slow);
 }
 
 /* While the finger is down the offset is written on every move; a transition on top of that makes
@@ -161,8 +181,13 @@ const handleOverlayClick = () => {
 
 .sidebar-header {
   padding: 24px 20px;
-  padding-top: calc(24px + env(safe-area-inset-top, 0px));
-  background: transparent;
+  padding-top: calc(24px + var(--safe-top));
+  /* The drawer slides in from the left edge, so in landscape that is the side a cutout can be on. */
+  padding-left: calc(20px + var(--safe-left));
+  /* The same band colour as the top bar. The title is header-text, which is only guaranteed to be
+     readable on header-bg: on the Vant blue preset it is white, and on the bare drawer background
+     it vanished. */
+  background: color-mix(in srgb, var(--theme-header-bg) 85%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
 }
 
@@ -176,10 +201,37 @@ const handleOverlayClick = () => {
 .menu-list {
   flex: 1;
   padding: 12px 10px;
+  padding-left: calc(10px + var(--safe-left));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 18px;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-title {
+  padding: 0 14px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--theme-body-text);
+  opacity: 0.45;
+}
+
+/* Settings and contact stay put at the bottom whatever the height, clear of the gesture bar. */
+.menu-footer {
+  padding: 8px 10px;
+  padding-bottom: calc(8px + var(--safe-bottom));
+  padding-left: calc(10px + var(--safe-left));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
 }
 
 .menu-item {
@@ -190,17 +242,25 @@ const handleOverlayClick = () => {
   cursor: pointer;
   color: var(--theme-body-text);
   border-radius: 10px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-fast) ease-out;
 }
 
-.menu-item:hover {
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-  transform: translateX(4px);
+/* Hover only where there is a pointer: on touch :hover sticks after a tap, which left the last
+   tapped entry nudged sideways until the next touch. */
+@media (hover: hover) {
+  .menu-item:hover {
+    background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+    transform: translateX(4px);
+  }
 }
 
 .menu-item:active {
   background: color-mix(in srgb, var(--theme-body-text) 12%, transparent);
-  transform: translateX(2px) scale(0.98);
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .menu-label {
@@ -209,7 +269,4 @@ const handleOverlayClick = () => {
   font-weight: 500;
 }
 
-.theme-indicator {
-  opacity: 0.7;
-}
 </style>

@@ -2,7 +2,8 @@
 import { useCourses } from "@/composables/useCourses";
 import { useRouter } from "vue-router";
 import { ArrowLeft, Trash2, MapPin, User, Clock } from '@lucide/vue';
-import { showConfirmDialog, showToast } from 'vant';
+import { showToast } from 'vant';
+import { confirmAction } from '@/utils/confirm';
 
 const router = useRouter();
 const { courses, schedules, removeCourse, getDaySchedules } = useCourses();
@@ -12,18 +13,16 @@ const goBack = () => {
 };
 
 const handleDelete = async (courseId: number, courseName: string) => {
-  try {
-    await showConfirmDialog({
-      title: '删除课程',
-      message: `确定要删除课程《${courseName}》吗？相关的所有课段也将被移除。`,
-      className: 'theme-confirm-dialog',
-    });
-    
-    await removeCourse(courseId);
-    showToast('删除成功');
-  } catch {
-    // 用户取消删除
-  }
+  const confirmed = await confirmAction({
+    title: '删除课程',
+    message: `确定要删除课程《${courseName}》吗？相关的所有课段也将被移除。`,
+    confirmText: '删除',
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  await removeCourse(courseId);
+  showToast('删除成功');
 };
 
 const getCourseSchedules = (courseId: number) => {
@@ -102,7 +101,9 @@ const formatSchedule = (s: any) => {
   z-index: 10;
   background: var(--theme-bg-color);
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   display: flex;
   align-items: center;
   gap: 12px;
@@ -126,6 +127,9 @@ const formatSchedule = (s: any) => {
 
 .content {
   padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
 }
 
 .empty-state {
@@ -185,11 +189,16 @@ const formatSchedule = (s: any) => {
   color: #ee0a24;
   opacity: 0.6;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out;
 }
 
 .delete-btn:active {
   opacity: 1;
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .course-details {

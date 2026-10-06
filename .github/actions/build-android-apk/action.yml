@@ -60,6 +60,57 @@ runs:
       shell: bash
       run: npx tauri android init
 
+    - name: Apply app icon
+      shell: bash
+      # tauri android init writes the stock Tauri launcher icons into the generated project and
+      # never looks at src-tauri/icons, so without this step the APK ships with the default
+      # Tauri icon. `tauri icon` overwrites them in place when it finds
+      # gen/android/app/src/main/res next to the icons directory, and it also writes the adaptive
+      # icon (mipmap-anydpi-v26/ic_launcher.xml plus a background colour) that the template
+      # lacks; without that file Android 8+ launchers fall back to the legacy square icon.
+      # "--output" keeps the desktop-size files it also produces out of the tracked
+      # src-tauri/icons (it resolves the gen/ paths from the output directory's parent, so the
+      # scratch directory has to sit directly in src-tauri).
+      #
+      # The template's launcher PNGs are deleted first. They have the same file names the CLI
+      # writes, so leaving them would make the existence check below pass even if nothing was
+      # generated.
+      run: |
+        set -euo pipefail
+        manifest=src-tauri/icons/app-icon.json
+        res=src-tauri/gen/android/app/src/main/res
+        for f in "$manifest" src-tauri/icons/app-icon.png src-tauri/icons/app-icon-android-fg.png; do
+          if [ ! -f "$f" ]; then
+            echo "::error::Missing icon source $f."
+            exit 1
+          fi
+        done
+        if [ ! -d "$res" ]; then
+          echo "::error::$res does not exist; tauri android init produced no Android project."
+          exit 1
+        fi
+        rm -f "$res"/mipmap-*/ic_launcher*.png
+        rm -rf "$res/mipmap-anydpi-v26"
+        npx tauri icon "$manifest" --output src-tauri/icon-out
+        rm -rf src-tauri/icon-out
+        expected=(
+          mipmap-anydpi-v26/ic_launcher.xml
+          values/ic_launcher_background.xml
+          mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher{,_round,_foreground}.png
+        )
+        missing=0
+        for f in "${expected[@]}"; do
+          if [ ! -f "$res/$f" ]; then
+            echo "::error::tauri icon did not write $res/$f"
+            missing=1
+          fi
+        done
+        if [ "$missing" -ne 0 ]; then
+          exit 1
+        fi
+        echo "Launcher icons:"
+        find "$res" -name 'ic_launcher*' -type f | sort
+
     - name: Build Android APK
       shell: bash
       run: npx tauri android build --apk --target aarch64

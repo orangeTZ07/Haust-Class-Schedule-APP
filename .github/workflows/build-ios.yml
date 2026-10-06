@@ -3,6 +3,11 @@ name: Build iOS IPA (unsigned)
 on:
   push:
     branches: [main]
+  # Runs on pull requests too, mirroring ci.yml, so a change that breaks the iOS build is caught
+  # before it lands on main. The job used to run only after the merge, which meant a broken iOS
+  # build was first seen on main.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       configuration:
@@ -17,10 +22,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Temporarily disabled: we are not shipping iOS packages right now.
+  # Flip `if` back (or delete it) when iOS CI is needed again.
   # Status check name in GitHub: "iOS"
   # Use this exact name when configuring branch rulesets.
   ios:
     name: iOS
+    if: false
     runs-on: macos-15
     timeout-minutes: 90
 
