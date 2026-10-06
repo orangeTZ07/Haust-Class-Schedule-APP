@@ -373,8 +373,13 @@ onBeforeUnmount(() => {
 }
 
 .week-chip.is-tag {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-header-text) 32%, transparent);
-  opacity: 0.85;
+  height: auto;
+  padding: 0 4px;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font-weight: 500;
+  opacity: 0.75;
 }
 
 .week-chip-enter-active {

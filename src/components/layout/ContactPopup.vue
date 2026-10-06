@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { showToast } from "vant";
 import { useTheme } from "@/composables/useTheme";
-import { X, MessageSquare, Gamepad2, Copy } from '@lucide/vue';
+import { X, MessageSquare, Gamepad2, JapaneseYen, Copy } from '@lucide/vue';
 
 const props = defineProps<{
   show: boolean;
@@ -42,25 +42,43 @@ const copyToClipboard = async (text: string, label: string) => {
 
       <div class="card-sections">
         <!-- 提出建议 -->
-        <div class="contact-item">
-          <MessageSquare :size="22" class="item-icon suggestion" />
+        <div class="contact-item" @click="copyToClipboard('1045863590', '群号')">
+          <div class="item-icon-box">
+            <MessageSquare :size="20" class="item-icon" />
+          </div>
           <div class="item-info">
             <div class="item-label">提出建议</div>
             <div class="item-value">QQ群：1045863590</div>
           </div>
-          <button class="mini-copy-btn" aria-label="复制群号" @click="copyToClipboard('1045863590', '群号')">
+          <button class="mini-copy-btn" aria-label="复制群号" @click.stop="copyToClipboard('1045863590', '群号')">
             <Copy :size="14" />
           </button>
         </div>
 
         <!-- 一起玩MC -->
-        <div class="contact-item">
-          <Gamepad2 :size="22" class="item-icon mc" />
+        <div class="contact-item" @click="copyToClipboard('1064240287', '群号')">
+          <div class="item-icon-box">
+            <Gamepad2 :size="20" class="item-icon" />
+          </div>
           <div class="item-info">
             <div class="item-label">一起玩MC</div>
             <div class="item-value">QQ群：1064240287</div>
           </div>
-          <button class="mini-copy-btn" aria-label="复制群号" @click="copyToClipboard('1064240287', '群号')">
+          <button class="mini-copy-btn" aria-label="复制群号" @click.stop="copyToClipboard('1064240287', '群号')">
+            <Copy :size="14" />
+          </button>
+        </div>
+
+        <!-- ？！给我充Q币！？ -->
+        <div class="contact-item" @click="copyToClipboard('776935834', '群号')">
+          <div class="item-icon-box">
+            <JapaneseYen :size="20" class="item-icon" />
+          </div>
+          <div class="item-info">
+            <div class="item-label">？！给我充Q币！？</div>
+            <div class="item-value">QQ群：776935834</div>
+          </div>
+          <button class="mini-copy-btn" aria-label="复制群号" @click.stop="copyToClipboard('776935834', '群号')">
             <Copy :size="14" />
           </button>
         </div>
@@ -83,24 +101,33 @@ const copyToClipboard = async (text: string, label: string) => {
 .contact-item {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 12px;
   background: color-mix(in srgb, var(--theme-bg-color), var(--theme-body-text) 5%);
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
   border-radius: 12px;
+  cursor: pointer;
+  transition: transform var(--dur-fast, 0.15s) ease, background var(--dur-fast, 0.15s) ease;
+}
+
+.contact-item:active {
+  transform: scale(0.98);
+}
+
+.item-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--theme-accent) 12%, transparent);
+  color: var(--theme-accent);
+  flex-shrink: 0;
 }
 
 .item-icon {
   flex-shrink: 0;
-  opacity: 0.9;
-}
-
-.item-icon.suggestion {
-  color: #007AFF;
-}
-
-.item-icon.mc {
-  color: #4CAF50;
 }
 
 .item-info {

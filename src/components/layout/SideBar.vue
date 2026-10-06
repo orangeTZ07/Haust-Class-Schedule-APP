@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Users, RotateCcw } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Users } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -32,7 +32,7 @@ interface MenuItem {
   action?: string;
 }
 
-/// Grouped so the drawer reads as three kinds of thing rather than one long list. The 样式调整 entry
+/// Grouped so the drawer reads as clean sections rather than one long list. The 样式调整 entry
 /// now lives under 设置, and the duplicate 导入 entry was dropped.
 const groups: { title: string; items: MenuItem[] }[] = [
   {
@@ -41,12 +41,6 @@ const groups: { title: string; items: MenuItem[] }[] = [
       { icon: Download, label: "导入课表", action: "import" },
       { icon: Upload, label: "导出课表", action: "export" },
       { icon: CalendarRange, label: "选择课程表", route: "/tables" },
-    ]
-  },
-  {
-    title: "视图",
-    items: [
-      { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
     ]
   },
 ];
