@@ -174,18 +174,7 @@ runs:
       # (e.g. "Haust课程表.app") as binary or replacement characters.
       run: |
         set -euo pipefail
-        python3 -c '
-import sys, zipfile
-ipa = sys.argv[1]
-with zipfile.ZipFile(ipa, "r") as z:
-    names = z.namelist()
-    has_plist = any(n.startswith("Payload/") and n.endswith(".app/Info.plist") for n in names)
-    if not has_plist:
-        print(f"::error::{ipa} has no Payload/*.app/Info.plist; contents:", file=sys.stderr)
-        for name in names[:40]:
-            print(f"  {name}", file=sys.stderr)
-        sys.exit(1)
-' "$CLI_IPA"
+        python3 scripts/verify-ios-ipa.py "$CLI_IPA"
         version="$(node -p "require('./package.json').version")"
         out="course-mngr-iOS-${version}-unsigned.ipa"
         cp "$CLI_IPA" "$out"
