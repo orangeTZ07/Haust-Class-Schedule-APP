@@ -413,62 +413,6 @@ export async function deleteCourse(id: number) {
   }
 }
 
-/// Put one course table back to a snapshot, including the original ids, so a later edit
-/// does not collide with a row undo just restored.
-export async function replaceActiveTableContents(nextCourses: Course[], nextSchedules: CourseSchedule[]): Promise<void> {
-  const tableId = await getActiveCourseTableId();
-  const db = await getDb();
-  if (db) {
-    await db.execute(
-      "DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)",
-      [tableId]
-    );
-    await db.execute("DELETE FROM courses WHERE table_id = $1", [tableId]);
-    for (const course of nextCourses) {
-      await db.execute(
-        "INSERT INTO courses (id, table_id, name, teacher, location, color) VALUES ($1, $2, $3, $4, $5, $6)",
-        [course.id, tableId, course.name, course.teacher || "", course.location || "", course.color]
-      );
-    }
-    for (const schedule of nextSchedules) {
-      const scope = schedule.scope ?? "semester";
-      const isCancelled = schedule.isCancelled ? 1 : 0;
-      await db.execute(
-        "INSERT INTO schedules (id, course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        [
-          schedule.id,
-          schedule.courseId,
-          schedule.dayOfWeek,
-          schedule.startPeriod,
-          schedule.endPeriod,
-          schedule.startWeek,
-          schedule.endWeek,
-          schedule.weekType,
-          scope,
-          isCancelled,
-          schedule.source ?? null,
-          schedule.parserVersion ?? null
-        ]
-      );
-    }
-    return;
-  }
-
-  const storedCourses = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.COURSES) || "[]") as Array<Course & { tableId?: number }>;
-  const removedIds = new Set(
-    storedCourses.filter(course => (course.tableId ?? DEFAULT_TABLE_ID) === tableId).map(course => course.id)
-  );
-  for (const course of nextCourses) removedIds.add(course.id);
-  const keptCourses = storedCourses.filter(course => (course.tableId ?? DEFAULT_TABLE_ID) !== tableId && !removedIds.has(course.id));
-  const restoredCourses = nextCourses.map(course => ({ ...course, tableId }));
-  localStorage.setItem(WEB_STORAGE_KEYS.COURSES, JSON.stringify([...keptCourses, ...restoredCourses]));
-
-  const storedSchedules = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.SCHEDULES) || "[]") as CourseSchedule[];
-  const restoredIds = new Set(nextSchedules.map(schedule => schedule.id));
-  const keptSchedules = storedSchedules.filter(schedule => !removedIds.has(schedule.courseId) && !restoredIds.has(schedule.id));
-  localStorage.setItem(WEB_STORAGE_KEYS.SCHEDULES, JSON.stringify([...keptSchedules, ...nextSchedules]));
-}
-
 export async function deleteSchedule(id: number) {
   const db = await getDb();
   if (db) {

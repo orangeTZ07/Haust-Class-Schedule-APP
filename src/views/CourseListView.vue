@@ -6,7 +6,7 @@ import { showToast } from 'vant';
 import { confirmAction } from '@/utils/confirm';
 
 const router = useRouter();
-const { courses, schedules, removeCourse, getDaySchedules, commitEdit } = useCourses();
+const { courses, schedules, removeCourse, getDaySchedules } = useCourses();
 
 const goBack = () => {
   router.back();
@@ -22,7 +22,6 @@ const handleDelete = async (courseId: number, courseName: string) => {
   if (!confirmed) return;
 
   await removeCourse(courseId);
-  commitEdit();
   showToast('删除成功');
 };
 
