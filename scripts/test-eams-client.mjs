@@ -4,7 +4,7 @@
 // fetchTimetable 走完整条链路：探连通 → CAS 登录 → RSA 加密 → SSO → 解析请求参数 → 拉课表 → 解析。
 //
 // 所以这个测试断言的不是某个函数，而是**"同步一次会得到什么"** —— 12 门课 / 39 条日程，
-// 以及线性代数B 那两条（周一连续 + 周五双周 = 两周三节）。这些都已经被你在手机上确认过是正确的。
+// 以及线性代数B 那两条。周次按下标计（跳过下标 0）：周一第 1-13 周、周五第 1-13 周的单周。
 //
 // 真实响应不入仓库（含个人课表），缺失时自动跳过并说明。
 //
@@ -139,9 +139,10 @@ console.log("=== 1. 完整同步（回放真实响应）===");
     if (lin.length) {
       const sched = result.backup.schedules.filter((s) => s.courseId === lin[0].id);
       const summary = sched.map((s) => `周${s.dayOfWeek} ${s.startWeek}-${s.endWeek}/${s.weekType}`).sort();
+      // 下标即周次、跳过下标 0。旧期望「周1 2-14/all | 周5 2-14/even」是 i+1 推后一周的结果。
       check(
-        "★ 线性代数B 是「周一连续 + 周五双周」（即两周三节）",
-        summary.join(" | ") === "周1 2-14/all | 周5 2-14/even",
+        "★ 线性代数B 周一第 1-13 周、周五第 1-13 周单周",
+        summary.join(" | ") === "周1 1-13/all | 周5 1-13/odd",
         summary
       );
     }

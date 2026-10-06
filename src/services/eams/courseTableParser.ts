@@ -8,9 +8,11 @@
 //        N 是星期（0 起算，0=周一），M 是当天第几节。
 //      页面自身结构印证了这一点：unitCount = 14，且 table0 = new CourseTable(2026, 98)，
 //      7 天 × 14 节 = 98，正好是 N∈0..6、M∈0..13 能覆盖的下标范围。
-//   3. 周次位串**一个字符 = 一周**。验证方式：线性代数B 有两条活动，周一那条连续第 2..14 周、
-//      周五那条第 2,4,6..14 周，合起来是"奇数周 1 节、偶数周 2 节"—— 与该课程的真实排课一致。
-//      串长 53 是补到学期之外的部分，尾部全是 0。
+//   3. 周次位串**一个字符一位**，长度通常是 53（尾部用 0 补到学期之外）。
+//      **下标 0 是占位，不代表某一周**（公开的教务响应里这一位恒为 '0'），下标 i（i ≥ 1）
+//      就是第 i 周。不要写成 i+1：那样会把第 1–16 周存成第 2–17 周，第 1 周整周空表，
+//      「当前所处周」相对课程也会整周偏后。旧注释曾用「线性代数B 周一第 2..14 周」当佐证，
+//      那个读数本身就是 i+1 的错位，不是校历。
 //   4. 教师姓名不在参数里（那里是 actTeacherName.join(',')），来自**之后**的
 //      `var teachers = [{name:"..."}]`。
 //
@@ -48,6 +50,10 @@ export interface BackupSchedule {
   endWeek: number;
   weekType: "all" | "odd" | "even";
   scope: "semester";
+  /// 教务导入才有。旧备份和手填课没有这两项，不能靠它们反推来源。
+  source?: "eams";
+  /// 写出这份周次时的解析规则。2 = 下标即周次、跳过下标 0。
+  parserVersion?: number;
 }
 
 export interface BackupCourse {
@@ -84,6 +90,10 @@ export interface ParsedCoursePage {
 
 /// 应用里 addSchedule 的默认学期跨度，周次缺失时按整学期兜底。
 const DEFAULT_END_WEEK = 20;
+
+/// 周次位串的解释版本。存进每条课段，以后规则再变才能只改来自这一版的数据。
+/// 2：下标即周次，跳过下标 0。没有 1 —— 1 就是已经写进用户课表、无法区分来源的那次 i+1 错位。
+export const EAMS_PARSER_VERSION = 2;
 
 const WEEKDAY_INDEX_RE = /index\s*=\s*(\d+)\s*\*\s*unitCount/;
 const TEACHERS_RE = /var\s+teachers\s*=\s*(\[[\s\S]*?\])\s*;?/;
@@ -129,9 +139,21 @@ export const cleanCourseName = (raw: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-/// 位串按周计：第 i 个字符为 '1' 表示第 i+1 周有课。
+/// 位串按周计：下标就是周次。下标 0 是占位，即使偶发为 '1' 也不算某一周。
 export const weeksFromBits = (bits: string): number[] =>
-  [...bits].reduce<number[]>((acc, ch, i) => (ch === "1" ? acc.concat(i + 1) : acc), []);
+  [...bits].reduce<number[]>((acc, ch, i) => (i > 0 && ch === "1" ? acc.concat(i) : acc), []);
+
+/// 每条 TaskActivity 的周次位串原文，给测试核对「下标 0 是不是 0」。解析课表本身用不到。
+export const taskActivityWeekBits = (html: string): string[] => {
+  const bits: string[] = [];
+  TASK_ACTIVITY_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TASK_ACTIVITY_RE.exec(html)) !== null) {
+    const args = splitActivityArgs(match[1]);
+    if (args.length >= 7) bits.push(unquote(args[6]));
+  }
+  return bits;
+};
 
 /// 从 courseTableForStd.action 页面里取随请求提交的三个参数。
 ///
@@ -373,7 +395,9 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
           startWeek: span.startWeek,
           endWeek: span.endWeek,
           weekType: span.weekType,
-          scope: "semester"
+          scope: "semester",
+          source: "eams",
+          parserVersion: EAMS_PARSER_VERSION
         });
       }
     }

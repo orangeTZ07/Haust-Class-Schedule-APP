@@ -1,5 +1,13 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { Course, CourseSchedule, CourseTable } from "@/types/course";
+import {
+  capHistory,
+  forgetTableHistory,
+  normalizeHistory,
+  readTableHistory,
+  writeTableHistory,
+  type TableHistory
+} from "@/utils/editHistory";
 
 const DB_NAME = "sqlite:course_mngr.db";
 const DEFAULT_TABLE_ID = 1;
@@ -64,6 +72,8 @@ async function initDb(db: Database) {
       week_type TEXT NOT NULL,
       scope TEXT NOT NULL DEFAULT 'semester',
       is_cancelled INTEGER NOT NULL DEFAULT 0,
+      source TEXT,
+      parser_version INTEGER,
       FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
     );
   `);
@@ -80,6 +90,31 @@ async function initDb(db: Database) {
   if (!scheduleColumns.some(column => column.name === "is_cancelled")) {
     await db.execute("ALTER TABLE schedules ADD COLUMN is_cancelled INTEGER NOT NULL DEFAULT 0");
   }
+  // Nullable on purpose: rows written before provenance existed, and hand-entered segments,
+  // stay null. A default of "eams" would make a later migration rewrite the wrong courses.
+  if (!scheduleColumns.some(column => column.name === "source")) {
+    await db.execute("ALTER TABLE schedules ADD COLUMN source TEXT");
+  }
+  if (!scheduleColumns.some(column => column.name === "parser_version")) {
+    await db.execute("ALTER TABLE schedules ADD COLUMN parser_version INTEGER");
+  }
+
+  // One row per action group (the timetable after one user gesture), capped per course table.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS edit_action_groups (
+      table_id INTEGER NOT NULL,
+      position INTEGER NOT NULL,
+      courses_json TEXT NOT NULL,
+      schedules_json TEXT NOT NULL,
+      PRIMARY KEY (table_id, position)
+    );
+  `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS edit_history_heads (
+      table_id INTEGER PRIMARY KEY,
+      current_index INTEGER NOT NULL
+    );
+  `);
 }
 
 // --- Web Fallback Logic ---
@@ -101,7 +136,11 @@ function normalizeSchedule(row: any): CourseSchedule {
     endWeek: row.end_week ?? row.endWeek,
     weekType: row.week_type ?? row.weekType,
     scope: (row.scope ?? "semester") as CourseSchedule["scope"],
-    isCancelled: Boolean(row.is_cancelled ?? row.isCancelled ?? false)
+    isCancelled: Boolean(row.is_cancelled ?? row.isCancelled ?? false),
+    source: typeof row.source === "string" && row.source ? row.source : undefined,
+    parserVersion: typeof (row.parser_version ?? row.parserVersion) === "number"
+      ? (row.parser_version ?? row.parserVersion)
+      : undefined
   };
 }
 
@@ -201,6 +240,8 @@ export async function deleteCourseTable(id: number): Promise<void> {
   if (db) {
     await db.execute("DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)", [id]);
     await db.execute("DELETE FROM courses WHERE table_id = $1", [id]);
+    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [id]);
+    await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [id]);
     await db.execute("DELETE FROM course_tables WHERE id = $1", [id]);
   } else {
     const webCourses = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.COURSES) || "[]") as Array<Course & { tableId?: number }>;
@@ -215,6 +256,7 @@ export async function deleteCourseTable(id: number): Promise<void> {
       JSON.stringify(webSchedules.filter(schedule => !deletedCourseIds.has(schedule.courseId)))
     );
     localStorage.setItem(WEB_STORAGE_KEYS.TABLES, JSON.stringify(tables.filter(table => table.id !== id)));
+    forgetTableHistory(localStorage, id);
   }
 
   const activeId = await getActiveCourseTableId();
@@ -291,8 +333,8 @@ export async function addSchedule(schedule: Omit<CourseSchedule, "id">): Promise
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     const result = await db.execute(
-      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled]
+      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled, schedule.source ?? null, schedule.parserVersion ?? null]
     );
     return result.lastInsertId ?? 0;
   } else {
@@ -310,7 +352,7 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     await db.execute(
-      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9 WHERE id = $10",
+      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9, source = $10, parser_version = $11 WHERE id = $12",
       [
         schedule.courseId,
         schedule.dayOfWeek,
@@ -321,6 +363,8 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
         schedule.weekType,
         scope,
         isCancelled,
+        schedule.source ?? null,
+        schedule.parserVersion ?? null,
         schedule.id
       ]
     );
@@ -395,6 +439,136 @@ export async function deleteCourse(id: number) {
     const filteredSchedules = schedules.filter(s => s.courseId !== id);
     localStorage.setItem(WEB_STORAGE_KEYS.SCHEDULES, JSON.stringify(filteredSchedules));
   }
+}
+
+/// Put one course table back to a snapshot, including the original ids, so a later edit
+/// does not collide with a row undo just restored.
+export async function replaceActiveTableContents(nextCourses: Course[], nextSchedules: CourseSchedule[]): Promise<void> {
+  const tableId = await getActiveCourseTableId();
+  const db = await getDb();
+  if (db) {
+    await db.execute(
+      "DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)",
+      [tableId]
+    );
+    await db.execute("DELETE FROM courses WHERE table_id = $1", [tableId]);
+    for (const course of nextCourses) {
+      await db.execute(
+        "INSERT INTO courses (id, table_id, name, teacher, location, color) VALUES ($1, $2, $3, $4, $5, $6)",
+        [course.id, tableId, course.name, course.teacher || "", course.location || "", course.color]
+      );
+    }
+    for (const schedule of nextSchedules) {
+      const scope = schedule.scope ?? "semester";
+      const isCancelled = schedule.isCancelled ? 1 : 0;
+      await db.execute(
+        "INSERT INTO schedules (id, course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        [
+          schedule.id,
+          schedule.courseId,
+          schedule.dayOfWeek,
+          schedule.startPeriod,
+          schedule.endPeriod,
+          schedule.startWeek,
+          schedule.endWeek,
+          schedule.weekType,
+          scope,
+          isCancelled
+        ]
+      );
+    }
+    return;
+  }
+
+  const storedCourses = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.COURSES) || "[]") as Array<Course & { tableId?: number }>;
+  const removedIds = new Set(
+    storedCourses.filter(course => (course.tableId ?? DEFAULT_TABLE_ID) === tableId).map(course => course.id)
+  );
+  for (const course of nextCourses) removedIds.add(course.id);
+  const keptCourses = storedCourses.filter(course => (course.tableId ?? DEFAULT_TABLE_ID) !== tableId && !removedIds.has(course.id));
+  const restoredCourses = nextCourses.map(course => ({ ...course, tableId }));
+  localStorage.setItem(WEB_STORAGE_KEYS.COURSES, JSON.stringify([...keptCourses, ...restoredCourses]));
+
+  const storedSchedules = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.SCHEDULES) || "[]") as CourseSchedule[];
+  const restoredIds = new Set(nextSchedules.map(schedule => schedule.id));
+  const keptSchedules = storedSchedules.filter(schedule => !removedIds.has(schedule.courseId) && !restoredIds.has(schedule.id));
+  localStorage.setItem(WEB_STORAGE_KEYS.SCHEDULES, JSON.stringify([...keptSchedules, ...nextSchedules]));
+}
+
+/// Action groups for one course table. SQLite on the phone; localStorage when there is no database.
+/// At most 500 groups are kept. Older ones are already dropped before this is called.
+export async function readEditHistory(tableId: number): Promise<TableHistory | null> {
+  const db = await getDb();
+  if (!db) return readTableHistory(localStorage, tableId);
+
+  try {
+    const rows = await db.select<Array<{ position: number; courses_json: string; schedules_json: string }>>(
+      "SELECT position, courses_json, schedules_json FROM edit_action_groups WHERE table_id = $1 ORDER BY position ASC",
+      [tableId]
+    );
+    if (rows.length === 0) return null;
+    const heads = await db.select<Array<{ current_index: number }>>(
+      "SELECT current_index FROM edit_history_heads WHERE table_id = $1",
+      [tableId]
+    );
+    const snapshots = rows.map(row => ({
+      courses: JSON.parse(row.courses_json),
+      schedules: JSON.parse(row.schedules_json)
+    }));
+    return normalizeHistory({
+      snapshots,
+      index: heads[0]?.current_index ?? snapshots.length - 1
+    });
+  } catch (e) {
+    console.error("Failed to read edit history", e);
+    return null;
+  }
+}
+
+export async function writeEditHistory(tableId: number, history: TableHistory): Promise<void> {
+  const capped = capHistory(history);
+  const db = await getDb();
+  if (!db) {
+    writeTableHistory(localStorage, tableId, capped);
+    return;
+  }
+
+  await db.execute("BEGIN");
+  try {
+    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+    if (capped.snapshots.length === 0) {
+      await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
+      await db.execute("COMMIT");
+      return;
+    }
+
+    for (let position = 0; position < capped.snapshots.length; position++) {
+      const snapshot = capped.snapshots[position];
+      await db.execute(
+        "INSERT INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ($1, $2, $3, $4)",
+        [tableId, position, JSON.stringify(snapshot.courses), JSON.stringify(snapshot.schedules)]
+      );
+    }
+    await db.execute(
+      `INSERT INTO edit_history_heads (table_id, current_index) VALUES ($1, $2)
+       ON CONFLICT(table_id) DO UPDATE SET current_index = excluded.current_index`,
+      [tableId, capped.index]
+    );
+    await db.execute("COMMIT");
+  } catch (error) {
+    await db.execute("ROLLBACK");
+    throw error;
+  }
+}
+
+export async function forgetEditHistory(tableId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    forgetTableHistory(localStorage, tableId);
+    return;
+  }
+  await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+  await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
 }
 
 export async function deleteSchedule(id: number) {

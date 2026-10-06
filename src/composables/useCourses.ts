@@ -1,6 +1,18 @@
 import { ref, computed, watch } from "vue";
 import type { Course, CourseSchedule, CourseImportItem, CourseTable, PeriodTimeConfig } from "@/types/course";
 import { parseCSV, parseSemesterCSV, type ParsedCourse } from "@/utils/csvImporter";
+import {
+  canRedo,
+  canUndo,
+  cloneSnapshot,
+  pushSnapshot,
+  redoStep,
+  seedHistory,
+  sessionChangeCount,
+  undoStep,
+  type TableHistory,
+  type TimetableSnapshot
+} from "@/utils/editHistory";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -32,6 +44,18 @@ const currentWeek = ref(1);
 /// starting point: 设置 -> 网格设置 lets it be changed, and the value is persisted.
 const DEFAULT_SEMESTER_START = "2026-08-31";
 const semesterStartDate = ref(DEFAULT_SEMESTER_START);
+
+/// Edit mode is entered by a timetable gesture, not by a separate button. The bar stays up
+/// until the user finishes it. History itself is per course table; this flag is only the chrome.
+const editing = ref(false);
+/// History index of the timetable on screen when this edit session started.
+/// The bar's number is current index minus this, not a counter that steps itself.
+const sessionEntryIndex = ref(0);
+const tableHistory = ref<TableHistory>({ snapshots: [], index: 0 });
+const sessionCount = computed(() => sessionChangeCount(tableHistory.value.index, sessionEntryIndex.value));
+let historyTableId = 0;
+let applyingHistory = false;
+let historyWrite: Promise<void> = Promise.resolve();
 
 let nextCourseId = 1;
 let nextScheduleId = 1;
@@ -126,6 +150,7 @@ async function loadDataFromDb() {
     if (savedSemesterStart) {
       semesterStartDate.value = savedSemesterStart;
     }
+    await adoptEditHistory();
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
   }
@@ -164,12 +189,122 @@ const weekToOpenOn = (): number => {
   return week !== null && week >= 1 && week <= semesterWeekCount.value ? week : 1;
 };
 
+const persistEditHistory = () => {
+  const tableId = activeCourseTableId.value;
+  const history = tableHistory.value;
+  historyWrite = historyWrite.then(() => courseService.writeEditHistory(tableId, history)).catch(error => {
+    console.error("Failed to store edit history", error);
+  });
+};
+
+/// Load this table's stored snapshots. Same table reloads (a delete that re-reads the db)
+/// keep the in-memory session, so the following commit still belongs to the edit in progress.
+const adoptEditHistory = async () => {
+  if (applyingHistory) return;
+  const tableId = activeCourseTableId.value;
+  if (tableId === historyTableId && tableHistory.value.snapshots.length > 0) return;
+  historyTableId = tableId;
+  const stored = await courseService.readEditHistory(tableId);
+  if (!stored) {
+    tableHistory.value = seedHistory(cloneSnapshot(courses.value, schedules.value));
+    persistEditHistory();
+  } else {
+    tableHistory.value = stored;
+  }
+  editing.value = false;
+  sessionEntryIndex.value = tableHistory.value.index;
+};
+
+/// Import, re-import and clear replace the timetable outright. The chain becomes only the
+/// finished timetable, so undo cannot step into a half-written import or back out of it.
+const anchorEditHistory = () => {
+  if (applyingHistory) return;
+  historyTableId = activeCourseTableId.value;
+  tableHistory.value = seedHistory(cloneSnapshot(courses.value, schedules.value));
+  sessionEntryIndex.value = 0;
+  editing.value = false;
+  persistEditHistory();
+};
+
+/// A course table created for importAsNewCourseTable has no action groups until the import
+/// finishes and anchorEditHistory stores that one finished snapshot.
+const beginEmptyEditHistory = () => {
+  historyTableId = activeCourseTableId.value;
+  tableHistory.value = { snapshots: [], index: 0 };
+  sessionEntryIndex.value = 0;
+  editing.value = false;
+  historyWrite = historyWrite.then(() => courseService.forgetEditHistory(historyTableId)).catch(error => {
+    console.error("Failed to clear edit history", error);
+  });
+};
+
+const restoreTimetable = async (snapshot: TimetableSnapshot) => {
+  applyingHistory = true;
+  try {
+    await courseService.replaceActiveTableContents(snapshot.courses, snapshot.schedules);
+    courses.value = snapshot.courses.map(course => ({ ...course }));
+    schedules.value = snapshot.schedules.map(schedule => ({ ...schedule }));
+    nextCourseId = courses.value.length > 0 ? Math.max(...courses.value.map(course => course.id)) + 1 : 1;
+    nextScheduleId = schedules.value.length > 0 ? Math.max(...schedules.value.map(schedule => schedule.id)) + 1 : 1;
+  } finally {
+    applyingHistory = false;
+  }
+};
+
+const commitEdit = () => {
+  if (applyingHistory) return;
+  const next = cloneSnapshot(courses.value, schedules.value);
+  const entry = editing.value ? sessionEntryIndex.value : tableHistory.value.index;
+  const pushed = pushSnapshot(tableHistory.value, next, entry);
+  if (!pushed.changed) return;
+  tableHistory.value = pushed.history;
+  sessionEntryIndex.value = pushed.sessionEntryIndex;
+  editing.value = true;
+  persistEditHistory();
+};
+
+const canUndoEdit = computed(() => canUndo(tableHistory.value));
+const canRedoEdit = computed(() => canRedo(tableHistory.value));
+
+const applyHistoryIndex = async (next: TableHistory) => {
+  const snapshot = next.snapshots[next.index];
+  if (!snapshot) return;
+  applyingHistory = true;
+  try {
+    await courseService.replaceActiveTableContents(snapshot.courses, snapshot.schedules);
+    courses.value = snapshot.courses.map(course => ({ ...course }));
+    schedules.value = snapshot.schedules.map(schedule => ({ ...schedule }));
+    tableHistory.value = next;
+    if (courses.value.length > 0) nextCourseId = Math.max(...courses.value.map(course => course.id)) + 1;
+    if (schedules.value.length > 0) nextScheduleId = Math.max(...schedules.value.map(schedule => schedule.id)) + 1;
+    persistEditHistory();
+  } finally {
+    applyingHistory = false;
+  }
+};
+
+const undoEdit = async () => {
+  const next = undoStep(tableHistory.value);
+  if (!next) return;
+  await applyHistoryIndex(next);
+};
+
+const redoEdit = async () => {
+  const next = redoStep(tableHistory.value);
+  if (!next) return;
+  await applyHistoryIndex(next);
+};
+
+const exitEditMode = () => {
+  editing.value = false;
+};
+
 // Initial load. A cold start opens on this week by the calendar instead of the week saved from
 // the last session: by the time the app is reopened that week can be days or months stale, while
 // the today column, the 本周 marks and the class reminders all go by the calendar. Outside the
 // semester the calendar has no week to offer, and then the saved week is kept rather than forcing
 // week 1 the way weekToOpenOn does for a freshly opened table.
-loadDataFromDb().then(() => {
+const coursesReady: Promise<void> = loadDataFromDb().then(() => {
   const week = weekNumberForDate(new Date());
   if (week !== null && week <= semesterWeekCount.value) {
     currentWeek.value = week;
@@ -369,7 +504,7 @@ export function useCourses() {
     dayOfWeek: number,
     startPeriod: number,
     endPeriod: number,
-    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled">> = {}
+    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion">> = {}
   ): Promise<CourseSchedule> => {
     const scheduleData = {
       courseId,
@@ -380,7 +515,11 @@ export function useCourses() {
       endWeek: options.endWeek ?? 20,
       weekType: options.weekType ?? ("all" as const),
       scope: options.scope ?? ("semester" as const),
-      isCancelled: options.isCancelled ?? false
+      isCancelled: options.isCancelled ?? false,
+      // Only when the caller actually has them. Defaulting these would stamp hand-entered
+      // segments as if a parser wrote them.
+      ...(options.source ? { source: options.source } : {}),
+      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {})
     };
     
     const id = await courseService.addSchedule(scheduleData);
@@ -448,12 +587,13 @@ export function useCourses() {
     return true;
   };
 
-  const clearAll = async () => {
+  const clearAll = async (options?: { boundary?: boolean }) => {
     await courseService.clearAllData();
     courses.value = [];
     schedules.value = [];
     nextCourseId = 1;
     nextScheduleId = 1;
+    if (options?.boundary !== false) anchorEditHistory();
   };
 
   const switchCourseTable = async (id: number) => {
@@ -485,6 +625,7 @@ export function useCourses() {
   };
 
   const deleteCourseTable = async (id: number) => {
+    if (id === historyTableId) historyTableId = 0;
     await courseService.deleteCourseTable(id);
     await loadDataFromDb();
   };
@@ -571,11 +712,13 @@ export function useCourses() {
   };
 
   const importFromCsv = async (csvStr: string, overwrite: boolean = false): Promise<{ success: boolean; message: string; count: number }> => {
+    let before: TimetableSnapshot | null = null;
     try {
       const items = parseCSV(csvStr);
       if (items.length === 0) {
         return { success: false, message: "未识别到有效的 CSV 数据", count: 0 };
       }
+      before = cloneSnapshot(courses.value, schedules.value);
 
       if (overwrite) {
         await courseService.clearWeeklySchedulesForWeek(currentWeek.value);
@@ -599,21 +742,25 @@ export function useCourses() {
         count++;
       }
 
+      anchorEditHistory();
       return { success: true, message: `成功导入第 ${currentWeek.value} 周的 ${count} 门课程`, count };
     } catch (e) {
+      if (before) await restoreTimetable(before);
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
     }
   };
 
   const importFromSemesterCsv = async (csvStr: string, overwrite: boolean = false): Promise<{ success: boolean; message: string; count: number }> => {
+    let before: TimetableSnapshot | null = null;
     try {
       const items = parseSemesterCSV(csvStr);
       if (items.length === 0) {
         return { success: false, message: "未识别到有效的学期 CSV 数据", count: 0 };
       }
+      before = cloneSnapshot(courses.value, schedules.value);
 
       if (overwrite) {
-        await clearAll();
+        await clearAll({ boundary: false });
       }
 
       let count = 0;
@@ -629,19 +776,23 @@ export function useCourses() {
       }
 
       setCurrentWeek(1);
+      anchorEditHistory();
 
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
+      if (before) await restoreTimetable(before);
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
     }
   };
 
   const importFromJson = async (jsonStr: string): Promise<{ success: boolean; message: string; count: number }> => {
+    let before: TimetableSnapshot | null = null;
     try {
       const items: CourseImportItem[] = JSON.parse(jsonStr);
       if (!Array.isArray(items)) {
         return { success: false, message: "JSON 必须是数组格式", count: 0 };
       }
+      before = cloneSnapshot(courses.value, schedules.value);
 
       let count = 0;
       for (const item of items) {
@@ -659,8 +810,10 @@ export function useCourses() {
         }
       }
 
+      anchorEditHistory();
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
+      if (before) await restoreTimetable(before);
       return { success: false, message: `JSON 解析错误: ${(e as Error).message}`, count: 0 };
     }
   };
@@ -683,6 +836,7 @@ export function useCourses() {
   const importFromJsonBackup = async (
     jsonStr: string
   ): Promise<{ success: boolean; message: string; count: number; skipped?: number }> => {
+    let before: TimetableSnapshot | null = null;
     try {
       const parsed = JSON.parse(jsonStr);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -698,11 +852,14 @@ export function useCourses() {
       if (backupCourses.length === 0) {
         return { success: false, message: "备份里没有课程数据", count: 0 };
       }
+      before = cloneSnapshot(courses.value, schedules.value);
 
       // Replace rather than merge: importing a backup should leave the timetable as it was,
       // and merging would leave duplicates behind. A caller that is about to overwrite a
       // timetable with courses in it confirms before we get here.
-      await clearAll();
+      // boundary stays off until the restore finishes, so a failure can put the previous
+      // timetable back without an undo step that lands in the middle of the import.
+      await clearAll({ boundary: false });
 
       const idMap = new Map<number, number>();
       let courseCount = 0;
@@ -724,7 +881,9 @@ export function useCourses() {
           endWeek: schedule.endWeek,
           weekType: schedule.weekType,
           scope: schedule.scope,
-          isCancelled: schedule.isCancelled
+          isCancelled: schedule.isCancelled,
+          source: schedule.source,
+          parserVersion: schedule.parserVersion
         });
         scheduleCount++;
       }
@@ -732,6 +891,7 @@ export function useCourses() {
       // Report dropped rows rather than swallowing them: a restore that quietly loses part of
       // the data is worse than one that says what it could not place.
       const dropped = backupSchedules.length - scheduleCount;
+      anchorEditHistory();
 
       return {
         success: true,
@@ -741,6 +901,7 @@ export function useCourses() {
         skipped: dropped
       };
     } catch (e) {
+      if (before) await restoreTimetable(before);
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
     }
   };
@@ -778,6 +939,7 @@ export function useCourses() {
     if (newTableId === null) {
       return { success: false, message: "课表名称不能为空", count: 0, tableName };
     }
+    beginEmptyEditHistory();
 
     let result: { success: boolean; message: string; count: number; skipped?: number };
     try {
@@ -792,6 +954,7 @@ export function useCourses() {
       // service pick a replacement on its own.
       await courseService.setActiveCourseTableId(previousTableId);
       activeCourseTableId.value = previousTableId;
+      await courseService.forgetEditHistory(newTableId);
       await courseService.deleteCourseTable(newTableId);
       await loadDataFromDb();
       // createCourseTable moved the week to the new table's opening week.
@@ -870,7 +1033,15 @@ export function useCourses() {
     exportToCsv,
     exportToJsonBackup,
     clearAll,
-    switchCourseTable,
+    editing,
+    sessionCount,
+    canUndoEdit,
+    canRedoEdit,
+    commitEdit,
+    undoEdit,
+    redoEdit,
+    exitEditMode,
+    coursesReady,    switchCourseTable,
     createCourseTable,
     renameCourseTable,
     deleteCourseTable,
