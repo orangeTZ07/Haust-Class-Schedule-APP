@@ -25,7 +25,11 @@ impl<R: Runtime> SystemBars<R> {
         Ok(Insets::default())
     }
 
-    pub fn set_bar_style(&self, _dark_icons: bool) -> Result<(), String> {
+    pub fn set_bar_style(
+        &self,
+        _status_dark_icons: bool,
+        _nav_dark_icons: bool,
+    ) -> Result<(), String> {
         Ok(())
     }
 }

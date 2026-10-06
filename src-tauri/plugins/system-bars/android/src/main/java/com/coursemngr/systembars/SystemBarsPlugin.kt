@@ -26,10 +26,12 @@ private const val TAG = "SystemBars"
 private const val EVENT_INSETS_CHANGED = "insetsChanged"
 
 /// Arguments for set_bar_style. Camel-case on purpose: @InvokeArg classes carry the JSON keys that
-/// the Rust side (SetBarStyleArgs, serde camelCase) sends.
+/// the Rust side (SetBarStyleArgs, serde camelCase) sends. "Dark icons" means dark icons on a light
+/// bar, i.e. what a light background needs.
 @InvokeArg
 class SetBarStyleArgs {
-    var darkIcons: Boolean = false
+    var statusDarkIcons: Boolean = false
+    var navDarkIcons: Boolean = false
 }
 
 /// What the page has to keep clear of -- status bar, navigation bar or gesture bar, display
@@ -88,7 +90,10 @@ class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
 
     /// Remembered because the platform can drop the appearance flags on a configuration change.
     /// Null until the frontend has asked for a style, in which case the system default stands.
-    private var darkIcons: Boolean? = null
+    /// Kept apart per bar: the status bar sits over the page header and the navigation bar over
+    /// the page's bottom edge, which need not be the same colour.
+    private var statusDarkIcons: Boolean? = null
+    private var navDarkIcons: Boolean? = null
 
     override fun load(webView: WebView) {
         this.webView = webView
@@ -141,7 +146,8 @@ class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
     fun setBarStyle(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(SetBarStyleArgs::class.java)
-            darkIcons = args.darkIcons
+            statusDarkIcons = args.statusDarkIcons
+            navDarkIcons = args.navDarkIcons
             activity.runOnUiThread {
                 try {
                     applyBarStyle()
@@ -253,11 +259,10 @@ class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun applyBarStyle() {
-        val dark = darkIcons ?: return
         val window = activity.window
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         // "Light" here describes the bar's background, not its icons: a light bar gets dark icons.
-        controller.isAppearanceLightStatusBars = dark
-        controller.isAppearanceLightNavigationBars = dark
+        statusDarkIcons?.let { controller.isAppearanceLightStatusBars = it }
+        navDarkIcons?.let { controller.isAppearanceLightNavigationBars = it }
     }
 }

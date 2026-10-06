@@ -27,11 +27,14 @@ pub struct Insets {
     pub left: f64,
 }
 
-/// Payload of `setBarStyle`. The Kotlin @InvokeArg class reads the camelCase key directly.
+/// Payload of `setBarStyle`. The Kotlin @InvokeArg class reads the camelCase keys directly. The two
+/// bars are separate flags because they sit over different things: the status bar over the top of
+/// the page (usually the header), the navigation bar over its bottom edge.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetBarStyleArgs {
-    pub dark_icons: bool,
+    pub status_dark_icons: bool,
+    pub nav_dark_icons: bool,
 }
 
 /// Extensions to reach the system bars API from Rust.

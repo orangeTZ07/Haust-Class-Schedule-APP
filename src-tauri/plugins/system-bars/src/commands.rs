@@ -14,14 +14,17 @@ pub(crate) async fn get_insets<R: Runtime>(app: AppHandle<R>) -> Result<Insets, 
     app.system_bars().get_insets()
 }
 
-// The parameter is a bare `dark_icons` rather than an args struct, so the frontend sends
-// `{ darkIcons }` flat: Tauri matches the payload against parameter names and camelCases them.
+// The parameters are bare booleans rather than an args struct, so the frontend sends
+// `{ statusDarkIcons, navDarkIcons }` flat: Tauri matches the payload against parameter names and
+// camelCases them.
 #[command]
 pub(crate) async fn set_bar_style<R: Runtime>(
     app: AppHandle<R>,
-    dark_icons: bool,
+    status_dark_icons: bool,
+    nav_dark_icons: bool,
 ) -> Result<(), String> {
-    app.system_bars().set_bar_style(dark_icons)
+    app.system_bars()
+        .set_bar_style(status_dark_icons, nav_dark_icons)
 }
 
 // `addPluginListener` sends `{ event, handler }` and `PluginListener.unregister` sends

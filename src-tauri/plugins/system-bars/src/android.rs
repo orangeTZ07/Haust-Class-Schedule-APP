@@ -31,9 +31,19 @@ impl<R: Runtime> SystemBars<R> {
             .map_err(|error| error.to_string())
     }
 
-    pub fn set_bar_style(&self, dark_icons: bool) -> Result<(), String> {
+    pub fn set_bar_style(
+        &self,
+        status_dark_icons: bool,
+        nav_dark_icons: bool,
+    ) -> Result<(), String> {
         self.0
-            .run_mobile_plugin::<serde_json::Value>("setBarStyle", SetBarStyleArgs { dark_icons })
+            .run_mobile_plugin::<serde_json::Value>(
+                "setBarStyle",
+                SetBarStyleArgs {
+                    status_dark_icons,
+                    nav_dark_icons,
+                },
+            )
             .map(|_| ())
             .map_err(|error| error.to_string())
     }

@@ -27,11 +27,12 @@ export function getInsets(): Promise<SafeInsets> {
   return invoke<SafeInsets>(`${PREFIX}|get_insets`);
 }
 
-/// `darkIcons: true` draws dark status / navigation bar icons, which is what a light background
-/// needs. The key is sent flat because the Rust command takes a bare `dark_icons` parameter, and
-/// Tauri matches the payload against parameter names.
-export async function setBarStyle(darkIcons: boolean): Promise<void> {
-  await invoke(`${PREFIX}|set_bar_style`, { darkIcons });
+/// `true` draws dark icons on that bar, which is what a light background needs. The two bars are
+/// set separately because they sit over different parts of the page. The keys are sent flat
+/// because the Rust command takes bare `status_dark_icons` / `nav_dark_icons` parameters, and Tauri
+/// matches the payload against parameter names.
+export async function setBarStyle(statusDarkIcons: boolean, navDarkIcons: boolean): Promise<void> {
+  await invoke(`${PREFIX}|set_bar_style`, { statusDarkIcons, navDarkIcons });
 }
 
 /// Subscribes to the native `insetsChanged` event (rotation, switching between gesture and
