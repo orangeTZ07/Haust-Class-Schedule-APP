@@ -188,7 +188,7 @@ const handleOverlayClick = () => {
 
 .sidebar-header {
   padding: 24px 20px;
-  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-top: calc(24px + var(--safe-top));
   /* The same band colour as the top bar. The title is header-text, which is only guaranteed to be
      readable on header-bg: on the Vant blue preset it is white, and on the bare drawer background
      it vanished. */
@@ -230,7 +230,7 @@ const handleOverlayClick = () => {
 /* Settings and contact stay put at the bottom whatever the height, clear of the gesture bar. */
 .menu-footer {
   padding: 8px 10px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(8px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   gap: 2px;

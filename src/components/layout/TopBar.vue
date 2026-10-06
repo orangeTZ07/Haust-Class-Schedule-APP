@@ -72,7 +72,7 @@ const placePopover = () => {
     left: `${left}px`,
     top: `${top}px`,
     width: `${width}px`,
-    maxHeight: `min(260px, calc(100dvh - ${top}px - ${margin}px - env(safe-area-inset-bottom, 0px)))`,
+    maxHeight: `min(260px, calc(100dvh - ${top}px - ${margin}px - var(--safe-bottom)))`,
     // Grow out of the button rather than out of the popover's own middle.
     transformOrigin: `${rect.left + rect.width / 2 - left}px 0`,
   };
@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
      from the screen edge and its controls ended up underneath the status bar, where the
      system swallows the tap -- 第几周 and the menu were awkward or impossible to hit. The
      floor keeps them reachable; max() still honours a real inset when one is reported. */
-  padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 26px));
+  padding-top: calc(12px + max(var(--safe-top), 26px));
   background: color-mix(in srgb, var(--theme-header-bg) 85%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -270,7 +270,7 @@ onBeforeUnmount(() => {
 .week-switcher {
   position: absolute;
   left: 50%;
-  top: calc(12px + max(env(safe-area-inset-top, 0px), 26px));
+  top: calc(12px + max(var(--safe-top), 26px));
   transform: translateX(-50%);
   height: 34px;
   display: flex;

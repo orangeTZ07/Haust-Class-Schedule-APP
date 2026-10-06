@@ -167,7 +167,7 @@ const restoreImportedTimetable = async () => {
 
 .sheet-foot {
   padding: 8px 16px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(8px + var(--safe-bottom));
   border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
 }
 

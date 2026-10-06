@@ -255,7 +255,7 @@ const presetColors = [
   z-index: 10;
   background: var(--theme-bg-color);
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--safe-top));
   display: flex;
   align-items: center;
   justify-content: space-between;

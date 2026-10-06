@@ -435,7 +435,7 @@ const onEdgeTouchEnd = () => {
      .home-view so the background layers still bleed to the true screen edge. Every other
      view in this app already handled its safe-area insets; this screen did not, even
      though it is the one users spend their time on. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-bottom);
   /* Promoted so the per-frame transform during a drag stays on the compositor. */
   will-change: transform;
   /* The drawer is a big surface: smooth, no overshoot, and the way back (the base rule) is quicker

@@ -37,6 +37,15 @@
   --theme-accent: #333;
   --theme-on-accent: #fff;
 
+  /* System-bar insets. Always use these, never env(safe-area-inset-*) directly: inside the Android
+     WebView the env() values are routinely 0, which left content under the status bar and the
+     navigation bar. The native plugin writes the real sizes into --native-safe-*; env() still wins
+     where it reports something larger (notched iOS, desktop previews). */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--native-safe-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--native-safe-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--native-safe-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--native-safe-left, 0px));
+
   /* Motion. One vocabulary for the whole app, so a popup, a drawer and a button press feel like
      they belong to the same hand.
        spring  small things arriving: a press letting go, menus, centred dialogs, chips, the

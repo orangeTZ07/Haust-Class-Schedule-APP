@@ -50,7 +50,7 @@ const goBack = () => {
   display: flex;
   align-items: center;
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--safe-top));
   background: var(--theme-header-bg);
   border-bottom: 1px solid var(--theme-grid-line-color);
 }
