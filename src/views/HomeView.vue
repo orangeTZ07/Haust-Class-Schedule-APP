@@ -34,12 +34,12 @@ const trashTargetState = ref({
 });
 
 // Reminders cover a rolling seven-day window rather than the whole semester, so the window is
-// renewed every time the app opens. Failures are swallowed deliberately: not being able to
-// schedule a reminder must never get in the way of using the timetable.
-const { reschedule: rescheduleReminders } = useReminder();
-onMounted(() => {
-  rescheduleReminders().catch(() => {});
-});
+// renewed every time the home screen opens. useReminder also renews it by itself when the
+// timetable changes or the app comes back to the foreground. This is debounced and swallows its
+// own failures: not being able to schedule a reminder must never get in the way of using the
+// timetable.
+const { refreshReminders } = useReminder();
+onMounted(refreshReminders);
 
 const toggleSidebar = () => {
   setSidebar(!sidebarVisible.value);

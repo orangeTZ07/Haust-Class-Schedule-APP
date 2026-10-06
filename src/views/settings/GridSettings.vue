@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import { useReminder } from "@/composables/useReminder";
 import { checkBatteryOptimization, openBatterySettings } from "@/services/reminderService";
 import { describeError } from "@/utils/describeError";
-import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 
 const {
   periodConfig,
@@ -53,37 +52,50 @@ const resetToDefaults = () => {
   };
 };
 
-const { prefs: reminderPrefs, maxMinutesBefore, reschedule } = useReminder();
+const {
+  prefs: reminderPrefs,
+  permission: reminderPermission,
+  maxMinutesBefore,
+  reschedule,
+  refreshPermission,
+  ensurePermission
+} = useReminder();
 
 const reminderBusy = ref(false);
 const reminderMessage = ref("");
 const batteryExempt = ref(true);
 
+const NO_PERMISSION_MESSAGE = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
+
 const refreshBatteryState = async () => {
   batteryExempt.value = await checkBatteryOptimization();
 };
 
-onMounted(refreshBatteryState);
+/// Reminders are on by default, so the switch can be on while the system still refuses
+/// notifications. This is what the "没有通知权限" hint below keys off.
+const permissionMissing = computed(
+  () => reminderPermission.value === "denied" || reminderPermission.value === "prompt"
+);
+
+onMounted(() => {
+  refreshBatteryState();
+  // Failing to read the permission only means the hint stays hidden.
+  refreshPermission().catch(() => {});
+});
 
 /// Called after the switch flips, so reminderPrefs already holds the new value.
 ///
 /// The notification permission is requested before anything is scheduled: on Android 13+ the
-/// alarm would otherwise fire into a notification the system drops, and the feature would look
-/// broken rather than unpermitted.
+/// alarm would otherwise fire into a notification the system drops, and on iOS the request would
+/// be refused outright, so the feature would look broken rather than unpermitted.
 const onToggleReminder = async () => {
   if (reminderBusy.value) return;
   reminderBusy.value = true;
   try {
-    if (reminderPrefs.value.enabled) {
-      let granted = await isPermissionGranted();
-      if (!granted) {
-        granted = (await requestPermission()) === "granted";
-      }
-      if (!granted) {
-        reminderPrefs.value.enabled = false;
-        reminderMessage.value = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
-        return;
-      }
+    if (reminderPrefs.value.enabled && !(await ensurePermission())) {
+      reminderPrefs.value.enabled = false;
+      reminderMessage.value = NO_PERMISSION_MESSAGE;
+      return;
     }
     await applyReminders();
   } catch (e) {
@@ -96,10 +108,32 @@ const onToggleReminder = async () => {
   }
 };
 
+/// The 去授权 link next to the missing-permission hint. Unlike the switch it leaves the preference
+/// alone: the user already wants reminders, they only need the permission.
+const onRequestPermission = async () => {
+  if (reminderBusy.value) return;
+  reminderBusy.value = true;
+  try {
+    if (await ensurePermission()) {
+      await applyReminders();
+    } else {
+      reminderMessage.value = NO_PERMISSION_MESSAGE;
+    }
+  } catch (e) {
+    reminderMessage.value = `设置提醒失败：${describeError(e)}`;
+  } finally {
+    reminderBusy.value = false;
+  }
+};
+
 /// Also used when the lead time changes: the trigger times are computed from it, so every alarm
 /// in the window has to be rewritten.
 const applyReminders = async () => {
   const result = await reschedule();
+  if (result.noPermission) {
+    reminderMessage.value = "没有通知权限，提醒没有排上。";
+    return;
+  }
   const summary = reminderPrefs.value.enabled
     ? `已为未来 7 天注册 ${result.scheduled} 个提醒`
     : `已关闭，并取消 ${result.cancelled} 个提醒`;
@@ -183,12 +217,17 @@ const applyReminders = async () => {
         </div>
       </div>
       <div v-if="reminderMessage" class="section-hint">{{ reminderMessage }}</div>
+      <div v-if="reminderPrefs.enabled && permissionMissing" class="section-hint">
+        没有通知权限，提醒不会发出。
+        <button class="mini-link haptics" @click="onRequestPermission">去授权</button>
+        系统不再弹窗时，请到系统设置里允许本应用发送通知，回到应用后会自动恢复。
+      </div>
       <div v-if="reminderPrefs.enabled && !batteryExempt" class="section-hint">
         系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
         <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
       </div>
       <div v-if="reminderPrefs.enabled" class="section-hint">
-        每次打开应用会为未来 7 天重新排一遍提醒；超过一周不开应用，后面的提醒不会自动排上。
+        打开应用、从后台切回来、或者课表和上课时间有改动时，会为未来 7 天重新排一遍提醒；超过一周不打开应用，后面的提醒不会自动排上。
       </div>
     </div>
 
