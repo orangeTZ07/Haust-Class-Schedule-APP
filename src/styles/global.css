@@ -164,6 +164,7 @@ body {
   text-align: left !important;
   color: var(--theme-body-text) !important;
   opacity: 0.8 !important;
+  white-space: pre-line !important;
 }
 
 /* Vant draws hairlines between the message and the buttons and between the buttons; the buttons are

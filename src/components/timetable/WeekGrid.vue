@@ -941,6 +941,15 @@ const getCellClass = (day: number, period: number) => {
   };
 };
 
+/// A cell a spanning course only covers visually is still occupied. The coach must not
+/// point "双击空白" at it.
+const isCellCovered = (day: number, period: number) =>
+  allBlocks.value.some(block =>
+    block.schedule.dayOfWeek === day &&
+    period >= block.startPeriod &&
+    period <= block.endPeriod
+  );
+
 const handleWindowResize = () => {
   if (activeConflictGroup.value) {
     clearConflictOrbitImmediately();
@@ -1035,6 +1044,7 @@ onUnmounted(() => {
             :class="getCellClass(day, slot.period)"
             :data-day="day"
             :data-period="slot.period"
+            :data-coach-empty="isCellCovered(day, slot.period) ? undefined : 'true'"
             @click="handleCellClick(day, slot.period)"
           >
             <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="block.schedule.id">
@@ -1199,7 +1209,7 @@ onUnmounted(() => {
 }
 
 /* The name and the date sit in one rounded block so that today can be marked by filling the whole
-   block, rather than by recolouring two lines of text. */
+   block, rather than by recolouring two lines of text or washing the header cell. */
 .day-pill {
   width: 100%;
   display: flex;
@@ -1223,18 +1233,14 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* Today: a filled capsule, and a faint wash down the whole column. It used to be recoloured with the
-   card border, which is a pale grey on every light preset -- so today read fainter than the other
-   days.
-   The capsule sits on the header band, so it is painted with the band's own pair, inverted
-   (header-text fill, header-bg lettering): that pair is the one guaranteed to contrast *there*. The
-   page accent is not: on the Vant preset the band is itself the accent blue, and a blue capsule on a
-   blue band was invisible. On every other preset header-text is the accent anyway. The cells below
-   sit on the page, so they use --theme-accent (see useTheme). */
-.day-header.is-today {
-  background: color-mix(in srgb, var(--theme-header-text) 10%, transparent);
-}
-
+/* Today, and only on the week that is actually current (see todayDayNumber): a rounded pill in the
+   header, and a separate faint wash on the body cells. The wash must not paint the header. A tint
+   that continues from the column up into the header cell clashes with the pill.
+   The pill sits on the header band, so it uses that band's own pair, inverted (header-text fill,
+   header-bg lettering): that pair is the one guaranteed to contrast *there*. The page accent is not:
+   on the Vant preset the band is itself the accent blue, and a blue pill on a blue band was
+   invisible. On every other preset header-text is the accent anyway. The cells below sit on the
+   page, so they use --theme-accent (see useTheme). */
 .day-header.is-today .day-pill {
   background: var(--theme-header-text);
   color: var(--theme-header-bg);
@@ -1327,8 +1333,8 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* An inset shadow rather than a background, so it lays over the morning / afternoon / evening tint
-   instead of replacing it. */
+/* Body only. An inset shadow rather than a background, so it lays over the morning / afternoon /
+   evening tint instead of replacing it, and it never continues up into the header pill. */
 .cell.is-today {
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }

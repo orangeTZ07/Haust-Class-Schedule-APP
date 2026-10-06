@@ -24,6 +24,10 @@ export interface CourseSchedule {
   weekType: "all" | "odd" | "even";
   scope?: "semester" | "weekly";
   isCancelled?: boolean;
+  /// Set on segments written by a parser that knows its own rules. Absent on anything saved
+  /// before that, and on manual / CSV / AI entries — those must not be relabelled after the fact.
+  source?: string;
+  parserVersion?: number;
 }
 
 export interface CourseImportItem {
