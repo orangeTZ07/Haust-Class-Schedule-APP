@@ -74,11 +74,13 @@ const emit = defineEmits<{
 
 .edit-count {
   flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   text-align: center;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .edit-count.is-negative {
