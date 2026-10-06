@@ -113,56 +113,6 @@
   opacity: 0.32;
 }
 
-/* One main action per section, filled with the theme accent (see --theme-accent) and lettered in
-   --theme-on-accent, a pair chosen so they read against each other and the accent reads against the
-   page on every preset. The secondary action is outline-only on purpose: a filled primary beside an
-   outlined secondary is what tells the two apart at a glance. The header colours are not safe here --
-   on the minimal themes header-bg is the page background itself, and on the Vant blue preset
-   header-text is white on a white page. Same reason none of the sheet's headings use header-text. */
-.imp-primary-btn,
-.imp-secondary-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  height: 48px;
-  font-size: 15px;
-  font-weight: 600;
-  border-radius: 12px;
-  transition:
-    transform var(--dur-base) var(--ease-spring),
-    opacity var(--dur-fast) ease-out;
-}
-
-.imp-primary-btn {
-  color: var(--theme-on-accent);
-  background: var(--theme-accent);
-  border: none;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--theme-accent) 32%, transparent);
-}
-
-.imp-secondary-btn {
-  height: 44px;
-  font-size: 14px;
-  color: var(--theme-body-text);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
-}
-
-.imp-primary-btn:active:not(:disabled),
-.imp-secondary-btn:active:not(:disabled) {
-  transform: scale(var(--press-scale));
-  opacity: 0.88;
-  transition-duration: 90ms;
-  transition-timing-function: ease-out;
-}
-
-.imp-primary-btn:disabled,
-.imp-secondary-btn:disabled {
-  opacity: 0.55;
-}
-
 .imp-spin {
   animation: imp-spin 1s linear infinite;
 }

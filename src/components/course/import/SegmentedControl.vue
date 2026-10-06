@@ -36,7 +36,7 @@ const activeIndex = computed(() => Math.max(props.options.findIndex(option => op
       type="button"
       role="tab"
       class="segment"
-      :class="{ active: modelValue === option.value }"
+      :class="{ active: modelValue === option.value, 'has-badge': !!option.badge }"
       :aria-selected="modelValue === option.value"
       @click="emit('update:modelValue', option.value)"
     >
@@ -115,6 +115,8 @@ const activeIndex = computed(() => Math.max(props.options.findIndex(option => op
 }
 
 .segment-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 0 5px;
   font-size: 10px;
   font-weight: 600;
@@ -122,5 +124,13 @@ const activeIndex = computed(() => Math.max(props.options.findIndex(option => op
   border-radius: 999px;
   color: var(--theme-body-text);
   background: color-mix(in srgb, var(--color-success) 24%, transparent);
+}
+
+/* A third of a 360px screen is about 110px: icon, label and badge together do not fit, and the badge
+   used to wrap into a column. The label and the badge are what carry the meaning, so the icon goes. */
+@media (max-width: 380px) {
+  .segment.has-badge > svg {
+    display: none;
+  }
 }
 </style>

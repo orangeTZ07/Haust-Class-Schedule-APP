@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { showToast } from "vant";
-import { CalendarDays, Check, Copy, Plus, RefreshCcw } from "@lucide/vue";
+import { CalendarDays, Check, Copy, FilePlus2, Plus, RefreshCcw } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
+import { parseSemesterCSV } from "@/utils/csvImporter";
 import SegmentedControl from "./SegmentedControl.vue";
+import { importDateLabel, newTableNotice, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
@@ -12,9 +14,11 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const { importFromCsv, importFromSemesterCsv, currentWeek } = useCourses();
+const { importFromCsv, importFromSemesterCsv, importAsNewCourseTable, currentWeek } = useCourses();
 
 const csvInput = ref("");
+/// The first option of the mode switch. For 按周 that overwrites this week's layer; for 按学期 it
+/// imports into a new course table (the current timetable is never overwritten from here).
 const isOverwrite = ref(true);
 const importKind = ref<"weekly" | "semester">("weekly");
 
@@ -23,10 +27,12 @@ const kindOptions = [
   { value: "semester" as const, label: "按学期", icon: CalendarDays },
 ];
 
-const modeOptions = [
-  { value: "overwrite", label: "覆盖现有", icon: RefreshCcw },
+const modeOptions = computed(() => [
+  importKind.value === "weekly"
+    ? { value: "overwrite", label: "覆盖现有", icon: RefreshCcw }
+    : { value: "overwrite", label: "新课表", icon: FilePlus2 },
   { value: "append", label: "追加导入", icon: Plus },
-];
+]);
 
 /// SegmentedControl speaks in strings; the rest of this file wants the boolean.
 const importMode = computed({
@@ -45,7 +51,7 @@ const modeHelpText = computed(() => {
   }
 
   if (isOverwrite.value) {
-    return "覆盖导入会清空当前课表数据，再写入新的学期基础课表。";
+    return "会先新建一个课表再导入，原来的课表不受影响，可以在「选择课程表」里切换。";
   }
   return "追加导入会在现有学期基础课表上继续增加课程。";
 });
@@ -113,12 +119,23 @@ const handleImport = async () => {
     return;
   }
 
-  const result = importKind.value === "weekly"
+  // A new table is only worth creating for something that will parse: checked here so an obviously
+  // wrong paste does not flash a new empty table into existence and back out again.
+  const intoNewTable = importKind.value === "semester" && isOverwrite.value;
+  if (intoNewTable && parseSemesterCSV(csvInput.value).length === 0) {
+    showToast({ message: "未识别到有效的学期 CSV 数据", type: "fail" });
+    return;
+  }
+
+  const result: ImportOutcome = importKind.value === "weekly"
     ? await importFromCsv(csvInput.value, isOverwrite.value)
-    : await importFromSemesterCsv(csvInput.value, isOverwrite.value);
+    : intoNewTable
+      ? await importAsNewCourseTable(`AI 导入 ${importDateLabel()}`, () => importFromSemesterCsv(csvInput.value, false))
+      : await importFromSemesterCsv(csvInput.value, false);
 
   if (result.success) {
-    showToast({ message: result.message, type: "success" });
+    const message = result.tableName ? `${result.message}。${newTableNotice(result.tableName)}` : result.message;
+    showToast({ message, type: "success" });
     csvInput.value = "";
     emit("close");
   } else {
@@ -171,7 +188,7 @@ const handleImport = async () => {
       <p class="mode-help">{{ modeHelpText }}</p>
     </div>
 
-    <button class="imp-primary-btn" @click="handleImport">
+    <button class="app-btn app-btn--primary" @click="handleImport">
       <Check :size="18" />
       <span>导入到课表</span>
     </button>

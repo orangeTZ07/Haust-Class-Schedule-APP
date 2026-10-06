@@ -8,9 +8,15 @@ import { parseBackupFile } from "@/utils/backupFile";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
 import { useConfirmReplace } from "./confirmReplace";
+import { newTableNotice, tableNameFromFile, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
-const { importFromJsonBackup } = useCourses();
+const props = defineProps<{
+  /// Replace the current timetable instead of importing into a new one.
+  overwrite: boolean;
+}>();
+
+const { importFromJsonBackup, importAsNewCourseTable } = useCourses();
 const confirmReplace = useConfirmReplace();
 
 const busy = ref(false);
@@ -45,24 +51,30 @@ const onFilePicked = async (event: Event) => {
       return;
     }
 
-    // Asked after the file has proved readable, so a bad file is reported as such instead of first
-    // being asked whether to replace the timetable with it.
-    if (!(await confirmReplace(`导入「${file.name}」`))) {
+    // Overwriting asks first, and only after the file has proved readable, so a bad file is
+    // reported as such instead of first being asked whether to replace the timetable with it.
+    // Importing as a new table destroys nothing, so it never asks.
+    if (props.overwrite && !(await confirmReplace(`导入「${file.name}」`))) {
       messageKind.value = "info";
       message.value = "已取消，课表没有改动。";
       return;
     }
 
-    const restored = await importFromJsonBackup(result.text!);
-    if (!restored.success) {
+    const imported: ImportOutcome = props.overwrite
+      ? await importFromJsonBackup(result.text!)
+      : await importAsNewCourseTable(tableNameFromFile(file.name), () => importFromJsonBackup(result.text!));
+    if (!imported.success) {
       messageKind.value = "err";
-      message.value = `文件读到了，但写入课表失败：${restored.message}`;
+      message.value = `文件读到了，但写入课表失败：${imported.message}`;
       return;
     }
 
     messageKind.value = "ok";
-    message.value = `导入完成：${result.courses} 门课程、${result.schedules} 条日程。（来自 ${file.name}）`;
-    showToast("课表已从文件导入");
+    const summary = `导入完成：${result.courses} 门课程、${result.schedules} 条日程。（来自 ${file.name}）`;
+    message.value = imported.tableName
+      ? `${summary}\n${newTableNotice(imported.tableName)}`
+      : `${summary}\n已覆盖当前课表。`;
+    showToast(imported.tableName ? "已导入为新课表" : "已覆盖当前课表");
   } catch (error) {
     messageKind.value = "err";
     message.value = `读取文件出错：${describeError(error)}`;
@@ -94,7 +106,7 @@ const onFilePicked = async (event: Event) => {
         accept=".json,application/json"
         @change="onFilePicked"
       />
-      <button class="imp-primary-btn" :disabled="busy" @click="fileInput?.click()">
+      <button class="app-btn app-btn--primary" :disabled="busy" @click="fileInput?.click()">
         <Loader2 v-if="busy" :size="18" class="imp-spin" />
         <FolderOpen v-else :size="18" />
         <span>选择课表文件</span>
@@ -102,8 +114,7 @@ const onFilePicked = async (event: Event) => {
     </div>
 
     <p class="imp-hint note">
-      恢复备份会用备份内容<strong>整体替换</strong>当前课程表的课程与课段，包含按周覆盖层与单双周设置。
-      原数据不再保留，且无法撤销。
+      备份里的课程、课段、按周覆盖层和单双周设置都会带过来。默认导入为一个新课表，原来的课表不受影响。
     </p>
   </div>
 </template>

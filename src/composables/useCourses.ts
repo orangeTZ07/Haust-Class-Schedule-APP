@@ -39,28 +39,19 @@ let nextScheduleId = 1;
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
   CURRENT_WEEK: "course-mngr-current-week",
-  SEMESTER_START: "course-mngr-semester-start",
-  IMPORT_SNAPSHOT: "course-mngr-import-snapshot"
+  SEMESTER_START: "course-mngr-semester-start"
 };
 
 /// Keys that older versions wrote and nothing reads any more, removed once at startup so they do not
-/// sit in storage forever. The learning-plan preference went with that feature.
-const LEGACY_STORAGE_KEYS = ["course-mngr-learning-plan-preference"];
+/// sit in storage forever.
+///   - the learning-plan preference went with that feature;
+///   - the import snapshot went with 恢复到导入时 (importing now creates a new course table instead).
+///     It held a whole backup JSON of the timetable, so it was the one worth reclaiming.
+const LEGACY_STORAGE_KEYS = ["course-mngr-learning-plan-preference", "course-mngr-import-snapshot"];
 try {
   for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
 } catch {
   // Storage unavailable; there is nothing stored to clean up either.
-}
-
-/// Whether there is a snapshot to fall back to. Read once at load; refreshed whenever an import
-/// captures a new one. Declared here rather than beside the other refs because it reads
-/// STORAGE_KEYS, which is initialised just above.
-const hasImportSnapshot = ref(false);
-try {
-  hasImportSnapshot.value = !!localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT);
-} catch {
-  // Storage unavailable. The restore action then reports that there is nothing to restore, which
-  // is the honest answer.
 }
 
 /// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
@@ -581,7 +572,6 @@ export function useCourses() {
         count++;
       }
 
-      captureImportSnapshot();
       return { success: true, message: `成功导入第 ${currentWeek.value} 周的 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
@@ -612,7 +602,6 @@ export function useCourses() {
       }
 
       setCurrentWeek(1);
-      captureImportSnapshot();
 
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
@@ -643,7 +632,6 @@ export function useCourses() {
         }
       }
 
-      captureImportSnapshot();
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `JSON 解析错误: ${(e as Error).message}`, count: 0 };
@@ -662,20 +650,11 @@ export function useCourses() {
   /// Courses are re-created through addCourse, which allocates fresh ids, so schedules are
   /// re-pointed through a map from the backup's ids to the new ones. Skipping that would
   /// attach each schedule to whichever course happened to share the number.
-  /// 从备份 JSON 恢复。
   ///
-  /// `capture` 控制**恢复成功后要不要更新"导入时快照"**，默认要（与 CSV 导入一致）。
-  ///
-  /// 这个开关是修一个真实的数据丢失问题加上的：原先只有 CSV 导入会记录快照，
-  /// `importFromJsonBackup` 不记录 —— 于是"导入一份备份"**不会**建立新的存档点，
-  /// 快照还停留在上一次 CSV 导入的状态（甚至可能是空的）。用户再点「恢复到导入时」，
-  /// 就会用那份陈旧快照覆盖掉刚导入的备份 —— 而用户的意图恰恰是"导入备份 = 存一个安全点"。
-  ///
-  /// 但「恢复到导入时」自己也会走到这里，那一次**不能**记录：恢复可能是有损的
-  /// （备份里有对不上课程的课段会被跳过），若拿恢复结果反过来覆盖快照，快照会一次比一次差。
+  /// Replaces the active table's contents. To keep the current timetable, call this through
+  /// importAsNewCourseTable instead.
   const importFromJsonBackup = async (
-    jsonStr: string,
-    options: { capture?: boolean } = {}
+    jsonStr: string
   ): Promise<{ success: boolean; message: string; count: number }> => {
     try {
       const parsed = JSON.parse(jsonStr);
@@ -693,8 +672,9 @@ export function useCourses() {
         return { success: false, message: "备份里没有课程数据", count: 0 };
       }
 
-      // Replace rather than merge: restoring a backup should leave the timetable as it was,
-      // and merging would leave duplicates behind. The caller confirms before we get here.
+      // Replace rather than merge: importing a backup should leave the timetable as it was,
+      // and merging would leave duplicates behind. A caller that is about to overwrite a
+      // timetable with courses in it confirms before we get here.
       await clearAll();
 
       const idMap = new Map<number, number>();
@@ -726,56 +706,72 @@ export function useCourses() {
       // the data is worse than one that says what it could not place.
       const dropped = backupSchedules.length - scheduleCount;
 
-      // 导入成功之后才记录快照 —— 与 CSV 导入的位置一致，失败路径一概不记录。
-      if (options.capture !== false) captureImportSnapshot();
-
       return {
         success: true,
-        message: `已恢复 ${courseCount} 门课程、${scheduleCount} 条课段` +
+        message: `已导入 ${courseCount} 门课程、${scheduleCount} 条课段` +
           (dropped > 0 ? `，跳过 ${dropped} 条找不到对应课程的课段` : ""),
         count: courseCount
       };
     } catch (e) {
-      return { success: false, message: `恢复失败: ${(e as Error).message}`, count: 0 };
+      return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
     }
   };
 
-  /// Captures the timetable as it stands, so it can be put back later.
-  ///
-  /// Taken after a successful import, because "how it looked when I first imported it" is the state
-  /// people mean by resetting the timetable. Restoring the view alone cannot bring back a course
-  /// that was deleted, which is what the view reset was mistaken for.
-  ///
-  /// The snapshot is the same JSON the export produces, so restoring reuses the path already
-  /// written and tested rather than a second implementation that could drift from it.
-  const captureImportSnapshot = () => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.IMPORT_SNAPSHOT, exportToJsonBackup());
-      hasImportSnapshot.value = true;
-    } catch {
-      // Storage full or blocked. An unavailable snapshot must not fail the import itself.
-    }
+  /// A name not already taken by another course table: the base itself, else "base (2)", "base (3)".
+  const uniqueCourseTableName = (base: string): string => {
+    const taken = new Set(courseTables.value.map(table => table.name.trim()));
+    const trimmed = base.trim();
+    if (!taken.has(trimmed)) return trimmed;
+
+    let index = 2;
+    while (taken.has(`${trimmed} (${index})`)) index++;
+    return `${trimmed} (${index})`;
   };
 
-  /// Puts the timetable back to the last snapshot. Destructive: everything added or changed since
-  /// the import is discarded, so the caller confirms before calling this.
+  /// Runs an import into a brand-new course table, so nothing already in the app is touched.
   ///
-  /// 恢复时传 `capture: false`：**不要把恢复结果当成新的存档点**。恢复可能是有损的
-  /// （备份里对不上课程的课段会被跳过），如果拿它反过来覆盖快照，快照会一次比一次差，
-  /// 最后"恢复到导入时"就再也回不到用户当初导入的那份课表了。
-  const restoreImportSnapshot = async (): Promise<{ success: boolean; message: string }> => {
-    let snapshot = "";
+  /// The new table is created and switched to first, because every import path writes into the
+  /// active table. If `run` then fails (or throws), the half-filled table is deleted and the table
+  /// and week the user was on are put back, so a failed import leaves no empty table behind.
+  const importAsNewCourseTable = async (
+    baseName: string,
+    run: () => Promise<{ success: boolean; message: string; count: number }>
+  ): Promise<{ success: boolean; message: string; count: number; tableName: string }> => {
+    const previousTableId = activeCourseTableId.value;
+    const previousWeek = currentWeek.value;
+    const tableName = uniqueCourseTableName(baseName);
+
+    let newTableId: number | null;
     try {
-      snapshot = localStorage.getItem(STORAGE_KEYS.IMPORT_SNAPSHOT) ?? "";
-    } catch {
-      snapshot = "";
+      newTableId = await createCourseTable(tableName);
+    } catch (e) {
+      return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0, tableName };
     }
-    if (!snapshot) {
-      return { success: false, message: "还没有可恢复的导入记录" };
+    if (newTableId === null) {
+      return { success: false, message: "课表名称不能为空", count: 0, tableName };
     }
 
-    const result = await importFromJsonBackup(snapshot, { capture: false });
-    return { success: result.success, message: result.message };
+    let result: { success: boolean; message: string; count: number };
+    try {
+      result = await run();
+    } catch (e) {
+      result = { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
+    }
+    if (result.success) return { ...result, tableName };
+
+    try {
+      // Point back at the old table before deleting: deleting the active table would make the
+      // service pick a replacement on its own.
+      await courseService.setActiveCourseTableId(previousTableId);
+      activeCourseTableId.value = previousTableId;
+      await courseService.deleteCourseTable(newTableId);
+      await loadDataFromDb();
+      // createCourseTable rewound the week to 1 for the new table.
+      currentWeek.value = previousWeek;
+    } catch (e) {
+      console.error("Failed to remove the course table left by a failed import", e);
+    }
+    return { ...result, tableName };
   };
 
   const parsePeriods = (periodsStr: string): number[] => {
@@ -842,8 +838,7 @@ export function useCourses() {
     importFromSemesterCsv,
     importFromJson,
     importFromJsonBackup,
-    hasImportSnapshot,
-    restoreImportSnapshot,
+    importAsNewCourseTable,
     exportToCsv,
     exportToJsonBackup,
     clearAll,
