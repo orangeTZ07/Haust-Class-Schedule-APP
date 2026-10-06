@@ -7,15 +7,14 @@ import { showToast } from "vant";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
-import ImportPopup from "@/components/course/ImportPopup.vue";
-import EamsSyncPanel from "@/components/course/EamsSyncPanel.vue";
+import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm from "@/components/course/CourseForm.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
-        periodSlots, addCourse, addSchedule, hasImportSnapshot, restoreImportSnapshot } = useCourses();
+        periodSlots, addCourse, addSchedule } = useCourses();
 
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -25,7 +24,6 @@ const sidebarOffset = ref(0);
 /// Suppresses the transition while dragging, so the drawer tracks the finger instead of lagging.
 const sidebarDragging = ref(false);
 const importVisible = ref(false);
-const eamsSyncVisible = ref(false);
 const exportVisible = ref(false);
 const contactVisible = ref(false);
 const trashTargetState = ref({
@@ -105,25 +103,7 @@ const resetTimetableView = () => {
   });
 };
 
-/// Puts the timetable data back to how it was right after the last import.
-///
-/// Kept separate from 重置课表视图 on purpose: that one only moves the view and is harmless, while
-/// this discards everything added or edited since the import. One button cannot be both, and
-/// hiding a destructive action behind the word "reset" is how people lose work.
-const restoreImportedTimetable = async () => {
-  if (!hasImportSnapshot.value) {
-    showToast("还没有可恢复的导入记录，需要先导入一次课表");
-    return;
-  }
-  if (!confirm("恢复到导入时的课表？导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。")) {
-    return;
-  }
-
-  const result = await restoreImportSnapshot();
-  showToast({ message: result.message, type: result.success ? "success" : "fail" });
-};
-
-const handleSidebarAction = async (action: string) => {
+const handleSidebarAction = (action: string) => {
   if (action === "import") {
     importVisible.value = true;
   } else if (action === "export") {
@@ -132,10 +112,6 @@ const handleSidebarAction = async (action: string) => {
     contactVisible.value = true;
   } else if (action === "reset-view") {
     resetTimetableView();
-  } else if (action === "restore-import") {
-    await restoreImportedTimetable();
-  } else if (action === "eams-sync") {
-    eamsSyncVisible.value = true;
   }
   closeSidebar();
 };
@@ -369,11 +345,8 @@ const onEdgeTouchEnd = () => {
       @action="handleSidebarAction"
     />
 
-    <!-- 导入弹窗 -->
-    <ImportPopup v-model:show="importVisible" />
-
-    <!-- 从教务系统同步 -->
-    <EamsSyncPanel v-model:show="eamsSyncVisible" />
+    <!-- 导入面板：教务系统同步 / 选文件 / AI 识别，以及「撤销导入」 -->
+    <ImportSheet v-model:show="importVisible" />
 
     <!-- 导出弹窗 -->
     <ExportPopup v-model:show="exportVisible" />

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Palette, Users, SquareCheckBig, BookMarked, RotateCcw, History, DownloadCloud } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Users, SquareCheckBig, RotateCcw } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -23,41 +24,48 @@ const emit = defineEmits<{
 
 const router = useRouter();
 
-const menuItems = [
-  { icon: SquareCheckBig, label: "待办列表", action: "todo" },
-  { icon: CalendarRange, label: "选择课程表", action: "tables" },
-  { icon: Settings, label: "设置", action: "settings" },
-  { icon: BookMarked, label: "自定义学习计划", action: "learning-plan" },
-  { icon: Download, label: "导入课表", action: "import" },
-  { icon: Upload, label: "导出课表", action: "export" },
-  { icon: Palette, label: "样式调整", action: "style" },
-  { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
-  { icon: History, label: "恢复到导入时", action: "restore-import" },
-  { icon: DownloadCloud, label: "导入课表（文件 / 同步）", action: "eams-sync" },
+/// An entry either opens a page (`route`) or asks the home view to do something (`action`).
+interface MenuItem {
+  icon: Component;
+  label: string;
+  route?: string;
+  action?: string;
+}
+
+/// Grouped so the drawer reads as three kinds of thing rather than one long list. The entries that
+/// used to sit here for 样式调整 (now under 设置), 自定义学习计划 and 恢复到导入时 (both now live in
+/// the import sheet, next to the thing they belong to) and the second 导入 entry were dropped.
+const groups: { title: string; items: MenuItem[] }[] = [
+  {
+    title: "课表",
+    items: [
+      { icon: Download, label: "导入课表", action: "import" },
+      { icon: Upload, label: "导出课表", action: "export" },
+      { icon: CalendarRange, label: "选择课程表", route: "/tables" },
+      { icon: SquareCheckBig, label: "待办列表", route: "/todo" },
+    ]
+  },
+  {
+    title: "视图",
+    items: [
+      { icon: RotateCcw, label: "重置课表视图", action: "reset-view" },
+    ]
+  },
+];
+
+/// Pinned to the bottom of the drawer, away from the everyday actions above.
+const footerItems: MenuItem[] = [
+  { icon: Settings, label: "设置", route: "/settings" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 
-const handleItemClick = (action: string) => {
-  if (action === "settings") {
-    router.push("/settings");
+const handleItemClick = (item: MenuItem) => {
+  if (item.route) {
+    router.push(item.route);
     emit("close");
-  } else if (action === "todo") {
-    router.push("/todo");
-    emit("close");
-  } else if (action === "tables") {
-    router.push("/tables");
-    emit("close");
-  } else if (action === "style") {
-    router.push("/style");
-    emit("close");
-  } else if (action === "learning-plan") {
-    router.push("/learning-plan");
-    emit("close");
-  } else if (action === "import" || action === "export" || action === "contact") {
-    emit("action", action);
-    emit("close");
-  } else {
-    emit("action", action);
+  } else if (item.action) {
+    // The home view closes the drawer itself once it has handled the action.
+    emit("action", item.action);
   }
 };
 
@@ -83,15 +91,30 @@ const handleOverlayClick = () => {
       :style="{ width: `${width}px`, transform: `translateX(${offset - width}px)` }"
     >
       <div class="sidebar-header">
-        <span class="app-title">课程表</span>
+        <span class="app-title">Haust课程表</span>
       </div>
 
       <div class="menu-list">
+        <div v-for="group in groups" :key="group.title" class="menu-group">
+          <div class="group-title">{{ group.title }}</div>
+          <div
+            v-for="item in group.items"
+            :key="item.label"
+            class="menu-item"
+            @click="handleItemClick(item)"
+          >
+            <component :is="item.icon" :size="20" />
+            <span class="menu-label">{{ item.label }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-footer">
         <div
-          v-for="item in menuItems"
-          :key="item.action"
+          v-for="item in footerItems"
+          :key="item.label"
           class="menu-item"
-          @click="handleItemClick(item.action)"
+          @click="handleItemClick(item)"
         >
           <component :is="item.icon" :size="20" />
           <span class="menu-label">{{ item.label }}</span>
@@ -162,7 +185,10 @@ const handleOverlayClick = () => {
 .sidebar-header {
   padding: 24px 20px;
   padding-top: calc(24px + env(safe-area-inset-top, 0px));
-  background: transparent;
+  /* The same band colour as the top bar. The title is header-text, which is only guaranteed to be
+     readable on header-bg: on the Vant blue preset it is white, and on the bare drawer background
+     it vanished. */
+  background: color-mix(in srgb, var(--theme-header-bg) 85%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
 }
 
@@ -179,7 +205,32 @@ const handleOverlayClick = () => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 18px;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-title {
+  padding: 0 14px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--theme-body-text);
+  opacity: 0.45;
+}
+
+/* Settings and contact stay put at the bottom whatever the height, clear of the gesture bar. */
+.menu-footer {
+  padding: 8px 10px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
 }
 
 .menu-item {
@@ -209,7 +260,4 @@ const handleOverlayClick = () => {
   font-weight: 500;
 }
 
-.theme-indicator {
-  opacity: 0.7;
-}
 </style>
