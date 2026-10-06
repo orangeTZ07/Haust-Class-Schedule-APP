@@ -1,6 +1,10 @@
 package com.coursemngr.reminder
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -82,10 +86,35 @@ class ReminderPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun openBatterySettings(invoke: Invoke) {
         try {
-            WhitelistHelper.openBatteryOptimizationSettings(context)
+            // The Activity, not applicationContext: the request dialog should sit on this screen.
+            // Already exempt, or an OEM with no such activity, opens the system list instead.
+            WhitelistHelper.requestIgnoreOrOpenList(activity)
             invoke.resolve()
         } catch (e: Exception) {
-            invoke.reject(e.message ?: "无法打开电池优化设置页")
+            invoke.reject(e.message ?: "无法打开电池优化设置")
+        }
+    }
+
+    /// Public app-notification settings. Not a vendor intent: Xiaomi, Huawei, OPPO, vivo and
+    /// Samsung each hide banner and autostart switches behind their own activities, and those
+    /// actions break across versions. The settings page tells the user where to tap instead.
+    @Command
+    fun openNotificationSettings(invoke: Invoke) {
+        try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                }
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+            }
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "无法打开系统设置")
         }
     }
 }

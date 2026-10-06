@@ -44,8 +44,16 @@ export async function checkBatteryOptimization(): Promise<boolean> {
   }
 }
 
+/// Android: ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS with this package, then the
+/// IGNORE_BATTERY_OPTIMIZATION_SETTINGS list if already exempt or the OEM hid the dialog.
 export async function openBatterySettings(): Promise<void> {
   await invoke(`${PREFIX}|open_battery_settings`);
+}
+
+/// Opens this app's notification page in the system Settings app.
+/// Public settings screen only: vendor autostart activities are not stable enough to call.
+export async function openNotificationSettings(): Promise<void> {
+  await invoke(`${PREFIX}|open_notification_settings`);
 }
 
 /// What the OS currently says about showing notifications. "prompt" means it has not been asked

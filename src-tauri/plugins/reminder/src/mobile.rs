@@ -61,4 +61,11 @@ impl<R: Runtime> Reminder<R> {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
+
+    pub fn open_notification_settings(&self) -> Result<(), String> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>("openNotificationSettings", ())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }

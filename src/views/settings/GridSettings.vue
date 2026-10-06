@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import { useReminder } from "@/composables/useReminder";
-import { checkBatteryOptimization, openBatterySettings } from "@/services/reminderService";
+import { checkBatteryOptimization, openBatterySettings, openNotificationSettings } from "@/services/reminderService";
 import { describeError } from "@/utils/describeError";
 
 const {
@@ -84,6 +84,36 @@ const reminderMessage = ref("");
 const batteryExempt = ref(true);
 
 const NO_PERMISSION_MESSAGE = "未获得通知权限，系统会丢弃提醒。请在系统设置中允许通知后重试。";
+/// Shown once, after the user comes back from system settings and notifications are still blocked.
+const NOTIFY_TIP_KEY = "course-mngr-reminder-notify-tip-shown";
+
+const oemSteps = [
+  {
+    name: "小米 / 红米",
+    steps: "设置 → 通知管理 → 本应用：允许通知，悬浮通知打开。应用管理里再打开自启动，省电策略选无限制。"
+  },
+  {
+    name: "华为 / 荣耀",
+    steps: "设置 → 通知 → 本应用：允许通知，打开横幅。应用启动管理里改为手动管理，允许自启动和后台活动。"
+  },
+  {
+    name: "OPPO / 一加 / realme",
+    steps: "设置 → 通知与状态栏 → 本应用：允许通知，打开横幅。电池里允许后台运行。"
+  },
+  {
+    name: "vivo / iQOO",
+    steps: "设置 → 通知与状态栏 → 本应用：允许通知，打开悬浮通知。电池里允许后台高耗电。"
+  },
+  {
+    name: "三星",
+    steps: "设置 → 通知 → 本应用：允许通知，弹出式通知选详细或简要。状态栏图标要系统允许显示通知图标。"
+  }
+];
+
+const oemOpen = ref(false);
+const notifyReturnTip = ref(false);
+let awaitingNotifySettings = false;
+let awaitingBatterySettings = false;
 
 const refreshBatteryState = async () => {
   batteryExempt.value = await checkBatteryOptimization();
@@ -95,11 +125,59 @@ const permissionMissing = computed(
   () => reminderPermission.value === "denied" || reminderPermission.value === "prompt"
 );
 
+const onForegroundReturn = () => {
+  if (document.visibilityState !== "visible") return;
+  if (awaitingNotifySettings) {
+    awaitingNotifySettings = false;
+    refreshPermission()
+      .then(() => {
+        if (!permissionMissing.value) return;
+        try {
+          if (localStorage.getItem(NOTIFY_TIP_KEY) === "1") return;
+          localStorage.setItem(NOTIFY_TIP_KEY, "1");
+        } catch {
+          // Still show it this once if storage is unavailable.
+        }
+        notifyReturnTip.value = true;
+      })
+      .catch(() => {});
+  }
+  if (awaitingBatterySettings) {
+    awaitingBatterySettings = false;
+    refreshBatteryState().catch(() => {});
+  }
+};
+
 onMounted(() => {
   refreshBatteryState();
   // Failing to read the permission only means the hint stays hidden.
   refreshPermission().catch(() => {});
+  document.addEventListener("visibilitychange", onForegroundReturn);
 });
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", onForegroundReturn);
+});
+
+const onOpenNotificationSettings = async () => {
+  awaitingNotifySettings = true;
+  try {
+    await openNotificationSettings();
+  } catch (e) {
+    awaitingNotifySettings = false;
+    reminderMessage.value = `无法打开系统设置：${describeError(e)}`;
+  }
+};
+
+const onOpenBatteryWhitelist = async () => {
+  awaitingBatterySettings = true;
+  try {
+    await openBatterySettings();
+  } catch (e) {
+    awaitingBatterySettings = false;
+    reminderMessage.value = `无法打开电池优化设置：${describeError(e)}`;
+  }
+};
 
 /// Called after the switch flips, so reminderPrefs already holds the new value.
 ///
@@ -243,9 +321,23 @@ const applyReminders = async () => {
         <button class="mini-link haptics" @click="onRequestPermission">去授权</button>
         系统不再弹窗时，请到系统设置里允许本应用发送通知，回到应用后会自动恢复。
       </div>
+      <div v-if="reminderPrefs.enabled" class="section-hint">
+        不然课前提醒出不来
+        <button type="button" class="mini-link haptics" @click="onOpenNotificationSettings">去系统设置</button>
+        <p v-if="notifyReturnTip" class="notify-tip">回来后仍未允许通知。请打开通知，并允许横幅。</p>
+        <button type="button" class="mini-link oem-toggle haptics" @click="oemOpen = !oemOpen">
+          {{ oemOpen ? "收起机型步骤" : "各手机怎么开" }}
+        </button>
+        <ul v-if="oemOpen" class="oem-list">
+          <li v-for="item in oemSteps" :key="item.name">
+            <span class="oem-name">{{ item.name }}</span>
+            {{ item.steps }}
+          </li>
+        </ul>
+      </div>
       <div v-if="reminderPrefs.enabled && !batteryExempt" class="section-hint">
-        系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
-        <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
+        系统可能限制后台闹钟而导致提醒延后。点「去允许」加入电池优化白名单；没有弹窗的手机则打开系统列表。
+        <button type="button" class="mini-link haptics" @click="onOpenBatteryWhitelist">去允许</button>
       </div>
       <div v-if="reminderPrefs.enabled" class="section-hint">
         打开应用、从后台切回来、或者课表和上课时间有改动时，会为未来 7 天重新排一遍提醒；超过一周不打开应用，后面的提醒不会自动排上。
@@ -520,6 +612,30 @@ const applyReminders = async () => {
 /* Vant's switch is its own fixed blue otherwise; follow the theme like every other control. */
 .grid-settings :deep(.van-switch--on) {
   background: var(--theme-accent);
+}
+
+.notify-tip,
+.oem-list {
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.oem-toggle {
+  display: block;
+  margin-top: 4px;
+  padding-left: 0;
+}
+
+.oem-list {
+  list-style: none;
+}
+
+.oem-list li + li {
+  margin-top: 6px;
+}
+
+.oem-name {
+  font-weight: 700;
 }
 
 .mini-link {

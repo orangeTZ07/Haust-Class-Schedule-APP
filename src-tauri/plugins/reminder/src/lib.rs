@@ -62,6 +62,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::cancel_reminder,
             commands::check_battery_optimization,
             commands::open_battery_settings,
+            commands::open_notification_settings,
         ])
         // The native plugin has to be registered here. Without this setup hook the Kotlin / Swift
         // class is never instantiated, so run_mobile_plugin has no instance to reach.

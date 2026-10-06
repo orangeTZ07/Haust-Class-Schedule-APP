@@ -32,3 +32,8 @@ pub(crate) fn check_battery_optimization<R: Runtime>(
 pub(crate) fn open_battery_settings<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     app.reminder().open_battery_settings()
 }
+
+#[command]
+pub(crate) fn open_notification_settings<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    app.reminder().open_notification_settings()
+}

@@ -1,5 +1,6 @@
 import Foundation
 import Tauri
+import UIKit
 import UserNotifications
 
 /// Arguments for setReminder. The keys are the camelCase names the Rust side serialises
@@ -184,6 +185,23 @@ class ReminderPlugin: Plugin {
 
   @objc public func openBatterySettings(_ invoke: Invoke) {
     invoke.reject("iOS 没有电池优化白名单，无需设置")
+  }
+
+  /// The system Settings page for this app. Public URL, not a vendor-specific screen.
+  @objc public func openNotificationSettings(_ invoke: Invoke) {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else {
+      invoke.reject("无法打开系统设置")
+      return
+    }
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url, options: [:]) { opened in
+        if opened {
+          invoke.resolve()
+        } else {
+          invoke.reject("无法打开系统设置")
+        }
+      }
+    }
   }
 }
 
