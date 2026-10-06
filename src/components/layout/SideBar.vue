@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Users, SquareCheckBig, RotateCcw } from '@lucide/vue';
+import { CalendarRange, Settings, Upload, Download, Users, RotateCcw } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -41,7 +41,6 @@ const groups: { title: string; items: MenuItem[] }[] = [
       { icon: Download, label: "导入课表", action: "import" },
       { icon: Upload, label: "导出课表", action: "export" },
       { icon: CalendarRange, label: "选择课程表", route: "/tables" },
-      { icon: SquareCheckBig, label: "待办列表", route: "/todo" },
     ]
   },
   {

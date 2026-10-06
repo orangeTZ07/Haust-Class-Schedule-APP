@@ -46,8 +46,15 @@ const STORAGE_KEYS = {
 /// sit in storage forever.
 ///   - the learning-plan preference went with that feature;
 ///   - the import snapshot went with 恢复到导入时 (importing now creates a new course table instead).
-///     It held a whole backup JSON of the timetable, so it was the one worth reclaiming.
-const LEGACY_STORAGE_KEYS = ["course-mngr-learning-plan-preference", "course-mngr-import-snapshot"];
+///     It held a whole backup JSON of the timetable, so it was the one worth reclaiming;
+///   - the browser-only todo list went with the 待办 feature. Only this localStorage copy is dropped:
+///     the `todos` table in the phone's SQLite is deliberately left alone so the data survives if the
+///     feature ever comes back.
+const LEGACY_STORAGE_KEYS = [
+  "course-mngr-learning-plan-preference",
+  "course-mngr-import-snapshot",
+  "web-fallback-todos"
+];
 try {
   for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
 } catch {
