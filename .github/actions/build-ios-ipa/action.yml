@@ -1,0 +1,169 @@
+name: Build iOS IPA (unsigned)
+description: Setup Node/Rust/Xcode environment and produce an unsigned Tauri iOS .ipa.
+
+inputs:
+  configuration:
+    description: Xcode build configuration (Release or Debug).
+    required: false
+    default: Release
+
+outputs:
+  ipa-path:
+    description: Path to the produced unsigned .ipa.
+    value: ${{ steps.package.outputs.ipa-path }}
+  app-name:
+    description: Display name of the built app bundle.
+    value: ${{ steps.locate.outputs.app-name }}
+
+runs:
+  using: composite
+  steps:
+    # Action versions are pinned to their current major, matching build-android-apk. The
+    # older ones target the Node 20 runtime that GitHub is retiring, and a forced upgrade
+    # to Node 24 kills the job seconds in. Do not downgrade these.
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: lts/*
+        # cache: npm hard-fails when no lock file exists at the repo root. This action always
+        # runs against the full project, but the guard keeps a misconfigured checkout (or a
+        # test repo holding only these workflow files) failing on its real missing piece
+        # instead of this line.
+        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+
+    - name: Install Rust with the iOS target
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-ios
+
+    - name: Put Cargo on PATH
+      shell: bash
+      # Tauri's Xcode build phase shells out to cargo, and Xcode build phases do not inherit
+      # the runner's login shell. Without this the phase cannot find cargo even though rustup
+      # installed it.
+      run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+    - name: Cache Rust
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri -> target
+        cache-targets: true
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Prebuild the Rust core for iOS
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+      # The Xcode "Build Rust" phase does this anyway, but a Rust error inside an Xcode phase
+      # is buried in a log that hides it. Compiling here first surfaces it as its own step.
+      run: |
+        set -euo pipefail
+        if [ "$CONFIGURATION" = "Release" ]; then
+          cargo build --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --release
+        else
+          cargo build --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
+        fi
+
+    - name: Init iOS project
+      shell: bash
+      run: npx tauri ios init --ci
+
+    - name: Disable code signing
+      shell: bash
+      # An unsigned build is the point of this job: there is no Apple Developer certificate in
+      # CI, and exporting an IPA requires one. Tauri generates the project with automatic
+      # signing baked into both configurations, so Xcode resolves development signing and then
+      # fails with "Your team has no devices from which to generate a provisioning profile".
+      #
+      # An earlier revision also passed these same settings on the command line, on the theory
+      # that both layers would be needed; in practice tauri ios build forwards no arbitrary
+      # xcodebuild build settings, so patching the generated project file is the only lever.
+      # Both configurations matter -- Tauri bakes the identity into debug *and* release, so
+      # fixing one still leaves the other trying to sign.
+      #
+      # CODE_SIGN_ENTITLEMENTS and PROVISIONING_PROFILE_SPECIFIER are deleted rather than
+      # blanked: an empty entitlement path still resolves, and a stale specifier makes Xcode
+      # hunt for a profile that does not exist.
+      run: |
+        set -euo pipefail
+        pbx="$(find src-tauri/gen/apple -name project.pbxproj | head -n 1)"
+        if [ -z "$pbx" ]; then
+          echo "::error::No project.pbxproj under src-tauri/gen/apple; tauri ios init produced no project."
+          exit 1
+        fi
+        echo "Patching $pbx"
+        sed -i '' \
+          -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+          -e 's/CODE_SIGN_IDENTITY = "[^"]*";/CODE_SIGN_IDENTITY = "";/g' \
+          -e 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' \
+          -e 's/CODE_SIGN_ENTITLEMENTS = [^;]*;//g' \
+          -e 's/PROVISIONING_PROFILE_SPECIFIER = [^;]*;//g' \
+          "$pbx"
+        echo "Remaining signing settings:"
+        grep -n 'CODE_SIGN\|DEVELOPMENT_TEAM' "$pbx" || true
+
+    - name: Build .app
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+        CI: "true"
+      # tauri ios build does the whole orchestration -- frontend, Rust, and embedding the
+      # assets into the bundle. Driving xcodebuild directly would skip the asset embedding
+      # the CLI performs, so the CLI is used even though its final export step cannot
+      # succeed: exporting an IPA needs a signing identity this job does not have.
+      #
+      # That exit is tolerated, but only when a .app was actually produced. A failure that
+      # leaves no bundle is a real failure and must stay red -- the next step enforces this.
+      run: |
+        set -uo pipefail
+        args=(--ci)
+        if [ "$CONFIGURATION" = "Debug" ]; then
+          args+=(--debug)
+        fi
+        set +e
+        npx tauri ios build "${args[@]}"
+        status=$?
+        set -e
+        if [ "$status" -ne 0 ]; then
+          echo "::warning::tauri ios build exited $status. This is expected when Xcode cannot sign; the .app from the archive step is used instead."
+        fi
+
+    - name: Locate .app
+      id: locate
+      shell: bash
+      # Search every place the bundle could plausibly land: the CLI writes under gen/apple,
+      # and Xcode's DerivedData is the fallback. The directory is named from the Cargo
+      # package, so it is discovered here rather than hard-coded.
+      run: |
+        set -euo pipefail
+        app="$(find src-tauri/gen/apple "$HOME/Library/Developer/Xcode/DerivedData" \
+             -type d -name '*.app' 2>/dev/null | grep -v '\.app/' | head -n 1)"
+        if [ -z "$app" ]; then
+          echo "::error::No .app bundle found. Listing gen/apple:"
+          find src-tauri/gen/apple -maxdepth 4 2>/dev/null | head -n 40 || true
+          exit 1
+        fi
+        echo "App bundle: $app"
+        echo "app-path=$app" >> "$GITHUB_OUTPUT"
+        echo "app-name=$(basename "$app")" >> "$GITHUB_OUTPUT"
+
+    - name: Package unsigned IPA
+      id: package
+      shell: bash
+      # An IPA is a zip with the bundle under Payload/. Xcode's export cannot make one without
+      # a signing identity, so assemble it by hand.
+      run: |
+        set -euo pipefail
+        app="${{ steps.locate.outputs.app-path }}"
+        version="$(node -p "require('./package.json').version")"
+        out="course-mngr-iOS-${version}-unsigned.ipa"
+        rm -rf Payload "$out"
+        mkdir -p Payload
+        cp -R "$app" Payload/
+        chmod -R 755 Payload
+        zip -qry "$out" Payload
+        ls -lh "$out"
+        echo "ipa-path=$out" >> "$GITHUB_OUTPUT"
