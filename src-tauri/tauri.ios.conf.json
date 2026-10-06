@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "自定义课程表",
+  "productName": "Haust课程表",
   "version": "0.2.0",
   "identifier": "com.coursemngr.courseapp",
   "build": {

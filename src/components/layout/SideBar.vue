@@ -83,7 +83,7 @@ const handleOverlayClick = () => {
       :style="{ width: `${width}px`, transform: `translateX(${offset - width}px)` }"
     >
       <div class="sidebar-header">
-        <span class="app-title">课程表</span>
+        <span class="app-title">Haust课程表</span>
       </div>
 
       <div class="menu-list">
