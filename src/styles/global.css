@@ -1,4 +1,5 @@
 @import "./variables.css";
+@import "./popups.css";
 
 * {
   margin: 0;
@@ -122,56 +123,72 @@ body {
   transform: translate3d(0, -50%, 0) scale(0.96);
 }
 
-/* Vant confirm dialogs are mounted outside component scope, so theme styles live globally. */
+/* Vant dialogs (showConfirmDialog / showDialog) are mounted outside component scope, so their theme
+   styles live here. They are dressed as the same card the custom popups use (see popups.css): same
+   radius, glass and title size, a quiet cancel and a filled main button. main.ts applies the class to
+   every dialog by default, so a call site cannot forget it. !important is there because Vant sets
+   most of these on the element itself with equal specificity. */
 .theme-confirm-dialog {
-  background: var(--theme-bg-color) !important;
-  border-radius: 16px !important;
-  backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(25px) !important;
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent) !important;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+  width: min(86vw, 320px) !important;
+  background: color-mix(in srgb, var(--theme-bg-color) 92%, transparent) !important;
+  border-radius: 20px !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.08) !important;
 }
 
 .theme-confirm-dialog .van-dialog__header {
-  color: var(--theme-body-text) !important;
+  padding: 24px 20px 0 !important;
+  font-size: 17px !important;
   font-weight: 700 !important;
-  padding-top: 24px !important;
+  line-height: 1.3 !important;
+  text-align: left !important;
+  /* body-text, not header-text: header-text is white on the Vant preset, and so is this card. */
+  color: var(--theme-body-text) !important;
 }
 
 .theme-confirm-dialog .van-dialog__message {
-  color: var(--theme-body-text) !important;
-  opacity: 0.8 !important;
+  padding: 10px 20px 20px !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
+  text-align: left !important;
+  color: var(--theme-body-text) !important;
+  opacity: 0.8 !important;
 }
 
-.theme-confirm-dialog .van-hairline--top::after {
-  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+/* Vant draws hairlines between the message and the buttons and between the buttons; the buttons are
+   now separate pills, so they are not wanted. */
+.theme-confirm-dialog .van-hairline--top::after,
+.theme-confirm-dialog .van-hairline--left::after {
+  display: none !important;
 }
 
 .theme-confirm-dialog .van-dialog__footer {
-  padding: 8px !important;
+  gap: 8px;
+  padding: 0 16px 16px !important;
 }
 
 .theme-confirm-dialog .van-button {
-  background: transparent !important;
+  height: 44px !important;
   border: none !important;
-  color: var(--theme-body-text) !important;
+  border-radius: 12px !important;
   font-size: 15px !important;
+  color: var(--theme-body-text) !important;
+  background: color-mix(in srgb, var(--theme-body-text) 9%, transparent) !important;
 }
 
-/* The accent, not header-text: header-text is white on the Vant preset and the dialog is white too,
-   so 确定 used to vanish there. */
+/* The accent, not header-text: header-text is white on the Vant preset and the dialog is white too. */
 .theme-confirm-dialog .van-dialog__confirm {
-  color: var(--theme-accent) !important;
   font-weight: 700 !important;
+  color: var(--theme-on-accent) !important;
+  background: var(--theme-accent) !important;
 }
 
-/* For confirmations that throw data away (replace the timetable, restore a snapshot). */
+/* For confirmations that throw data away (replace the timetable, delete a course). */
 .theme-confirm-dialog.is-danger .van-dialog__confirm {
-  color: var(--color-danger) !important;
-}
-
-.theme-confirm-dialog .van-hairline--left::after {
-  border-left: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+  color: #fff !important;
+  background: var(--color-danger) !important;
 }

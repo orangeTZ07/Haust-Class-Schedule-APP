@@ -2,7 +2,8 @@
 import { useCourses } from "@/composables/useCourses";
 import { useRouter } from "vue-router";
 import { ArrowLeft, Trash2, MapPin, User, Clock } from '@lucide/vue';
-import { showConfirmDialog, showToast } from 'vant';
+import { showToast } from 'vant';
+import { confirmAction } from '@/utils/confirm';
 
 const router = useRouter();
 const { courses, schedules, removeCourse, getDaySchedules } = useCourses();
@@ -12,18 +13,16 @@ const goBack = () => {
 };
 
 const handleDelete = async (courseId: number, courseName: string) => {
-  try {
-    await showConfirmDialog({
-      title: '删除课程',
-      message: `确定要删除课程《${courseName}》吗？相关的所有课段也将被移除。`,
-      className: 'theme-confirm-dialog',
-    });
-    
-    await removeCourse(courseId);
-    showToast('删除成功');
-  } catch {
-    // 用户取消删除
-  }
+  const confirmed = await confirmAction({
+    title: '删除课程',
+    message: `确定要删除课程《${courseName}》吗？相关的所有课段也将被移除。`,
+    confirmText: '删除',
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  await removeCourse(courseId);
+  showToast('删除成功');
 };
 
 const getCourseSchedules = (courseId: number) => {
