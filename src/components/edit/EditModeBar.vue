@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { Check, Redo2, Undo2 } from "@lucide/vue";
+import { useTheme } from "@/composables/useTheme";
 
 defineProps<{
   canUndo: boolean;
   canRedo: boolean;
   count: number;
 }>();
+
+const { isDark } = useTheme();
 
 const emit = defineEmits<{
   undo: [];
@@ -22,8 +25,8 @@ const emit = defineEmits<{
     <button type="button" class="edit-btn" aria-label="前进" :disabled="!canRedo" @click="emit('redo')">
       <Redo2 :size="18" />
     </button>
-    <p v-if="count !== 0" class="edit-count" :class="{ 'is-negative': count < 0 }">
-      {{ count > 0 ? `+${count}` : `回退 ${Math.abs(count)}` }}
+    <p v-if="count !== 0" class="edit-count" :class="{ 'is-on-dark': isDark }">
+      {{ count > 0 ? `+${count}` : `-${Math.abs(count)}` }}
     </p>
     <button type="button" class="edit-done" aria-label="完成" @click="emit('exit')">
       <Check :size="18" stroke-width="2.5" />
@@ -73,21 +76,27 @@ const emit = defineEmits<{
 }
 
 .edit-count {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   margin: 0;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: #000;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.edit-count.is-negative {
-  color: var(--color-danger);
+.edit-count.is-on-dark {
+  color: #fff;
 }
 
 .edit-done {
+  margin-left: auto;
   color: var(--theme-on-accent);
   background: var(--theme-accent);
   border-color: transparent;
