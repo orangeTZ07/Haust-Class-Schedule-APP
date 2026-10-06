@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { showToast } from "vant";
-import { DownloadCloud, FolderOpen, History, Sparkles, X } from "@lucide/vue";
+import { DownloadCloud, FolderOpen, Sparkles, X } from "@lucide/vue";
 
-import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import SegmentedControl from "./SegmentedControl.vue";
 import EamsSyncSection from "./EamsSyncSection.vue";
@@ -18,7 +16,6 @@ const emit = defineEmits<{
   "update:show": [value: boolean];
 }>();
 
-const { hasImportSnapshot, restoreImportSnapshot } = useCourses();
 const { cssVariables } = useTheme();
 
 type ImportMethod = "eams" | "file" | "ai";
@@ -27,6 +24,11 @@ type ImportMethod = "eams" | "file" | "ai";
 /// 不该因为某次走了别的办法，下次还得手动切回来。
 const method = ref<ImportMethod>("eams");
 
+/// Whether 教务同步 and 选文件 replace the current timetable instead of importing into a new one.
+/// Shared by both tabs, so it lives here, and it is switched off again every time the sheet opens:
+/// the default has to be the choice that destroys nothing, whatever the last import did.
+const overwrite = ref(false);
+
 const methodOptions = [
   { value: "eams" as const, label: "教务同步", icon: DownloadCloud, badge: "推荐" },
   { value: "file" as const, label: "选文件", icon: FolderOpen },
@@ -34,31 +36,13 @@ const methodOptions = [
 ];
 
 watch(() => props.show, (open) => {
-  if (open) method.value = "eams";
+  if (open) {
+    method.value = "eams";
+    overwrite.value = false;
+  }
 });
 
 const close = () => emit("update:show", false);
-
-/// Puts the timetable data back to how it was right after the last import.
-///
-/// Kept separate from 重置课表视图 on purpose: that one only moves the view and is harmless, while
-/// this discards everything added or edited since the import. One button cannot be both, and
-/// hiding a destructive action behind the word "reset" is how people lose work.
-///
-/// It lives in this sheet, at the bottom, because it is the other half of importing: the snapshot
-/// it restores is the one the last import took.
-const restoreImportedTimetable = async () => {
-  if (!hasImportSnapshot.value) {
-    showToast("还没有可恢复的导入记录，需要先导入一次课表");
-    return;
-  }
-  if (!confirm("恢复到导入时的课表？导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。")) {
-    return;
-  }
-
-  const result = await restoreImportSnapshot();
-  showToast({ message: result.message, type: result.success ? "success" : "fail" });
-};
 </script>
 
 <template>
@@ -66,7 +50,7 @@ const restoreImportedTimetable = async () => {
     :show="props.show"
     position="bottom"
     round
-    class="import-sheet"
+    class="app-popup app-popup--sheet import-sheet"
     :style="cssVariables"
     :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"
     @update:show="emit('update:show', $event)"
@@ -74,9 +58,11 @@ const restoreImportedTimetable = async () => {
     <!-- The edge swipe that opens the sidebar listens on the whole home view. Inside the sheet a
          sideways drag (selecting text, scrolling the prompt box) must not start it. -->
     <div class="sheet" @touchstart.stop>
+      <div class="app-sheet-handle" />
+
       <header class="sheet-head">
         <h2 class="sheet-title">导入课表</h2>
-        <button class="close-btn" aria-label="关闭" @click="close">
+        <button class="app-popup-close" aria-label="关闭" @click="close">
           <X :size="16" />
         </button>
       </header>
@@ -87,17 +73,34 @@ const restoreImportedTimetable = async () => {
 
       <div class="sheet-body">
         <!-- v-show rather than v-if: switching tabs must not throw away what was typed. -->
-        <EamsSyncSection v-show="method === 'eams'" @use-file="method = 'file'" />
-        <FileImportSection v-show="method === 'file'" />
+        <EamsSyncSection v-show="method === 'eams'" :overwrite="overwrite" @use-file="method = 'file'" />
+        <FileImportSection v-show="method === 'file'" :overwrite="overwrite" />
         <AiImportSection v-show="method === 'ai'" @close="close" />
       </div>
 
-      <footer class="sheet-foot">
-        <button class="restore-btn" :class="{ 'is-empty': !hasImportSnapshot }" @click="restoreImportedTimetable">
-          <History :size="15" />
-          <span>撤销：回到上次导入后的课表</span>
+      <!-- AI 识别 has its own 新课表 / 追加 switch, so this one is only for the other two tabs. -->
+      <footer v-if="method !== 'ai'" class="sheet-foot">
+        <button
+          type="button"
+          class="overwrite-row"
+          role="switch"
+          :aria-checked="overwrite"
+          @click="overwrite = !overwrite"
+        >
+          <span class="overwrite-text">
+            <span class="overwrite-title">覆盖当前课表</span>
+            <span class="overwrite-sub" :class="{ 'is-on': overwrite }">
+              {{ overwrite ? "会清空当前课表再导入，导入前会再确认一次" : "关闭时导入为新课表，原来的课表不受影响" }}
+            </span>
+          </span>
+          <span class="switch" :class="{ on: overwrite }" aria-hidden="true">
+            <span class="switch-thumb" />
+          </span>
         </button>
       </footer>
+
+      <!-- The bottom system bar, so nothing sits under the gesture bar or the navigation buttons. -->
+      <div class="app-sheet-safe" />
     </div>
   </van-popup>
 </template>
@@ -108,11 +111,6 @@ const restoreImportedTimetable = async () => {
   height: 88%;
   max-height: 88%;
   overflow: hidden;
-  color: var(--theme-body-text);
-  background: color-mix(in srgb, var(--theme-bg-color) 94%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
 }
 
 .sheet {
@@ -125,27 +123,15 @@ const restoreImportedTimetable = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 16px 12px 20px;
+  padding: 12px 16px 12px 20px;
 }
 
 .sheet-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--theme-body-text);
-}
-
-.close-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 8px;
-  color: var(--theme-body-text);
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-  opacity: 0.7;
 }
 
 .sheet-tabs {
@@ -162,31 +148,82 @@ const restoreImportedTimetable = async () => {
 
 .sheet-foot {
   padding: 8px 16px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
 }
 
-.restore-btn {
+/* A quiet secondary option, not a second main action: it sits in the footer, away from the filled
+   button in the tab, and stays off unless the user turns it on. */
+.overwrite-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 12px;
   width: 100%;
-  height: 40px;
+  padding: 8px 4px;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
+  text-align: left;
   color: var(--theme-body-text);
-  font-size: 13px;
-  opacity: 0.7;
 }
 
-.restore-btn:active {
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+/* A full-width row sinks less than a button. */
+.overwrite-row:active {
+  transform: scale(0.98);
 }
 
-/* Still tappable (it explains why there is nothing to restore), just visibly out of play. */
-.restore-btn.is-empty {
-  opacity: 0.35;
+.overwrite-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overwrite-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.overwrite-sub {
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.6;
+}
+
+/* Turned on, it says in plain words that something will be lost. */
+.overwrite-sub.is-on {
+  color: var(--color-danger);
+  opacity: 1;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-body-text) 18%, transparent);
+  transition: background-color var(--dur-base) ease-out;
+}
+
+.switch.on {
+  background: var(--color-danger);
+}
+
+/* The thumb travels on the spring (transform only), so flipping it has a little overshoot. */
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+
+.switch.on .switch-thumb {
+  transform: translateX(18px);
 }
 </style>

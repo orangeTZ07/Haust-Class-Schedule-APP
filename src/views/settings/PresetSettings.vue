@@ -65,7 +65,7 @@ const handleSelect = (id: string) => {
   z-index: 10;
   background: var(--theme-bg-color);
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--safe-top));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -106,11 +106,16 @@ const handleSelect = (id: string) => {
   border: 1px solid transparent;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    border-color var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out;
 }
 
 .preset-item:active {
-  transform: scale(0.96);
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms, var(--dur-fast), var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .preset-item.active {

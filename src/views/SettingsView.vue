@@ -50,7 +50,7 @@ const goBack = () => {
   display: flex;
   align-items: center;
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + var(--safe-top));
   background: var(--theme-header-bg);
   border-bottom: 1px solid var(--theme-grid-line-color);
 }
@@ -85,11 +85,17 @@ const goBack = () => {
   border-radius: var(--theme-card-border-radius);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  transition: background 0.2s ease;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-fast) ease-out;
 }
 
+/* A wide row sinks less than a button: 0.96 of a full-width card is a visible lurch. */
 .entry-card:active {
   background: color-mix(in srgb, var(--theme-header-bg) 5%, transparent);
+  transform: scale(0.98);
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .entry-icon {

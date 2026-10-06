@@ -607,7 +607,9 @@ const isDropAtEnd = (list: TodoListType) =>
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.16s ease, opacity 0.16s ease;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out;
 }
 
 .todo-add-button:disabled,
@@ -619,7 +621,9 @@ const isDropAtEnd = (list: TodoListType) =>
 }
 
 .todo-add-button:not(:disabled):active {
-  transform: scale(0.94);
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms;
+  transition-timing-function: ease-out;
 }
 
 .todo-error {

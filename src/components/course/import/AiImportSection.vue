@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useRouter } from "vue-router";
 import { showToast } from "vant";
-import { BookMarked, CalendarDays, Check, ChevronRight, Copy, Plus, RefreshCcw } from "@lucide/vue";
+import { CalendarDays, Check, Copy, FilePlus2, Plus, RefreshCcw } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { useLearningPlan } from "@/composables/useLearningPlan";
+import { parseSemesterCSV } from "@/utils/csvImporter";
 import SegmentedControl from "./SegmentedControl.vue";
+import { importDateLabel, newTableNotice, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
-  /// Asked when the import went through, or when the user leaves for the learning-plan page.
+  /// Asked when the import went through.
   close: [];
 }>();
 
-const router = useRouter();
-const { importFromCsv, importFromSemesterCsv, currentWeek } = useCourses();
-const { preference, hasPreference } = useLearningPlan();
+const { importFromCsv, importFromSemesterCsv, importAsNewCourseTable, currentWeek } = useCourses();
 
 const csvInput = ref("");
+/// The first option of the mode switch. For 按周 that overwrites this week's layer; for 按学期 it
+/// imports into a new course table (the current timetable is never overwritten from here).
 const isOverwrite = ref(true);
 const importKind = ref<"weekly" | "semester">("weekly");
 
@@ -27,10 +27,12 @@ const kindOptions = [
   { value: "semester" as const, label: "按学期", icon: CalendarDays },
 ];
 
-const modeOptions = [
-  { value: "overwrite", label: "覆盖现有", icon: RefreshCcw },
+const modeOptions = computed(() => [
+  importKind.value === "weekly"
+    ? { value: "overwrite", label: "覆盖现有", icon: RefreshCcw }
+    : { value: "overwrite", label: "新课表", icon: FilePlus2 },
   { value: "append", label: "追加导入", icon: Plus },
-];
+]);
 
 /// SegmentedControl speaks in strings; the rest of this file wants the boolean.
 const importMode = computed({
@@ -49,7 +51,7 @@ const modeHelpText = computed(() => {
   }
 
   if (isOverwrite.value) {
-    return "覆盖导入会清空当前课表数据，再写入新的学期基础课表。";
+    return "会先新建一个课表再导入，原来的课表不受影响，可以在「选择课程表」里切换。";
   }
   return "追加导入会在现有学期基础课表上继续增加课程。";
 });
@@ -96,42 +98,11 @@ const semesterPrompt = [
   "不要输出任何问候语、解释说明、或处理过程。我只需要纯粹的 CSV 数据以便于代码直接解析。"
 ].join("\n");
 
-const learningPlanPrompt = computed(() => {
-  if (!hasPreference.value) {
-    return "";
-  }
-
-  const lines = ["", "补充上下文（不要改变 CSV 格式要求，仅作为学习安排偏好备注）："];
-  if (preference.value.extraLearningContent) {
-    lines.push(`- 额外学习内容：${preference.value.extraLearningContent}`);
-  }
-  if (preference.value.desiredWorkload) {
-    lines.push(`- 期望学习负荷：${preference.value.desiredWorkload}`);
-  }
-  lines.push("输出时仍然只返回课表 CSV，不要新增字段，不要添加解释。");
-  return lines.join("\n");
-});
-
-const activePrompt = computed(() => {
-  const basePrompt = importKind.value === "weekly" ? weeklyPrompt : semesterPrompt;
-  return `${basePrompt}${learningPlanPrompt.value}`;
-});
+const activePrompt = computed(() => (importKind.value === "weekly" ? weeklyPrompt : semesterPrompt));
 
 const pastePlaceholder = computed(() =>
   importKind.value === "weekly" ? "在此粘贴按周 CSV..." : "在此粘贴按学期 CSV..."
 );
-
-const planSummary = computed(() => {
-  if (!hasPreference.value) {
-    return "补充你的学习安排，会一起写进给 AI 的指令";
-  }
-  return `已附加：${preference.value.extraLearningContent || "未填额外学习内容"} / ${preference.value.desiredWorkload || "未填学习负荷"}`;
-});
-
-const openLearningPlan = () => {
-  emit("close");
-  router.push("/learning-plan");
-};
 
 const copyPrompt = async () => {
   try {
@@ -148,12 +119,23 @@ const handleImport = async () => {
     return;
   }
 
-  const result = importKind.value === "weekly"
+  // A new table is only worth creating for something that will parse: checked here so an obviously
+  // wrong paste does not flash a new empty table into existence and back out again.
+  const intoNewTable = importKind.value === "semester" && isOverwrite.value;
+  if (intoNewTable && parseSemesterCSV(csvInput.value).length === 0) {
+    showToast({ message: "未识别到有效的学期 CSV 数据", type: "fail" });
+    return;
+  }
+
+  const result: ImportOutcome = importKind.value === "weekly"
     ? await importFromCsv(csvInput.value, isOverwrite.value)
-    : await importFromSemesterCsv(csvInput.value, isOverwrite.value);
+    : intoNewTable
+      ? await importAsNewCourseTable(`AI 导入 ${importDateLabel()}`, () => importFromSemesterCsv(csvInput.value, false))
+      : await importFromSemesterCsv(csvInput.value, false);
 
   if (result.success) {
-    showToast({ message: result.message, type: "success" });
+    const message = result.tableName ? `${result.message}。${newTableNotice(result.tableName)}` : result.message;
+    showToast({ message, type: "success" });
     csvInput.value = "";
     emit("close");
   } else {
@@ -183,14 +165,6 @@ const handleImport = async () => {
         <div class="prompt-preview">
           <pre>{{ activePrompt }}</pre>
         </div>
-        <button class="plan-row" @click="openLearningPlan">
-          <BookMarked :size="16" class="plan-icon" />
-          <span class="plan-text">
-            <span class="plan-title">自定义学习计划（可选）</span>
-            <span class="plan-sub">{{ planSummary }}</span>
-          </span>
-          <ChevronRight :size="16" class="plan-arrow" />
-        </button>
       </div>
 
       <div class="step">
@@ -214,7 +188,7 @@ const handleImport = async () => {
       <p class="mode-help">{{ modeHelpText }}</p>
     </div>
 
-    <button class="imp-primary-btn" @click="handleImport">
+    <button class="app-btn app-btn--primary" @click="handleImport">
       <Check :size="18" />
       <span>导入到课表</span>
     </button>
@@ -302,55 +276,6 @@ const handleImport = async () => {
 
 .prompt-preview pre::-webkit-scrollbar {
   width: 0;
-}
-
-.plan-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  text-align: left;
-  border: 1px dashed color-mix(in srgb, var(--theme-body-text) 22%, transparent);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--theme-body-text);
-}
-
-.plan-row:active {
-  background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
-}
-
-.plan-icon {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-.plan-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.plan-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.plan-sub {
-  font-size: 11px;
-  line-height: 1.5;
-  opacity: 0.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-arrow {
-  flex-shrink: 0;
-  opacity: 0.35;
 }
 
 .mode-block {

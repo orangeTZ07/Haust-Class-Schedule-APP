@@ -4,6 +4,7 @@ import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
+import { confirmAction } from "@/utils/confirm";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
@@ -127,16 +128,20 @@ const sampleJson = `[
 const loadSample = async () => {
   const result = await importFromJson(sampleJson);
   if (result.success) {
-    alert(result.message);
+    showToast(result.message);
   }
   closeSidebar();
 };
 
-const handleClear = () => {
-  if (confirm("确定清空所有课程？")) {
-    clearAll();
-  }
+const handleClear = async () => {
   closeSidebar();
+  const confirmed = await confirmAction({
+    title: "清空所有课程？",
+    message: "课程和课段都会被删除，此操作无法撤销。",
+    confirmText: "清空",
+    danger: true,
+  });
+  if (confirmed) clearAll();
 };
 
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }) => {
@@ -366,7 +371,7 @@ const onEdgeTouchEnd = () => {
     <!-- 内容层 -->
     <div
       class="content-layer"
-      :class="{ 'is-dragging': sidebarDragging }"
+      :class="{ 'is-dragging': sidebarDragging, 'is-open': sidebarVisible }"
       :style="{ transform: `translateX(${sidebarOffset}px)` }"
     >
       <TopBar
@@ -430,10 +435,16 @@ const onEdgeTouchEnd = () => {
      .home-view so the background layers still bleed to the true screen edge. Every other
      view in this app already handled its safe-area insets; this screen did not, even
      though it is the one users spend their time on. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-bottom);
   /* Promoted so the per-frame transform during a drag stays on the compositor. */
   will-change: transform;
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* The drawer is a big surface: smooth, no overshoot, and the way back (the base rule) is quicker
+     than the way out. SideBar uses the same pair so drawer, overlay and page settle together. */
+  transition: transform var(--dur-base) var(--ease-smooth);
+}
+
+.content-layer.is-open {
+  transition-duration: var(--dur-slow);
 }
 
 /* While the finger is down the offset is written every move; a transition on top of that makes

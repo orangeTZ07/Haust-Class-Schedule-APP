@@ -87,7 +87,7 @@
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 14%, transparent);
   border-radius: 10px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-fast) ease-out;
 }
 
 .imp-input {
@@ -111,51 +111,6 @@
 .imp-textarea::placeholder {
   color: var(--theme-body-text);
   opacity: 0.32;
-}
-
-/* One main action per section, filled with the body text colour and lettered in the page
-   background: that pair is the one the theme guarantees to be readable against each other, so the
-   button stands out on every preset. The header colours are not safe here -- on the minimal themes
-   header-bg is the page background itself, and on the Vant blue preset header-text is white on a
-   white page. Same reason none of the sheet's headings use header-text. */
-.imp-primary-btn,
-.imp-secondary-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  height: 48px;
-  font-size: 15px;
-  font-weight: 600;
-  border-radius: 12px;
-  transition: transform 0.15s, opacity 0.15s;
-}
-
-.imp-primary-btn {
-  color: var(--theme-bg-color);
-  background: var(--theme-body-text);
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 25%, transparent);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--theme-body-text) 22%, transparent);
-}
-
-.imp-secondary-btn {
-  height: 44px;
-  font-size: 14px;
-  color: var(--theme-body-text);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
-}
-
-.imp-primary-btn:active:not(:disabled),
-.imp-secondary-btn:active:not(:disabled) {
-  transform: scale(0.98);
-  opacity: 0.85;
-}
-
-.imp-primary-btn:disabled,
-.imp-secondary-btn:disabled {
-  opacity: 0.55;
 }
 
 .imp-spin {

@@ -30,4 +30,58 @@
   --theme-body-text: #333;
   --theme-bg-image: none;
   --theme-bg-image-opacity: 0.3;
+  /* The colour for "this is the live one": today's column, the current week, main buttons. Derived
+     from the theme in useTheme (see utils/themeAccent.ts) because no single preset colour is
+     readable on every preset: header-text is white on the white Vant preset, and the card border
+     is pale on every light one. --theme-on-accent is what to letter on top of it. */
+  --theme-accent: #333;
+  --theme-on-accent: #fff;
+
+  /* System-bar insets. Always use these, never env(safe-area-inset-*) directly: inside the Android
+     WebView the env() values are routinely 0, which left content under the status bar and the
+     navigation bar. The native plugin writes the real sizes into --native-safe-*; env() still wins
+     where it reports something larger (notched iOS, desktop previews). */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--native-safe-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--native-safe-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--native-safe-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--native-safe-left, 0px));
+
+  /* Motion. One vocabulary for the whole app, so a popup, a drawer and a button press feel like
+     they belong to the same hand.
+       spring  small things arriving: a press letting go, menus, centred dialogs, chips, the
+               segmented thumb. A slight overshoot is what reads as "Q弹".
+       smooth  big surfaces: the drawer, bottom sheets, page changes. Fast out, slow settle, no
+               overshoot -- a large panel that bounces looks cheap.
+       exit    anything leaving. Always shorter than the matching entrance, and ease-in so it
+               accelerates away instead of lingering.
+     Animate transform and opacity only. backdrop-filter, box-shadow and sizes are repaint or layout
+     work on every frame and stutter on mid-range Android WebViews. */
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 360ms;
+  /* How far a pressed button sinks. */
+  --press-scale: 0.96;
+}
+
+/* A real damped spring (zeta 0.5, about 16% overshoot) where linear() exists, i.e. Chromium 113+
+   -- every current Android WebView. The cubic-bezier above is the fallback elsewhere: same
+   character, smaller overshoot. */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(0, 0.065 3.6%, 0.223 7.1%, 0.425 10.7%, 0.633 14.3%, 0.819 17.9%, 0.967 21.4%, 1.072 25%, 1.135 28.6%, 1.161 32.1%, 1.159 35.7%, 1.138 39.3%, 1.107 42.9%, 1.073 46.4%, 1.041 50%, 1.014 53.6%, 0.994 57.1%, 0.981 60.7%, 0.975 64.3%, 0.973 67.9%, 0.976 71.4%, 0.98 75%, 0.986 78.6%, 0.991 82.1%, 0.996 85.7%, 1 89.3%, 1.002 92.9%, 1.004 96.4%, 1);
+  }
+}
+
+/* Everything that reads these durations collapses to an instant swap. Animations that carry real
+   information (spinners) use their own timings and are left alone. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+    --press-scale: 1;
+  }
 }

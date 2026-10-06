@@ -2,9 +2,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
+import { useToday } from "@/composables/useToday";
 import CourseBlock from "./CourseBlock.vue";
 
 const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule } = useCourses();
+const { todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
@@ -123,13 +125,25 @@ const resetView = (): boolean => {
 
 defineExpose({ resetView });
 
+/// Today's column (1-7), or 0 when there is none to mark. Only the week that is really the current
+/// one has a "today": the weekday alone says nothing about which week is on screen, and marking it
+/// anyway put today's highlight on the Wednesday of week 5 while week 6 was the actual one.
 const todayDayNumber = computed(() => {
-  const day = new Date().getDay();
-  return day === 0 ? 7 : day;
+  return actualWeek.value !== null && actualWeek.value === currentWeek.value ? calendarDayNumber.value : 0;
 });
 
+/// Cosmetic only, nothing to do with the gestures: which way the week just changed, so the new
+/// week's content can slide in from that side, and a short-lived flag the styles use to run that
+/// slide (and to keep the blocks' own pop-in quiet while it plays).
+const weekSlideDirection = ref(1);
+const weekSwitching = ref(false);
+/// A little longer than the longest animation it gates, so the flag never drops mid-animation.
+const WEEK_SWITCH_MS = 420;
+let weekSwitchTimer: ReturnType<typeof window.setTimeout> | null = null;
+
 const weekGridStyle = computed(() => ({
-  "--week-grid-min-width": `${Math.round(MIN_GRID_WIDTH * gridZoom.value)}px`
+  "--week-grid-min-width": `${Math.round(MIN_GRID_WIDTH * gridZoom.value)}px`,
+  "--week-dir": weekSlideDirection.value
 }));
 
 const totalPeriods = computed(() => {
@@ -243,14 +257,14 @@ const dividerPositions = computed(() => {
   if (config.morningPeriods > 0) {
     positions.push({
       afterPeriod: config.morningPeriods,
-      label: "午休"
+      label: "午"
     });
   }
 
   if (config.afternoonPeriods > 0) {
     positions.push({
       afterPeriod: config.morningPeriods + config.afternoonPeriods,
-      label: "晚饭"
+      label: "晚"
     });
   }
 
@@ -948,12 +962,24 @@ watch(currentWeek, () => {
   clearConflictOrbitImmediately();
 });
 
+// Runs before the render that swaps the blocks in, so the flag is already up when they mount.
+watch(currentWeek, (week, previousWeek) => {
+  weekSlideDirection.value = week >= previousWeek ? 1 : -1;
+  weekSwitching.value = true;
+  if (weekSwitchTimer !== null) window.clearTimeout(weekSwitchTimer);
+  weekSwitchTimer = window.setTimeout(() => {
+    weekSwitching.value = false;
+    weekSwitchTimer = null;
+  }, WEEK_SWITCH_MS);
+});
+
 onMounted(() => {
   window.addEventListener("resize", handleWindowResize);
   window.addEventListener("click", handleGlobalClick, true);
 });
 
 onUnmounted(() => {
+  if (weekSwitchTimer !== null) window.clearTimeout(weekSwitchTimer);
   clearOrbitAnimationTimer();
   clearLongPress();
   stopDragListeners();
@@ -966,6 +992,7 @@ onUnmounted(() => {
 <template>
   <div
     class="week-grid"
+    :class="[weekSwitching ? 'is-switching' : '', currentWeek % 2 ? 'week-odd' : 'week-even']"
     :style="weekGridStyle"
     @touchstart="handleTouchStart"
     @touchmove="handleTouchMove"
@@ -980,8 +1007,10 @@ onUnmounted(() => {
         class="day-header"
         :class="{ 'is-today': todayDayNumber === index + 1 }"
       >
-        <span class="day-name">{{ day }}</span>
-        <span v-if="weekDateLabels[index]" class="day-date">{{ weekDateLabels[index] }}</span>
+        <div class="day-pill">
+          <span class="day-name">{{ day }}</span>
+          <span v-if="weekDateLabels[index]" class="day-date">{{ weekDateLabels[index] }}</span>
+        </div>
       </div>
     </div>
 
@@ -1117,7 +1146,7 @@ onUnmounted(() => {
   --row-height: 50px;
   /* Vertical space a 午休 / 晚饭 divider occupies between two rows. Blocks that span
      across one have to add it, otherwise they fall short. */
-  --divider-height: 29px;
+  --divider-height: 24px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1156,11 +1185,10 @@ onUnmounted(() => {
 }
 
 .day-header {
-  padding: 7px 2px 8px;
+  padding: 5px 3px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
   text-align: center;
   font-size: 12px;
   font-weight: 600;
@@ -1168,6 +1196,18 @@ onUnmounted(() => {
   border-right: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 20%, transparent);
   position: relative;
   overflow: hidden;
+}
+
+/* The name and the date sit in one rounded block so that today can be marked by filling the whole
+   block, rather than by recolouring two lines of text. */
+.day-pill {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0 5px;
+  border-radius: 10px;
 }
 
 .day-name {
@@ -1183,19 +1223,44 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* Today: a filled capsule, and a faint wash down the whole column. It used to be recoloured with the
+   card border, which is a pale grey on every light preset -- so today read fainter than the other
+   days.
+   The capsule sits on the header band, so it is painted with the band's own pair, inverted
+   (header-text fill, header-bg lettering): that pair is the one guaranteed to contrast *there*. The
+   page accent is not: on the Vant preset the band is itself the accent blue, and a blue capsule on a
+   blue band was invisible. On every other preset header-text is the accent anyway. The cells below
+   sit on the page, so they use --theme-accent (see useTheme). */
 .day-header.is-today {
-  color: var(--theme-card-border-color);
+  background: color-mix(in srgb, var(--theme-header-text) 10%, transparent);
+}
+
+.day-header.is-today .day-pill {
+  background: var(--theme-header-text);
+  color: var(--theme-header-bg);
   font-weight: 800;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--theme-header-text) 30%, transparent);
+  animation:
+    today-pill-scale var(--dur-slow) var(--ease-spring) backwards,
+    today-pill-fade var(--dur-fast) ease-out backwards;
 }
 
 .day-header.is-today .day-date {
-  opacity: 1;
+  opacity: 0.88;
   font-weight: 700;
 }
 
-/* The today marker used to be an absolutely positioned bar at bottom: 4px. The date line now
-   occupies that space, so today is marked by colour and weight on both lines instead of
-   stacking a bar on top of the text. */
+/* Pops in when the week on screen becomes the real one (jumping back with 回到本周, or the first
+   paint). Scale and fade are separate animations so the spring cannot flicker the opacity. */
+@keyframes today-pill-scale {
+  from { transform: scale(0.82); }
+  to { transform: scale(1); }
+}
+
+@keyframes today-pill-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 .day-header:last-child {
   border-right: none;
@@ -1263,8 +1328,10 @@ onUnmounted(() => {
   position: relative;
 }
 
+/* An inset shadow rather than a background, so it lays over the morning / afternoon / evening tint
+   instead of replacing it. */
 .cell.is-today {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-card-border-color) 4%, transparent);
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
 
 .cell:last-child {
@@ -1492,7 +1559,7 @@ onUnmounted(() => {
      so the value has to be something both sides can name. */
   height: var(--divider-height);
   padding: 0 12px;
-  gap: 12px;
+  gap: 8px;
 }
 
 .divider-line {
@@ -1502,12 +1569,53 @@ onUnmounted(() => {
   opacity: 0.2;
 }
 
+/* One character on its own looks lost between two long rules, so it gets a small capsule to sit in. */
 .divider-label {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
   font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1px;
+  font-weight: 600;
+  line-height: 1;
   color: var(--theme-body-text);
-  opacity: 0.5;
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+  opacity: 0.7;
   white-space: nowrap;
+}
+
+/* ---------- Week change ----------
+   The week's content slides in a few px from the side the new week lies on. Two identical keyframe
+   sets under different names, picked by the week's parity: swapping the animation-name is what makes
+   the browser start it again, so no script has to restart it. Transform and opacity only. */
+.week-grid.is-switching.week-odd .body,
+.week-grid.is-switching.week-odd .day-date {
+  animation: week-in-a var(--dur-base) var(--ease-smooth) both;
+}
+
+.week-grid.is-switching.week-even .body,
+.week-grid.is-switching.week-even .day-date {
+  animation: week-in-b var(--dur-base) var(--ease-smooth) both;
+}
+
+@keyframes week-in-a {
+  from { opacity: 0; transform: translate3d(calc(var(--week-dir, 1) * 14px), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes week-in-b {
+  from { opacity: 0; transform: translate3d(calc(var(--week-dir, 1) * 14px), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The blocks pop in when they appear (see CourseBlock). While the whole week is sliding in they must
+   not, or half of them would pop and half would not, depending on which ones the two weeks share.
+   A near-zero duration rather than animation: none, because switching the name back afterwards
+   would restart the animation on every block. */
+.week-grid.is-switching {
+  --block-pop-dur: 0.01ms;
 }
 </style>

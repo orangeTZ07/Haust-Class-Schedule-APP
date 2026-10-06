@@ -1,0 +1,135 @@
+/* Shared look for every popup in the app: the centred cards (update, export, contact, add course),
+   the import sheet, and -- in global.css -- the Vant confirm dialogs. They used to be five hand-rolled
+   variants with different radii, paddings, title sizes, close buttons and button styles.
+
+   Usage:  <van-popup round class="app-popup app-popup--center" ...>
+             <div class="app-popup-card"> <button class="app-popup-close">..</button>
+               <h2 class="app-popup-title">..</h2> ... <button class="app-btn app-btn--primary">..</button>
+
+   Colours come from the --theme-* variables only: body-text for text (header-text is white on the
+   Vant preset, which made popup titles vanish) and --theme-accent for the one main action. */
+
+.app-popup {
+  --van-popup-round-radius: 20px;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-bg-color) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+/* A translucent panel with nothing blurred behind it is just a dirty one. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-popup {
+    background: var(--theme-bg-color);
+  }
+}
+
+.app-popup--center {
+  width: 86%;
+  max-width: 340px;
+}
+
+.app-popup--sheet {
+  --van-popup-round-radius: 24px;
+  border-bottom: none;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.14);
+}
+
+.app-popup-card {
+  position: relative;
+  padding: 24px 20px 20px;
+}
+
+.app-popup-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Room for the close button, which sits in the top right corner of every card. */
+  padding-right: 36px;
+  margin-bottom: 16px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--theme-body-text);
+}
+
+.app-popup-sub {
+  margin: -12px 0 16px;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.app-popup-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9px;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+  opacity: 0.7;
+}
+
+.app-popup-card > .app-popup-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+/* The grab handle every bottom sheet carries. */
+.app-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-body-text) 22%, transparent);
+}
+
+/* The bottom system bar, so a sheet's last control never sits under the gesture bar or the
+   navigation buttons. Every bottom sheet ends with one of these. */
+.app-sheet-safe {
+  flex-shrink: 0;
+  height: var(--safe-bottom);
+}
+
+/* ---------- Buttons ----------
+   One size, one radius. Primary is filled with the accent, secondary is a quiet tint, outline is for
+   an action that sits next to a primary in the same card. */
+.app-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 46px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-body-text) 9%, transparent);
+}
+
+.app-btn--primary {
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--theme-accent) 30%, transparent);
+}
+
+.app-btn--outline {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
+}
+
+.app-btn:disabled {
+  opacity: 0.55;
+}

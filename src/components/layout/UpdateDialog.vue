@@ -33,13 +33,13 @@ const onUpdateShow = (value: boolean) => {
     @update:show="onUpdateShow"
     round
     position="center"
-    class="update-popup"
+    class="app-popup app-popup--center"
     :style="cssVariables"
     :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.2)' }"
   >
-    <div class="update-card">
-      <div class="update-title">{{ title }}</div>
-      <div v-if="currentVersion" class="update-current">当前版本 {{ displayVersion(currentVersion) }}</div>
+    <div class="app-popup-card">
+      <h2 class="app-popup-title update-title">{{ title }}</h2>
+      <div v-if="currentVersion" class="app-popup-sub">当前版本 {{ displayVersion(currentVersion) }}</div>
       <div class="update-question">是否更新到新版本？</div>
 
       <div v-if="notes.groups.length" class="update-notes">
@@ -57,10 +57,10 @@ const onUpdateShow = (value: boolean) => {
       <div v-if="actionError" class="update-error">{{ actionError }}</div>
 
       <div class="update-actions">
-        <button class="update-btn primary haptics" @click="startUpdate">立即更新</button>
+        <button class="app-btn app-btn--primary" @click="startUpdate">立即更新</button>
         <div class="secondary-row">
-          <button class="update-btn secondary haptics" @click="dismissDialog">稍后</button>
-          <button class="update-btn secondary haptics" @click="skipThisVersion">跳过这个版本</button>
+          <button class="app-btn" @click="dismissDialog">稍后</button>
+          <button class="app-btn" @click="skipThisVersion">跳过这个版本</button>
         </div>
       </div>
     </div>
@@ -68,36 +68,12 @@ const onUpdateShow = (value: boolean) => {
 </template>
 
 <style scoped>
-.update-popup {
-  width: 88%;
-  max-width: 340px;
-  background: color-mix(in srgb, var(--theme-bg-color) 92%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
-}
-
-.update-card {
-  padding: 24px 20px 16px;
-  color: var(--theme-body-text);
-}
-
+/* No close button on this card (稍后 is the way out), so the title does not need to leave room. */
 .update-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--theme-header-text);
-  text-align: center;
-}
-
-.update-current {
-  margin-top: 4px;
-  font-size: 12px;
-  text-align: center;
-  opacity: 0.5;
+  padding-right: 0;
 }
 
 .update-question {
-  margin-top: 16px;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -119,7 +95,7 @@ const onUpdateShow = (value: boolean) => {
 .notes-group-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   opacity: 0.8;
 }
 
@@ -158,36 +134,14 @@ const onUpdateShow = (value: boolean) => {
   margin-top: 14px;
 }
 
-.update-btn {
-  height: 42px;
-  border: none;
-  font-family: inherit;
-  border-radius: 10px;
-  font-size: 15px;
-}
-
-.update-btn.primary {
-  width: 100%;
-  font-weight: 700;
-  color: #fff;
-  background: var(--van-primary-color, #1989fa);
-}
-
 .secondary-row {
   display: flex;
   gap: 8px;
   margin-top: 8px;
 }
 
-.update-btn.secondary {
+.secondary-row .app-btn {
   flex: 1;
   font-size: 14px;
-  color: var(--theme-body-text);
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-}
-
-.haptics:active {
-  transform: scale(0.97);
-  opacity: 0.8;
 }
 </style>

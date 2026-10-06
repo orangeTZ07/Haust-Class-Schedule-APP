@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { showConfirmDialog, showToast } from "vant";
+import { showToast } from "vant";
 import { ArrowLeft, Check, Pencil, Plus, Trash2 } from "@lucide/vue";
 import { useCourses } from "@/composables/useCourses";
+import { confirmAction } from "@/utils/confirm";
 
 const router = useRouter();
 const {
@@ -67,17 +68,16 @@ const handleDelete = async (id: number, name: string) => {
     return;
   }
 
-  try {
-    await showConfirmDialog({
-      title: "删除课程表",
-      message: `确定删除《${name}》吗？其中的课程和课段都会被移除。`,
-      className: "theme-confirm-dialog"
-    });
-    await deleteCourseTable(id);
-    showToast("已删除");
-  } catch {
-    // 用户取消删除
-  }
+  const confirmed = await confirmAction({
+    title: "删除课程表",
+    message: `确定删除《${name}》吗？其中的课程和课段都会被移除。`,
+    confirmText: "删除",
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  await deleteCourseTable(id);
+  showToast("已删除");
 };
 </script>
 
@@ -179,7 +179,7 @@ const handleDelete = async (id: number, name: string) => {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  padding-top: calc(14px + var(--safe-top));
   background: color-mix(in srgb, var(--theme-bg-color) 88%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
   backdrop-filter: blur(14px);

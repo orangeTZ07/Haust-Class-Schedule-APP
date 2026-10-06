@@ -237,7 +237,7 @@ const periodText = computed(() => {
     <div class="course-name">{{ course.name }}</div>
     <div class="course-info" v-if="course.location">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
-      {{ course.location }}
+      <span class="loc-text">{{ course.location }}</span>
     </div>
     <div v-if="(conflictCount || 0) > 1" class="conflict-count-badge">
       {{ conflictCount }}
@@ -271,24 +271,43 @@ const periodText = computed(() => {
      drag (see armLongPressDrag in WeekGrid.vue). */
   touch-action: pan-y;
   user-select: none;
-  transition: 
-    all 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    z-index 0s 0.3s;
+  /* Spelled out instead of `all`: `all` also animated box-shadow and the backdrop blur, which is
+     repaint work on every frame. The sizes and offsets stay because the expanded card grows in
+     place. transform is the one that matters for a drag: when it is let go of, the block springs
+     back to its slot (a successful drop mounts a new block, see the land animation below). The
+     z-index swap waits for that spring to finish so the block does not slip under its neighbours
+     halfway home. */
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    scale var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out,
+    left var(--dur-base) var(--ease-smooth),
+    top var(--dur-base) var(--ease-smooth),
+    width var(--dur-base) var(--ease-smooth),
+    height var(--dur-base) var(--ease-smooth),
+    border-color var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out,
+    z-index 0s var(--dur-slow);
   display: flex;
   flex-direction: column;
 }
 
-/* Shrink away over the same 240ms WeekGrid waits before it drops the row, so the block leaves
-   visibly instead of vanishing between frames. !important is required because the drag offset
-   is written into the element's inline transform, which otherwise wins over this rule. */
-.course-block.is-deleting {
-  transform: scale(0.5) !important;
-  opacity: 0;
-  transition:
-    transform 0.24s cubic-bezier(0.4, 0, 1, 1),
-    opacity 0.24s ease;
-  pointer-events: none;
-  z-index: 300;
+/* Lands with a small pop whenever a block appears: dropped onto a new slot, added, or the first
+   paint. Two animations because the spring overshoots, and an opacity that overshoots would flicker.
+   WeekGrid zeroes --block-pop-dur while a whole week is sliding in. The orbit cards run their own
+   animation from the parent, so they are left out. */
+.course-block:not(.orbit-card) {
+  animation:
+    block-land var(--block-pop-dur, var(--dur-slow)) var(--ease-spring) backwards,
+    block-fade var(--block-pop-dur, var(--dur-fast)) ease-out backwards;
+}
+
+@keyframes block-land {
+  from { transform: scale(0.88); }
+}
+
+@keyframes block-fade {
+  from { opacity: 0; }
 }
 
 .course-accent {
@@ -309,29 +328,57 @@ const periodText = computed(() => {
   opacity: 0.85;
 }
 
+/* Picked up: slightly larger, with a deeper shadow. The scale uses the standalone `scale` property
+   because the drag offset lives in the inline `transform`, which this rule cannot compose with.
+   Only `scale` is given a transition: the transform follows the finger and must never lag. */
 .course-block.is-dragging {
   cursor: grabbing;
   pointer-events: none;
-  transition: none;
+  scale: 1.05;
+  transition: scale var(--dur-fast) var(--ease-spring);
   border-color: var(--theme-card-border-color);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;
 }
 
 .course-block:hover {
   z-index: 5 !important;
-  transition: all 0.2s ease, z-index 0s;
   border-color: color-mix(in srgb, var(--theme-card-border-color) 80%, transparent);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
 }
 
+/* Opening the card is the springy direction (the base rule above is the way back). */
 .course-block.is-expanded {
   overflow-y: auto; /* 允许垂直滚动内容 */
   padding: 12px;
   border-color: var(--theme-card-border-color);
   scrollbar-width: none; /* 隐藏 Firefox 滚动条 */
-  transition: 
-    all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-    z-index 0s;
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    left var(--dur-slow) var(--ease-spring),
+    top var(--dur-slow) var(--ease-spring),
+    width var(--dur-slow) var(--ease-spring),
+    height var(--dur-slow) var(--ease-spring),
+    opacity var(--dur-fast) ease-out,
+    border-color var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out;
+}
+
+/* Shrink away over the same 240ms WeekGrid waits before it drops the row (--dur-base), so the block
+   leaves visibly instead of vanishing between frames. !important is required because the drag
+   offset is written into the element's inline transform, which otherwise wins over this rule.
+   Declared after .is-dragging: the block still carries that class while it shrinks, and with equal
+   specificity the later rule decides the transition -- before, the dragging rule's `transition: none`
+   won and the shrink never played. */
+.course-block.is-deleting {
+  transform: scale(0.5) !important;
+  scale: 1;
+  opacity: 0;
+  transition:
+    transform var(--dur-base) var(--ease-exit),
+    scale var(--dur-base) var(--ease-exit),
+    opacity var(--dur-base) var(--ease-exit);
+  pointer-events: none;
+  z-index: 300;
 }
 
 .course-block.is-expanded::-webkit-scrollbar {
@@ -418,6 +465,20 @@ const periodText = computed(() => {
 .loc-icon {
   font-size: 8px;
   opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* The flex container's own text-overflow never reached the text (it is an anonymous flex item), so a
+   long room name was cut mid-glyph. Giving the text its own box lets the ellipsis work. */
+.loc-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-expanded .loc-text {
+  white-space: normal;
 }
 
 .is-expanded .loc-icon {

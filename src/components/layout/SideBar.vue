@@ -32,9 +32,8 @@ interface MenuItem {
   action?: string;
 }
 
-/// Grouped so the drawer reads as three kinds of thing rather than one long list. The entries that
-/// used to sit here for 样式调整 (now under 设置), 自定义学习计划 and 恢复到导入时 (both now live in
-/// the import sheet, next to the thing they belong to) and the second 导入 entry were dropped.
+/// Grouped so the drawer reads as three kinds of thing rather than one long list. The 样式调整 entry
+/// now lives under 设置, and the duplicate 导入 entry was dropped.
 const groups: { title: string; items: MenuItem[] }[] = [
   {
     title: "课表",
@@ -136,20 +135,24 @@ const handleOverlayClick = () => {
   left: 0;
   right: 0;
   bottom: 0;
+  /* No backdrop blur here. The overlay's opacity is rewritten on every touchmove while the drawer is
+     dragged, and re-blurring a full-screen layer each frame for a 2px blur nobody could see was the
+     most expensive thing on this screen. */
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   opacity: 0;
   visibility: hidden;
   /* Same duration and easing as .content-layer in HomeView: the drawer and the page behind it
      have to settle together, or the two halves of the same motion look disconnected. */
-  transition: opacity 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0.28s ease;
+  transition:
+    opacity var(--dur-base) var(--ease-smooth),
+    visibility var(--dur-base) linear;
   z-index: 101;
 }
 
 .overlay.visible {
   opacity: 1;
   visibility: visible;
+  transition-duration: var(--dur-slow);
 }
 
 .sidebar {
@@ -163,7 +166,7 @@ const handleOverlayClick = () => {
   -webkit-backdrop-filter: blur(20px);
   transform: translateX(-100%);
   will-change: transform;
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: transform var(--dur-base) var(--ease-smooth);
   z-index: 102;
   display: flex;
   flex-direction: column;
@@ -173,6 +176,7 @@ const handleOverlayClick = () => {
 
 .sidebar.visible {
   transform: translateX(0);
+  transition-duration: var(--dur-slow);
 }
 
 /* While the finger is down the offset is written on every move; a transition on top of that makes
@@ -184,7 +188,7 @@ const handleOverlayClick = () => {
 
 .sidebar-header {
   padding: 24px 20px;
-  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-top: calc(24px + var(--safe-top));
   /* The same band colour as the top bar. The title is header-text, which is only guaranteed to be
      readable on header-bg: on the Vant blue preset it is white, and on the bare drawer background
      it vanished. */
@@ -226,7 +230,7 @@ const handleOverlayClick = () => {
 /* Settings and contact stay put at the bottom whatever the height, clear of the gesture bar. */
 .menu-footer {
   padding: 8px 10px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(8px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -241,17 +245,25 @@ const handleOverlayClick = () => {
   cursor: pointer;
   color: var(--theme-body-text);
   border-radius: 10px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-fast) ease-out;
 }
 
-.menu-item:hover {
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-  transform: translateX(4px);
+/* Hover only where there is a pointer: on touch :hover sticks after a tap, which left the last
+   tapped entry nudged sideways until the next touch. */
+@media (hover: hover) {
+  .menu-item:hover {
+    background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+    transform: translateX(4px);
+  }
 }
 
 .menu-item:active {
   background: color-mix(in srgb, var(--theme-body-text) 12%, transparent);
-  transform: translateX(2px) scale(0.98);
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .menu-label {

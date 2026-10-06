@@ -277,13 +277,21 @@ const applyReminders = async () => {
       </div>
     </div>
 
-    <van-popup v-model:show="showPicker" position="bottom" round>
+    <van-popup
+      v-model:show="showPicker"
+      position="bottom"
+      round
+      class="app-popup app-popup--sheet"
+      :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"
+    >
+      <div class="app-sheet-handle" />
       <van-time-picker
         v-model="currentTime"
         title="选择时间"
         @confirm="onConfirm"
         @cancel="showPicker = false"
       />
+      <div class="app-sheet-safe" />
     </van-popup>
   </div>
 </template>
@@ -402,8 +410,9 @@ const applyReminders = async () => {
   margin: 0 4px !important;
 }
 
+/* Transparent, so the sheet's own glass shows through instead of an opaque block inside it. */
 :deep(.van-picker) {
-  background-color: var(--theme-bg-color) !important;
+  background-color: transparent !important;
 }
 
 :deep(.van-picker__mask) {
@@ -411,14 +420,25 @@ const applyReminders = async () => {
 }
 
 :deep(.van-picker__hairline) {
-  border-top: 1px solid color-mix(in srgb, var(--theme-primary-color, #1989fa) 30%, transparent) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-primary-color, #1989fa) 30%, transparent) !important;
-  background-color: color-mix(in srgb, var(--theme-primary-color, #1989fa) 5%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
+  background-color: color-mix(in srgb, var(--theme-accent) 6%, transparent);
 }
 
 :deep(.van-picker__toolbar) {
-  border-bottom: 1px solid var(--theme-grid-line-color);
-  background-color: var(--theme-bg-color) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
+  background-color: transparent !important;
+}
+
+:deep(.van-picker__cancel) {
+  color: var(--theme-body-text) !important;
+  opacity: 0.6;
+}
+
+/* The accent, not Vant's default blue, so 确定 matches the other confirm buttons. */
+:deep(.van-picker__confirm) {
+  color: var(--theme-accent) !important;
+  font-weight: 700;
 }
 
 :deep(.van-picker-column__item) {
@@ -427,7 +447,7 @@ const applyReminders = async () => {
 }
 
 :deep(.van-picker-column__item--selected) {
-  color: var(--theme-primary-color, #1989fa) !important;
+  color: var(--theme-accent) !important;
   opacity: 1;
   font-weight: 700;
 }
@@ -454,7 +474,9 @@ const applyReminders = async () => {
 .section-hint {
   font-size: 11px;
   line-height: 1.6;
-  opacity: 0.5;
+  /* No colour was set, so the text inherited the page's fixed #333 and disappeared on dark themes. */
+  color: var(--theme-body-text);
+  opacity: 0.6;
   margin-top: 8px;
 }
 

@@ -23,7 +23,7 @@ const emit = defineEmits<{
   submit: [payload: { name: string; teacher?: string; location?: string; span: number }];
 }>();
 
-const { cssVariables, isDark } = useTheme();
+const { cssVariables } = useTheme();
 
 const name = ref("");
 const teacher = ref("");
@@ -69,21 +69,20 @@ const submit = () => {
     @update:show="val => emit('update:show', val)"
     round
     position="center"
-    class="custom-course-form-popup"
+    class="app-popup app-popup--center"
     :style="cssVariables"
     :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.2)' }"
   >
-    <div class="course-form-card" :class="{ 'is-dark': isDark }">
-      <button class="minimal-close-btn haptics" @click="emit('update:show', false)">
+    <div class="app-popup-card">
+      <button class="app-popup-close" aria-label="关闭" @click="emit('update:show', false)">
         <X :size="16" />
       </button>
 
-      <div class="card-title">
-        <BookOpen :size="18" style="margin-right: 8px;" />
+      <h2 class="app-popup-title">
+        <BookOpen :size="18" />
         添加课程
-      </div>
-
-      <div class="slot-hint">{{ slotLabel }}</div>
+      </h2>
+      <div class="app-popup-sub">{{ slotLabel }}</div>
 
       <label class="field">
         <span class="field-label">课程名称</span>
@@ -113,7 +112,7 @@ const submit = () => {
             v-for="option in spanOptions"
             :key="option"
             type="button"
-            class="span-option haptics"
+            class="span-option"
             :class="{ active: span === option }"
             @click="span = option"
           >
@@ -124,59 +123,12 @@ const submit = () => {
 
       <div v-if="error" class="error-text">{{ error }}</div>
 
-      <button class="minimal-primary-btn haptics" @click="submit">保存</button>
+      <button class="app-btn app-btn--primary" @click="submit">保存</button>
     </div>
   </van-popup>
 </template>
 
 <style scoped>
-.custom-course-form-popup {
-  width: 85%;
-  max-width: 340px;
-  background: color-mix(in srgb, var(--theme-bg-color) 85%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
-}
-
-.course-form-card {
-  position: relative;
-  padding: 32px 20px 20px;
-  color: var(--theme-body-text);
-}
-
-.minimal-close-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-  color: var(--theme-body-text);
-  opacity: 0.6;
-}
-
-.card-title {
-  font-size: 17px;
-  font-weight: 600;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  color: var(--theme-header-text);
-}
-
-.slot-hint {
-  font-size: 12px;
-  opacity: 0.55;
-  margin-bottom: 18px;
-  letter-spacing: 0.5px;
-}
-
 .field {
   display: block;
   margin-bottom: 14px;
@@ -191,7 +143,7 @@ const submit = () => {
 
 .field-input {
   width: 100%;
-  height: 38px;
+  height: 40px;
   padding: 0 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
@@ -215,39 +167,31 @@ const submit = () => {
 .span-option {
   flex: 1;
   min-width: 56px;
-  height: 34px;
+  height: 36px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
   background: transparent;
   color: var(--theme-body-text);
   font-size: 13px;
   opacity: 0.65;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out,
+    border-color var(--dur-fast) ease-out;
 }
 
 .span-option.active {
   opacity: 1;
   font-weight: 600;
-  border-color: var(--theme-card-border-color);
-  background: color-mix(in srgb, var(--theme-card-border-color) 14%, transparent);
+  border-color: var(--theme-accent);
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
 }
 
 .error-text {
-  color: #ee0a24;
+  color: var(--color-danger);
   font-size: 12px;
   margin-bottom: 10px;
-}
-
-.minimal-primary-btn {
-  width: 100%;
-  height: 44px;
-  border-radius: 10px;
-  border: none;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--theme-header-text);
-  background: color-mix(in srgb, var(--theme-card-border-color) 20%, transparent);
 }
 </style>

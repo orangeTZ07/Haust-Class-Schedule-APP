@@ -10,6 +10,8 @@ import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
+import { useConfirmReplace } from "./confirmReplace";
+import { importDateLabel, newTableNotice, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
@@ -17,7 +19,13 @@ const emit = defineEmits<{
   "use-file": [];
 }>();
 
-const { importFromJsonBackup } = useCourses();
+const props = defineProps<{
+  /// Replace the current timetable instead of importing into a new one.
+  overwrite: boolean;
+}>();
+
+const { importFromJsonBackup, importAsNewCourseTable } = useCourses();
+const confirmReplace = useConfirmReplace();
 
 const username = ref("");
 const password = ref("");
@@ -90,6 +98,10 @@ const sync = async () => {
     return;
   }
 
+  // Only overwriting asks, and it asks up front rather than after the fetch: a prompt that shows up
+  // after the wait is one the user is no longer expecting. A new table destroys nothing.
+  if (props.overwrite && !(await confirmReplace("教务同步"))) return;
+
   busy.value = true;
   messageKind.value = "info";
   message.value = "正在连接教务系统…";
@@ -111,11 +123,15 @@ const sync = async () => {
       return;
     }
 
-    // 复用已有的恢复逻辑：它已经过测试，会处理按周覆盖层、单双周、ID 重映射等。
-    const restored = await importFromJsonBackup(JSON.stringify(result.backup));
-    if (!restored.success) {
+    // 复用已有的备份导入逻辑：它已经过测试，会处理按周覆盖层、单双周、ID 重映射等。
+    // 新课表在取到数据之后才建，所以网络失败不会留下空课表。
+    const backupJson = JSON.stringify(result.backup);
+    const imported: ImportOutcome = props.overwrite
+      ? await importFromJsonBackup(backupJson)
+      : await importAsNewCourseTable(`教务同步 ${importDateLabel()}`, () => importFromJsonBackup(backupJson));
+    if (!imported.success) {
       messageKind.value = "err";
-      message.value = `课表已取到，但写入失败：${restored.message}`;
+      message.value = `课表已取到，但写入失败：${imported.message}`;
       return;
     }
 
@@ -123,9 +139,10 @@ const sync = async () => {
     const extra = result.report.maxPeriod > 10
       ? `\n注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
       : "";
-    message.value = `同步完成：${result.report.courses} 门课程、${result.report.schedules} 条日程。${extra}`;
+    const where = imported.tableName ? newTableNotice(imported.tableName) : "已覆盖当前课表。";
+    message.value = `同步完成：${result.report.courses} 门课程、${result.report.schedules} 条日程。\n${where}${extra}`;
     password.value = "";
-    showToast("课表已同步");
+    showToast(imported.tableName ? "已同步为新课表" : "课表已同步");
   } catch (error) {
     messageKind.value = "err";
     // 这里以前写成 (error as Error).message —— 而 Tauri 拒绝时给的是错误值本身，对字符串错误
@@ -181,13 +198,13 @@ const sync = async () => {
         />
       </label>
 
-      <button class="imp-primary-btn" :disabled="busy" @click="sync">
+      <button class="app-btn app-btn--primary" :disabled="busy" @click="sync">
         <Loader2 v-if="busy" :size="18" class="imp-spin" />
         <DownloadCloud v-else :size="18" />
         <span>{{ busy ? "同步中…" : "开始同步" }}</span>
       </button>
 
-      <p class="imp-hint small">同步会<strong>整体替换</strong>当前课表，导入前请确认。</p>
+      <p class="imp-hint small">默认同步为一个新课表，原来的课表不受影响。</p>
     </div>
 
     <div class="trouble">
@@ -207,7 +224,7 @@ const sync = async () => {
           <li>还是不行，点下面的「网络诊断」，把结果发给开发者。</li>
         </ul>
 
-        <button class="imp-secondary-btn" :disabled="diagnosing" @click="diagnose">
+        <button class="app-btn app-btn--outline" :disabled="diagnosing" @click="diagnose">
           <Loader2 v-if="diagnosing" :size="16" class="imp-spin" />
           <Stethoscope v-else :size="16" />
           <span>{{ diagnosing ? "诊断中…" : "网络诊断" }}</span>
