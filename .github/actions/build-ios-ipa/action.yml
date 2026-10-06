@@ -71,6 +71,51 @@ runs:
       shell: bash
       run: npx tauri ios init --ci
 
+    - name: Apply app icon
+      shell: bash
+      # tauri ios init writes the stock Tauri icon set into gen/apple/Assets.xcassets and never
+      # looks at src-tauri/icons, so without this step the IPA ships with the default icon.
+      # `tauri icon` overwrites that set in place when it finds gen/apple/Assets.xcassets next
+      # to the icons directory; the "--output" below keeps the desktop-size files it also
+      # produces out of the tracked src-tauri/icons (it resolves the gen/ paths from the
+      # output directory's parent, so the scratch directory has to sit directly in src-tauri).
+      #
+      # The template's icons are deleted first. They have the same file names the CLI writes,
+      # so leaving them would make the existence check below pass even if nothing was
+      # generated. Every file the asset catalog's Contents.json names must exist afterwards.
+      #
+      # The generated PNGs are RGBA with an opaque alpha channel. That is fine for the unsigned
+      # sideload IPA built here; an App Store upload would want the channel stripped.
+      run: |
+        set -euo pipefail
+        manifest=src-tauri/icons/app-icon.json
+        set_dir=src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset
+        for f in "$manifest" src-tauri/icons/app-icon.png; do
+          if [ ! -f "$f" ]; then
+            echo "::error::Missing icon source $f."
+            exit 1
+          fi
+        done
+        if [ ! -d "$set_dir" ]; then
+          echo "::error::$set_dir does not exist; tauri ios init produced no asset catalog."
+          exit 1
+        fi
+        rm -f "$set_dir"/AppIcon-*.png
+        npx tauri icon "$manifest" --output src-tauri/icon-out
+        rm -rf src-tauri/icon-out
+        missing=0
+        while IFS= read -r name; do
+          if [ ! -f "$set_dir/$name" ]; then
+            echo "::error::tauri icon did not write $set_dir/$name"
+            missing=1
+          fi
+        done < <(grep -o '"filename" *: *"[^"]*"' "$set_dir/Contents.json" | sed 's/.*: *"\(.*\)"/\1/')
+        if [ "$missing" -ne 0 ]; then
+          exit 1
+        fi
+        echo "App icon set:"
+        ls -l "$set_dir"
+
     - name: Build unsigned IPA
       shell: bash
       env:
