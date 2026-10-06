@@ -124,10 +124,9 @@ export const VARIANTS: Array<{ name: string; note: string; headers: Record<strin
   },
   {
     name: "C · B + 完整浏览器头",
-    note: "在 B 之上补齐 Accept-Encoding / Sec-Fetch-* / Upgrade-Insecure-Requests",
+    note: "在 B 之上补齐 Sec-Fetch-* / Upgrade-Insecure-Requests（**不含 Accept-Encoding**：实测加了它之后正文是压缩后的乱码，因为没人解压）",
     headers: {
       Origin: "",
-      "Accept-Encoding": "gzip, deflate, br",
       "Upgrade-Insecure-Requests": "1",
       "Sec-Fetch-Site": "none",
       "Sec-Fetch-Mode": "navigate",

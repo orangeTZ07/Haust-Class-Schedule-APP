@@ -176,5 +176,20 @@ console.log("=== 8. formatMatrix 必须把每跳的地址与 Location 都写出�
 }
 
 console.log("");
+console.log("=== 9. ★ 修复本身：默认请求头必须移除 Origin（设备实测的结论）===");
+// 设备上的诊断矩阵给出的结果，同一台手机、同一网络、逐跳记录：
+//   带 Origin     -> 第 1 跳 HTTP 403
+//   不发 Origin   -> 第 1 跳 302 -> 第 2 跳 200（拿到「河南科技大学教学管理系统」）
+// 所以"默认不带 Origin"就是修复本身，必须被断言守住。
+{
+  const { BROWSER_HEADERS } = await loadTsModule(join(here, "..", "src", "services", "eams", "browserHeaders.ts"));
+  check("★ Origin 是空串（插件约定的'移除该头'写法）", BROWSER_HEADERS.Origin === "", BROWSER_HEADERS.Origin);
+  check("带了浏览器 User-Agent", /Mozilla/.test(BROWSER_HEADERS["User-Agent"] ?? ""), BROWSER_HEADERS["User-Agent"]);
+  check("带了 Accept 与 Accept-Language", !!BROWSER_HEADERS.Accept && !!BROWSER_HEADERS["Accept-Language"]);
+  // 实测：加了 Accept-Encoding 之后拿回来的是压缩正文，而插件不解压，正文变乱码。
+  check("★ 没有 Accept-Encoding（加了会拿到压缩后没人解的乱码）", !("Accept-Encoding" in BROWSER_HEADERS), Object.keys(BROWSER_HEADERS));
+}
+
+console.log("");
 console.log(failures === 0 ? "  ALL CHECKS PASSED" : "  " + failures + " CHECK(S) FAILED");
 process.exit(failures ? 1 : 0);

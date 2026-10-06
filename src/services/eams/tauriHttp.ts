@@ -8,25 +8,11 @@
 // 而插件本身不维护 cookie 存储，所以由调用方（casLogin 里的 CookieJar）显式带着。
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
+import { BROWSER_HEADERS } from "./browserHeaders";
 import type { EamsHttp, EamsResponse } from "./casLogin";
 
 /// 请求超时。教务系统在校外走 aTrust 隧道，慢是常态，但也不能无限等。
 const TIMEOUT_MS = 30000;
-
-/// 伪装成浏览器。
-///
-/// **这是实测逼出来的，不是洁癖。** 同一个地址：手机浏览器打开正常（200），而 app 用 Rust 客户端
-/// 请求拿到的是 **403 且正文为空**。空正文的 403 不是 Java 应用会给出的回复（它拒绝时会返回自己的
-/// 错误页），那是网关/防火墙在按客户端指纹拒绝。
-///
-/// 所以这里补齐浏览器会发的头。注意 `User-Agent` 属于 fetch 规范的「禁止的请求头」，插件默认会
-/// **静默丢弃** —— 因此 Cargo 里同时打开了 `unsafe-headers` 特性，否则这两行代码等于没写。
-const BROWSER_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
-};
 
 const headersToObject = (headers: Headers): Record<string, string> => {
   const out: Record<string, string> = {};
