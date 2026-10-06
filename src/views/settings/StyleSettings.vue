@@ -305,11 +305,16 @@ const presetColors = [
   align-items: center;
   gap: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-fast) ease-out;
 }
 
 .card.clickable:active {
   background: color-mix(in srgb, var(--theme-header-bg) 5%, transparent);
+  transform: scale(0.98);
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .card-icon {

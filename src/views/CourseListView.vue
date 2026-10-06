@@ -185,11 +185,16 @@ const formatSchedule = (s: any) => {
   color: #ee0a24;
   opacity: 0.6;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out;
 }
 
 .delete-btn:active {
   opacity: 1;
+  transform: scale(var(--press-scale));
+  transition-duration: 90ms, var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 .course-details {
