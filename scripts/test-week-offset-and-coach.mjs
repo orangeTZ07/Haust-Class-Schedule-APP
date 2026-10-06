@@ -82,6 +82,46 @@ console.log("=== 引导步骤 ===");
   check("菜单重开是全部步骤且不加前缀", manual.length === coach.COACH_STEPS.length && manual.every((step) => step.prefixNew === false));
   check("导入不在主屏", manual.find((step) => step.id === "import-from-menu-v1")?.offHome === true);
 
+  coach.resetEmptyCellDeferral();
+  check("格子还没画出来就继续等", coach.emptyCellAnchorState(0, 0) === "waiting");
+  check("有格子但没空位就跳过这一步", coach.emptyCellAnchorState(70, 0) === "missing");
+  check("有空格子才指向", coach.emptyCellAnchorState(70, 4) === "ready");
+
+  const pack = [
+    { id: 1, dayOfWeek: 1, startPeriod: 1, endPeriod: 2, startWeek: 1, endWeek: 16 },
+    { id: 2, dayOfWeek: 2, startPeriod: 3, endPeriod: 4, startWeek: 1, endWeek: 16 }
+  ];
+  const print = coach.timetableFingerprint(3, pack);
+  check("同一张课表指纹相同", print === coach.timetableFingerprint(3, [...pack].reverse()));
+  check("改课或换表指纹就变", print !== coach.timetableFingerprint(3, pack.slice(0, 1)) && print !== coach.timetableFingerprint(4, pack));
+
+  coach.rememberEmptyCellUnanchored(6, print);
+  check("同一周同一份课表不再自动找空格子", coach.isEmptyCellDeferred(6, print) === true);
+  check("翻到另一周可以再找", coach.isEmptyCellDeferred(7, print) === false);
+  check("重新导入后可以再找", coach.isEmptyCellDeferred(6, coach.timetableFingerprint(3, pack.slice(0, 1))) === false);
+  check("关导入或回主页不算课表变了", coach.isEmptyCellDeferred(6, coach.timetableFingerprint(3, pack)) === true);
+
+  const deferred = coach.autoCoachQueue({
+    seenIds: null,
+    hasCoursesOnCurrentWeek: true,
+    deferEmptyCell: true
+  });
+  check("推迟空格子后继续后面的步骤", deferred.map((step) => step.id).join(",") === "menu-reopen-guide-v1,import-from-menu-v1");
+  check("推迟空格子不加「新功能」", deferred.every((step) => step.prefixNew === false));
+  check(
+    "关导入或回主页不会只剩空格子那一步空转",
+    coach.autoCoachQueue({
+      seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1"],
+      hasCoursesOnCurrentWeek: true,
+      deferEmptyCell: coach.isEmptyCellDeferred(6, print)
+    }).length === 0
+  );
+  check(
+    "不推迟时双击加课仍在最前",
+    coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: true, deferEmptyCell: false })[0]?.id === "double-tap-empty-add-v1"
+  );
+  coach.resetEmptyCellDeferral();
+
   const store = memory();
   check("没记录就是第一次", coach.readSeenStepIds(store) === null);
   coach.addSeenStepIds(store, ["menu-reopen-guide-v1"]);

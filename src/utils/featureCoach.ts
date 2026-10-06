@@ -84,16 +84,65 @@ export const addSeenStepIds = (storage: StorageLike, ids: string[]): void => {
 const present = (steps: CoachStep[], prefixNew: boolean): CoachPresentation[] =>
   steps.map(step => ({ ...step, prefixNew }));
 
-/// Steps to show on launch. Deferred steps (no courses yet) are omitted, not marked seen by the caller.
+/// Fingerprint of the saved timetable, not of the week on screen. Closing import or coming back
+/// to home does not change it; a reimport or an edit does.
+export const timetableFingerprint = (
+  tableId: number,
+  schedules: ReadonlyArray<{
+    id: number;
+    dayOfWeek: number;
+    startPeriod: number;
+    endPeriod: number;
+    startWeek: number;
+    endWeek: number;
+  }>
+): string =>
+  `${tableId}:${[...schedules]
+    .map(item => `${item.id}:${item.dayOfWeek}:${item.startPeriod}-${item.endPeriod}:${item.startWeek}-${item.endWeek}`)
+    .sort()
+    .join("|")}`;
+
+/// This session already failed to find an empty cell on this week + this timetable.
+/// Not written to seen-ids: flipping week or changing the table can show the step later.
+let emptyCellDeferral: { week: number; fingerprint: string } | null = null;
+
+export const rememberEmptyCellUnanchored = (week: number, fingerprint: string): void => {
+  emptyCellDeferral = { week, fingerprint };
+};
+
+export const isEmptyCellDeferred = (week: number, fingerprint: string): boolean =>
+  emptyCellDeferral !== null &&
+  emptyCellDeferral.week === week &&
+  emptyCellDeferral.fingerprint === fingerprint;
+
+export const resetEmptyCellDeferral = (): void => {
+  emptyCellDeferral = null;
+};
+
+/// Grid not painted yet → wait. Cells exist but none empty → skip this step. Otherwise point at one.
+export const emptyCellAnchorState = (
+  gridCellCount: number,
+  emptyCellCount: number
+): "waiting" | "missing" | "ready" => {
+  if (gridCellCount <= 0) return "waiting";
+  if (emptyCellCount <= 0) return "missing";
+  return "ready";
+};
+
+/// Steps to show on launch. Deferred steps (no courses yet, or no empty cell on this week/data)
+/// are omitted, not marked seen by the caller.
 export const autoCoachQueue = (options: {
   seenIds: string[] | null;
   hasCoursesOnCurrentWeek: boolean;
+  /// Same session, same week, same table: do not put the empty-cell step back in.
+  deferEmptyCell?: boolean;
 }): CoachPresentation[] => {
   const fresh = options.seenIds === null;
   const seen = new Set(options.seenIds ?? []);
   const steps = COACH_STEPS.filter(step => {
     if (seen.has(step.id)) return false;
     if (step.requiresCoursesOnCurrentWeek && !options.hasCoursesOnCurrentWeek) return false;
+    if (options.deferEmptyCell && step.target === "empty-cell") return false;
     return true;
   });
   return present(steps, !fresh);

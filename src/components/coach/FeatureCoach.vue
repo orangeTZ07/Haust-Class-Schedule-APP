@@ -4,6 +4,7 @@ import { X } from "@lucide/vue";
 import {
   chooseAnchorIndex,
   COACH_CUE_LABEL,
+  emptyCellAnchorState,
   placeBubble,
   type CoachPresentation,
   type Insets,
@@ -34,7 +35,6 @@ const ringVisible = ref(false);
 const placed = ref(false);
 
 let frame = 0;
-let missingSince = 0;
 let reportedMissing = false;
 
 const readInsets = (): Insets => {
@@ -106,20 +106,26 @@ const measure = () => {
     return;
   }
 
-  const anchor = anchorFor(step);
-  if (!anchor) {
-    if (missingSince === 0) missingSince = performance.now();
-    // The drawer takes a moment. Only give up once it has had time to arrive, and only when
-    // the step truly has no target (an empty cell that does not exist).
-    const waited = performance.now() - missingSince;
-    if (!reportedMissing && step.target === "empty-cell" && waited > 700) {
-      reportedMissing = true;
-      emit("unanchored");
+  if (step.target === "empty-cell") {
+    const gridCells = document.querySelectorAll(".week-grid .cell[data-day][data-period]").length;
+    const emptyCells = document.querySelectorAll("[data-coach-empty='true']").length;
+    const state = emptyCellAnchorState(gridCells, emptyCells);
+    if (state === "waiting") return;
+    if (state === "missing") {
+      // Week is painted and full. Report once; the parent skips this step for this week/data.
+      if (!reportedMissing) {
+        reportedMissing = true;
+        emit("unanchored");
+      }
+      return;
     }
-    return;
   }
 
-  missingSince = 0;
+  const anchor = anchorFor(step);
+  if (!anchor) {
+    // Menu / import: the drawer may still be sliding. Keep measuring; do not loop a skip.
+    return;
+  }
   const bubble = bubbleRef.value;
   const preferred = {
     width: Math.min(280, window.innerWidth - 32),
@@ -156,7 +162,6 @@ const onKey = (event: KeyboardEvent) => {
 };
 
 watch(() => [props.step?.id, props.phase], () => {
-  missingSince = 0;
   reportedMissing = false;
   placed.value = false;
 });

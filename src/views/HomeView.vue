@@ -8,8 +8,11 @@ import { confirmAction } from "@/utils/confirm";
 import {
   addSeenStepIds,
   autoCoachQueue,
+  isEmptyCellDeferred,
   manualCoachQueue,
   readSeenStepIds,
+  rememberEmptyCellUnanchored,
+  timetableFingerprint,
   type CoachPresentation
 } from "@/utils/featureCoach";
 import {
@@ -233,6 +236,7 @@ let promptingReimport = false;
 
 const coachStep = computed(() => coachQueue.value[coachIndex.value] ?? null);
 const coachIsLast = computed(() => coachQueue.value.length > 0 && coachIndex.value >= coachQueue.value.length - 1);
+const coachFingerprint = computed(() => timetableFingerprint(activeCourseTableId.value, schedules.value));
 
 const syncCoachChrome = () => {
   const step = coachStep.value;
@@ -259,7 +263,8 @@ const startAutoCoach = () => {
   if (coachMode.value || importVisible.value) return;
   startQueue("auto", autoCoachQueue({
     seenIds: readSeenStepIds(localStorage),
-    hasCoursesOnCurrentWeek: effectiveSchedules.value.length > 0
+    hasCoursesOnCurrentWeek: effectiveSchedules.value.length > 0,
+    deferEmptyCell: isEmptyCellDeferred(currentWeek.value, coachFingerprint.value)
   }));
 };
 
@@ -295,6 +300,9 @@ const followCoachCue = () => {
 };
 
 const onCoachUnanchored = () => {
+  if (coachStep.value?.target === "empty-cell") {
+    rememberEmptyCellUnanchored(currentWeek.value, coachFingerprint.value);
+  }
   const next = coachQueue.value.filter((_, index) => index !== coachIndex.value);
   coachQueue.value = next;
   if (next.length === 0) {
