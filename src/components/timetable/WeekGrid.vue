@@ -1152,6 +1152,10 @@ onUnmounted(() => {
   height: 100%;
   width: 100%;
   min-width: max(100%, var(--week-grid-min-width));
+  /* One wash for the whole today column. Header cell and body cells read the same token,
+     so the band cannot grow a border, a radius, or a stronger header tint of its own.
+     8% of --theme-accent is light enough that 白金 / 黑金 / 网易云 / B站 keep their header lettering. */
+  --today-column-wash: color-mix(in srgb, var(--theme-accent) 8%, transparent);
   background: transparent;
   border-radius: 0;
   overflow: hidden;
@@ -1221,10 +1225,12 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* Today, and only on the week that is actually current (see todayDayNumber). The header cell takes
-   the same full-cell wash as the body cells in this column: one accent tint, no rounded pill. */
-.day-header.is-today {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
+/* Today, and only while the week on screen is the real one (todayDayNumber is 0 otherwise).
+   The header cell is filled edge to edge with the same wash as the cells below. No pill, no radius. */
+.day-header.is-today,
+.cell.is-today {
+  border-radius: 0;
+  box-shadow: inset 0 0 0 999px var(--today-column-wash);
 }
 
 .day-header:last-child {
@@ -1290,12 +1296,6 @@ onUnmounted(() => {
   border-right: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 20%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 20%, transparent);
   position: relative;
-}
-
-/* Same wash as the header cell above. An inset shadow rather than a background, so it lays over the
-   morning / afternoon / evening tint instead of replacing it. */
-.cell.is-today {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
 
 .cell:last-child {
