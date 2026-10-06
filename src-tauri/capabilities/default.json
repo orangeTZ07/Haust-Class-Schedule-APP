@@ -17,6 +17,11 @@
     "dialog:allow-open",
     "reminder:default",
     {
+      "identifier": "opener:allow-open-url",
+      "description": "「检查更新」把 Release 页面或 APK 下载链接交给系统浏览器。只放行 github.com，不用 opener:default（它放行所有 http/https 网址）。",
+      "allow": [{ "url": "https://github.com/*" }]
+    },
+    {
       "identifier": "http:default",
       "description": "只允许访问学校域名：CAS 认证与教务系统。白名单而不是通配，因为这个权限一旦放开，网页里任何脚本都能借它绕过同源策略发请求。",
       "allow": [
