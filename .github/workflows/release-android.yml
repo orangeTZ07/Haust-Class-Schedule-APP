@@ -1,4 +1,4 @@
-name: Release Android
+name: Release
 
 on:
   push:
@@ -109,5 +109,32 @@ jobs:
           body_path: ${{ steps.changelog.outputs.path }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The unsigned IPA goes up after the APK release, in its own job. needs: release means the
+  # GitHub Release (APK, icon and changelog) is already published when this starts, so a macOS
+  # runner shortage or an iOS build failure cannot hold up or break the Android release. The
+  # release step then finds that release by tag and only uploads the file: with no body or
+  # body_path given, softprops/action-gh-release keeps the existing release notes and flags.
+  ios:
+    name: Attach unsigned IPA
+    runs-on: macos-15
+    needs: release
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build iOS IPA
+        id: build
+        uses: ./.github/actions/build-ios-ipa
+
+      - name: Attach IPA to the release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.build.outputs.ipa-path }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -71,99 +71,70 @@ runs:
       shell: bash
       run: npx tauri ios init --ci
 
-    - name: Disable code signing
-      shell: bash
-      # An unsigned build is the point of this job: there is no Apple Developer certificate in
-      # CI, and exporting an IPA requires one. Tauri generates the project with automatic
-      # signing baked into both configurations, so Xcode resolves development signing and then
-      # fails with "Your team has no devices from which to generate a provisioning profile".
-      #
-      # An earlier revision also passed these same settings on the command line, on the theory
-      # that both layers would be needed; in practice tauri ios build forwards no arbitrary
-      # xcodebuild build settings, so patching the generated project file is the only lever.
-      # Both configurations matter -- Tauri bakes the identity into debug *and* release, so
-      # fixing one still leaves the other trying to sign.
-      #
-      # CODE_SIGN_ENTITLEMENTS and PROVISIONING_PROFILE_SPECIFIER are deleted rather than
-      # blanked: an empty entitlement path still resolves, and a stale specifier makes Xcode
-      # hunt for a profile that does not exist.
-      run: |
-        set -euo pipefail
-        pbx="$(find src-tauri/gen/apple -name project.pbxproj | head -n 1)"
-        if [ -z "$pbx" ]; then
-          echo "::error::No project.pbxproj under src-tauri/gen/apple; tauri ios init produced no project."
-          exit 1
-        fi
-        echo "Patching $pbx"
-        sed -i '' \
-          -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
-          -e 's/CODE_SIGN_IDENTITY = "[^"]*";/CODE_SIGN_IDENTITY = "";/g' \
-          -e 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' \
-          -e 's/CODE_SIGN_ENTITLEMENTS = [^;]*;//g' \
-          -e 's/PROVISIONING_PROFILE_SPECIFIER = [^;]*;//g' \
-          "$pbx"
-        echo "Remaining signing settings:"
-        grep -n 'CODE_SIGN\|DEVELOPMENT_TEAM' "$pbx" || true
-
-    - name: Build .app
+    - name: Build unsigned IPA
       shell: bash
       env:
         CONFIGURATION: ${{ inputs.configuration }}
         CI: "true"
-      # tauri ios build does the whole orchestration -- frontend, Rust, and embedding the
-      # assets into the bundle. Driving xcodebuild directly would skip the asset embedding
-      # the CLI performs, so the CLI is used even though its final export step cannot
-      # succeed: exporting an IPA needs a signing identity this job does not have.
+      # --no-sign is what makes an unsigned build possible: the CLI skips its signed "build"
+      # pass, runs xcodebuild archive with CODE_SIGNING_ALLOWED=NO and friends on the command
+      # line (which beats whatever the generated project says), and zips the .app from the
+      # archive into an IPA itself. The flag exists since Tauri CLI 2.11.0. Without it the CLI
+      # always runs a signed build first, and that needs an Apple Developer team that CI does
+      # not have. An earlier revision tried to get around that by rewriting signing settings in
+      # the generated project file with sed; it never got far enough to prove it worked, because
+      # the job always died at the package version check first.
       #
-      # That exit is tolerated, but only when a .app was actually produced. A failure that
-      # leaves no bundle is a real failure and must stay red -- the next step enforces this.
+      # A failing exit must stay red. That same revision tolerated a non-zero exit on the theory
+      # that Xcode "cannot sign" and the .app would still be left behind. The exit it was hiding
+      # was the version check refusing to build, and tolerating it only moved the failure to the
+      # next step with a misleading message.
       run: |
-        set -uo pipefail
-        args=(--ci)
+        set -euo pipefail
+        args=(--ci --no-sign)
         if [ "$CONFIGURATION" = "Debug" ]; then
           args+=(--debug)
         fi
-        set +e
         npx tauri ios build "${args[@]}"
-        status=$?
-        set -e
-        if [ "$status" -ne 0 ]; then
-          echo "::warning::tauri ios build exited $status. This is expected when Xcode cannot sign; the .app from the archive step is used instead."
-        fi
 
-    - name: Locate .app
+    - name: Locate build output
       id: locate
       shell: bash
-      # Search every place the bundle could plausibly land: the CLI writes under gen/apple,
-      # and Xcode's DerivedData is the fallback. The directory is named from the Cargo
-      # package, so it is discovered here rather than hard-coded.
+      # The directory names come from the Cargo package (scheme) and productName (.app and IPA
+      # file), so they are discovered here rather than hard-coded. sed -n 1p rather than head:
+      # with pipefail, head quitting early can kill find with SIGPIPE and fail the step.
       run: |
         set -euo pipefail
-        app="$(find src-tauri/gen/apple "$HOME/Library/Developer/Xcode/DerivedData" \
-             -type d -name '*.app' 2>/dev/null | grep -v '\.app/' | head -n 1)"
-        if [ -z "$app" ]; then
-          echo "::error::No .app bundle found. Listing gen/apple:"
-          find src-tauri/gen/apple -maxdepth 4 2>/dev/null | head -n 40 || true
+        build=src-tauri/gen/apple/build
+        app="$(find "$build" -maxdepth 4 -type d -name '*.app' -path '*.xcarchive/Products/Applications/*' | sed -n 1p)"
+        ipa="$(find "$build" -maxdepth 3 -type f -name '*.ipa' | sed -n 1p)"
+        if [ -z "$app" ] || [ -z "$ipa" ]; then
+          echo "::error::tauri ios build finished but left no .app in the archive or no .ipa (app='$app', ipa='$ipa'). Listing $build:"
+          find "$build" -maxdepth 5 2>/dev/null | head -n 60 || true
           exit 1
         fi
         echo "App bundle: $app"
-        echo "app-path=$app" >> "$GITHUB_OUTPUT"
+        echo "CLI IPA: $ipa"
         echo "app-name=$(basename "$app")" >> "$GITHUB_OUTPUT"
+        echo "cli-ipa=$ipa" >> "$GITHUB_OUTPUT"
 
     - name: Package unsigned IPA
       id: package
       shell: bash
-      # An IPA is a zip with the bundle under Payload/. Xcode's export cannot make one without
-      # a signing identity, so assemble it by hand.
+      env:
+        CLI_IPA: ${{ steps.locate.outputs.cli-ipa }}
+      # The CLI already assembled a valid IPA (Payload/<name>.app); this only gives it a
+      # predictable name and checks that the bundle is really inside before anything uploads it.
       run: |
         set -euo pipefail
-        app="${{ steps.locate.outputs.app-path }}"
+        listing="$(unzip -Z1 "$CLI_IPA")"
+        if ! grep -q '^Payload/[^/]*\.app/Info\.plist$' <<< "$listing"; then
+          echo "::error::$CLI_IPA has no Payload/*.app/Info.plist; contents:"
+          sed -n 1,40p <<< "$listing"
+          exit 1
+        fi
         version="$(node -p "require('./package.json').version")"
         out="course-mngr-iOS-${version}-unsigned.ipa"
-        rm -rf Payload "$out"
-        mkdir -p Payload
-        cp -R "$app" Payload/
-        chmod -R 755 Payload
-        zip -qry "$out" Payload
+        cp "$CLI_IPA" "$out"
         ls -lh "$out"
         echo "ipa-path=$out" >> "$GITHUB_OUTPUT"
