@@ -180,6 +180,8 @@ const handleDelete = async (id: number, name: string) => {
   gap: 12px;
   padding: 14px 16px;
   padding-top: calc(14px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   background: color-mix(in srgb, var(--theme-bg-color) 88%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
   backdrop-filter: blur(14px);
@@ -213,6 +215,9 @@ const handleDelete = async (id: number, name: string) => {
 
 .content {
   padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   display: flex;
   flex-direction: column;
   gap: 16px;
