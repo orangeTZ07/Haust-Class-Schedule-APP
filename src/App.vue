@@ -1,7 +1,18 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from "vue";
 import { useTheme } from "./composables/useTheme";
+import { useUpdateCheck } from "./composables/useUpdateCheck";
+import UpdateDialog from "./components/layout/UpdateDialog.vue";
 
 const { themeConfig, cssVariables } = useTheme();
+const { startAutoCheck } = useUpdateCheck();
+
+// 版本检查在后台跑，不挡首屏；失败静默。弹窗挂在这一层，所以任何页面都能弹。
+let stopAutoCheck: (() => void) | undefined;
+onMounted(() => {
+  stopAutoCheck = startAutoCheck();
+});
+onBeforeUnmount(() => stopAutoCheck?.());
 </script>
 
 <template>
@@ -11,6 +22,7 @@ const { themeConfig, cssVariables } = useTheme();
         <component :is="Component" />
       </transition>
     </router-view>
+    <UpdateDialog />
   </div>
 </template>
 

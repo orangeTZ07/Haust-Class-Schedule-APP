@@ -2,6 +2,7 @@
 import { useRouter } from "vue-router";
 import { ArrowLeft } from '@lucide/vue';
 import GridSettings from "./settings/GridSettings.vue";
+import AboutSettings from "./settings/AboutSettings.vue";
 
 const router = useRouter();
 
@@ -19,6 +20,7 @@ const goBack = () => {
 
     <div class="content">
       <GridSettings />
+      <AboutSettings />
     </div>
   </div>
 </template>
