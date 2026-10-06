@@ -3,6 +3,11 @@ name: Build iOS IPA (unsigned)
 on:
   push:
     branches: [main]
+  # Runs on pull requests too, mirroring ci.yml, so a change that breaks the iOS build is caught
+  # before it lands on main. The job used to run only after the merge, which meant a broken iOS
+  # build was first seen on main.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       configuration:

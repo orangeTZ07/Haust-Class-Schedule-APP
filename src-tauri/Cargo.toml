@@ -22,7 +22,14 @@ tauri-plugin-opener = "~2.5"
 # 为什么非开不可：学校那台服务器对浏览器放行（200），对 Rust 客户端返回 **403 且正文为空** ——
 # 空正文的 403 是网关/防火墙按指纹拒绝的典型特征，而不是应用自己发的。而按 fetch 规范，
 # User-Agent 属于禁止的请求头，插件会**静默丢弃**，所以在代码里写是没用的，必须打开这个特性。
-tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+#
+# 版本钉在 ~2.5，要和 package.json 里 @tauri-apps/plugin-http 的 ~2.5.9 保持同一个 major.minor：
+# tauri ios build 会拿 Cargo.lock 和 package-lock.json 里的版本互相比，不同就直接退出。
+# 之前这里写 "2"，Cargo.lock 又是旧的（锁着 tauri 2.11.0、tauri-plugin-fs 2.5.1），
+# 2.6 以上的 http 插件要求更新的 fs，2.8.0 还要 tauri ^2.12，cargo 只好退回 2.5.9，
+# 而 npm 那边装的是 2.8.0。以后升级这个插件，Cargo.toml 和 package.json 两边一起改，
+# 并且先在有 cargo 的机器上更新 Cargo.lock。
+tauri-plugin-http = { version = "~2.5", features = ["unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

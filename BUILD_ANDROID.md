@@ -35,6 +35,15 @@ JAVA_HOME=/opt/android-studio/jbr PATH=/opt/android-studio/jbr/bin:$PATH npx tau
 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
 (注：根据配置不同，文件名和路径可能略有差异)。
 
+## 应用图标
+`src-tauri/gen/` 是 `tauri android init` / `tauri ios init` 现生成的，里面的图标一开始是 Tauri 默认图标，改了也会被下次 init 覆盖。所以 CI 在 init 之后会跑一次 `tauri icon src-tauri/icons/app-icon.json`，把我们的图标写进 APK 和 IPA。换图标只改 `src-tauri/icons/` 里这三个文件：
+
+- `app-icon.png`：1024×1024 方图，画面铺满、不透明（iOS 自己切圆角，带透明角会露出底色）。
+- `app-icon-android-fg.png`：安卓自适应图标的前景，同样 1024×1024，主体要缩在中间约 60% 的范围里，否则会被圆形桌面裁掉。
+- `app-icon.json`：指定上面两张图和底色 `bg_color`。
+
+本机手动构建时，在 init 之后、build 之前自己跑一次 `npx tauri icon src-tauri/icons/app-icon.json --output src-tauri/icon-out`，然后删掉 `src-tauri/icon-out`（`--output` 必须直接放在 `src-tauri` 下面，CLI 靠它的上一级找 `gen/`）。`icon.png`、`icon.ico` 这些桌面图标不走这条流程，要换的话另外用 `tauri icon` 生成。
+
 ## 常见问题
 - **TypeScript 错误**: 构建前会自动运行 `npm run build` (vite build)，如果代码中有 TS 错误会导致构建失败。
 - **证书签名**: 默认生成的 APK 是未签名的 (`unsigned`)，如需发布到应用市场，需进行签名配置。
