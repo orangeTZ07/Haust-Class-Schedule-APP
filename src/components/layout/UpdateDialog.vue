@@ -82,10 +82,12 @@ const onUpdateShow = (value: boolean) => {
   color: var(--theme-body-text);
 }
 
+/* body-text, not header-text: header-text is only guaranteed to read on the header band. On the Vant
+   preset it is white, and this popup is white too, so the title disappeared. */
 .update-title {
   font-size: 18px;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   text-align: center;
 }
 
@@ -119,7 +121,7 @@ const onUpdateShow = (value: boolean) => {
 .notes-group-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   opacity: 0.8;
 }
 
@@ -169,8 +171,8 @@ const onUpdateShow = (value: boolean) => {
 .update-btn.primary {
   width: 100%;
   font-weight: 700;
-  color: #fff;
-  background: var(--van-primary-color, #1989fa);
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
 }
 
 .secondary-row {
@@ -184,10 +186,5 @@ const onUpdateShow = (value: boolean) => {
   font-size: 14px;
   color: var(--theme-body-text);
   background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
-}
-
-.haptics:active {
-  transform: scale(0.97);
-  opacity: 0.8;
 }
 </style>

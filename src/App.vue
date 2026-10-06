@@ -32,18 +32,27 @@ onBeforeUnmount(() => stopAutoCheck?.());
   background: var(--theme-bg-color); /* 确保背景色填充 */
 }
 
-.page-fade-enter-active,
+/* Pages are big surfaces: smooth, no overshoot. In with a short rise. With mode="out-in" the exit is
+   dead time before the next page can start, so it stays at the shortest tier. */
+.page-fade-enter-active {
+  transition:
+    opacity var(--dur-base) var(--ease-smooth),
+    transform var(--dur-base) var(--ease-smooth);
+}
+
 .page-fade-leave-active {
-  transition: all 0.125s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity var(--dur-fast) var(--ease-exit),
+    transform var(--dur-fast) var(--ease-exit);
 }
 
 .page-fade-enter-from {
   opacity: 0;
-  transform: scale(0.99);
+  transform: translateY(10px);
 }
 
 .page-fade-leave-to {
   opacity: 0;
-  transform: scale(1.01);
+  transform: translateY(-4px);
 }
 </style>

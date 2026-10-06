@@ -366,7 +366,7 @@ const onEdgeTouchEnd = () => {
     <!-- 内容层 -->
     <div
       class="content-layer"
-      :class="{ 'is-dragging': sidebarDragging }"
+      :class="{ 'is-dragging': sidebarDragging, 'is-open': sidebarVisible }"
       :style="{ transform: `translateX(${sidebarOffset}px)` }"
     >
       <TopBar
@@ -433,7 +433,13 @@ const onEdgeTouchEnd = () => {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   /* Promoted so the per-frame transform during a drag stays on the compositor. */
   will-change: transform;
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* The drawer is a big surface: smooth, no overshoot, and the way back (the base rule) is quicker
+     than the way out. SideBar uses the same pair so drawer, overlay and page settle together. */
+  transition: transform var(--dur-base) var(--ease-smooth);
+}
+
+.content-layer.is-open {
+  transition-duration: var(--dur-slow);
 }
 
 /* While the finger is down the offset is written every move; a transition on top of that makes

@@ -143,7 +143,7 @@ const copyData = async () => {
   font-size: 17px; 
   font-weight: 600; 
   margin-bottom: 20px; 
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   display: flex;
   align-items: center;
 }
@@ -185,11 +185,17 @@ const copyData = async () => {
   font-size: 11px;
   background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
   color: var(--theme-body-text);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    background-color var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out;
 }
 
+/* The accent, not header-bg / header-text: on the minimal themes those two are the popup's own
+   background, so the selected mode did not stand out at all. */
 .mode-option.active {
-  background: var(--theme-header-bg);
-  color: var(--theme-header-text);
+  background: var(--theme-accent);
+  color: var(--theme-on-accent);
 }
 
 .inset-box {
@@ -219,11 +225,10 @@ const copyData = async () => {
 
 .minimal-primary-btn {
   width: 100%; height: 44px; border-radius: 10px; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center;
-  background: var(--theme-header-bg); color: var(--theme-header-text);
-  border: 1px solid color-mix(in srgb, var(--theme-header-text) 10%, transparent);
+  background: var(--theme-accent); color: var(--theme-on-accent);
+  border: none;
 }
 
-.haptics:active { transform: scale(0.98); opacity: 0.8; }
 .data-preview::-webkit-scrollbar { width: 4px; }
 .data-preview::-webkit-scrollbar-thumb { 
   background: color-mix(in srgb, var(--theme-body-text) 20%, transparent);

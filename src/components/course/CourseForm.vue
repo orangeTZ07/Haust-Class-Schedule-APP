@@ -167,7 +167,7 @@ const submit = () => {
   margin-bottom: 6px;
   display: flex;
   align-items: center;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .slot-hint {
@@ -222,13 +222,19 @@ const submit = () => {
   color: var(--theme-body-text);
   font-size: 13px;
   opacity: 0.65;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out,
+    border-color var(--dur-fast) ease-out;
 }
 
 .span-option.active {
   opacity: 1;
   font-weight: 600;
-  border-color: var(--theme-card-border-color);
-  background: color-mix(in srgb, var(--theme-card-border-color) 14%, transparent);
+  border-color: var(--theme-accent);
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
 }
 
 .error-text {
@@ -247,7 +253,7 @@ const submit = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--theme-header-text);
-  background: color-mix(in srgb, var(--theme-card-border-color) 20%, transparent);
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
 }
 </style>

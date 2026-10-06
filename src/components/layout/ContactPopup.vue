@@ -112,7 +112,7 @@ const copyToClipboard = async (text: string, label: string) => {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 24px;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   text-align: center;
 }
 
@@ -154,7 +154,7 @@ const copyToClipboard = async (text: string, label: string) => {
 .item-label {
   font-size: 14px;
   font-weight: 600;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   margin-bottom: 2px;
 }
 
@@ -182,10 +182,5 @@ const copyToClipboard = async (text: string, label: string) => {
   font-size: 11px;
   opacity: 0.4;
   letter-spacing: 0.5px;
-}
-
-.haptics:active {
-  transform: scale(0.96);
-  opacity: 0.8;
 }
 </style>
