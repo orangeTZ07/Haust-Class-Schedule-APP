@@ -1198,8 +1198,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* The name and the date sit in one rounded block so that today can be marked by filling the whole
-   block, rather than by recolouring two lines of text. */
+/* Name and date stay stacked. Today is marked on the header cell itself, not on this block. */
 .day-pill {
   width: 100%;
   display: flex;
@@ -1207,7 +1206,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 1px;
   padding: 4px 0 5px;
-  border-radius: 10px;
 }
 
 .day-name {
@@ -1223,39 +1221,10 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* Today, and only on the week that is actually current (see todayDayNumber): a rounded pill in the
-   header, and a separate faint wash on the body cells. The wash must not paint the header. A tint
-   that continues from the column up into the header cell clashes with the pill.
-   The pill sits on the header band, so it uses that band's own pair, inverted (header-text fill,
-   header-bg lettering): that pair is the one guaranteed to contrast *there*. The page accent is not:
-   on the Vant preset the band is itself the accent blue, and a blue pill on a blue band was
-   invisible. On every other preset header-text is the accent anyway. The cells below sit on the
-   page, so they use --theme-accent (see useTheme). */
-.day-header.is-today .day-pill {
-  background: var(--theme-header-text);
-  color: var(--theme-header-bg);
-  font-weight: 800;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--theme-header-text) 30%, transparent);
-  animation:
-    today-pill-scale var(--dur-slow) var(--ease-spring) backwards,
-    today-pill-fade var(--dur-fast) ease-out backwards;
-}
-
-.day-header.is-today .day-date {
-  opacity: 0.88;
-  font-weight: 700;
-}
-
-/* Pops in when the week on screen becomes the real one (jumping back with 回到本周, or the first
-   paint). Scale and fade are separate animations so the spring cannot flicker the opacity. */
-@keyframes today-pill-scale {
-  from { transform: scale(0.82); }
-  to { transform: scale(1); }
-}
-
-@keyframes today-pill-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* Today, and only on the week that is actually current (see todayDayNumber). The header cell takes
+   the same full-cell wash as the body cells in this column: one accent tint, no rounded pill. */
+.day-header.is-today {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
 
 .day-header:last-child {
@@ -1323,8 +1292,8 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Body only. An inset shadow rather than a background, so it lays over the morning / afternoon /
-   evening tint instead of replacing it, and it never continues up into the header pill. */
+/* Same wash as the header cell above. An inset shadow rather than a background, so it lays over the
+   morning / afternoon / evening tint instead of replacing it. */
 .cell.is-today {
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
