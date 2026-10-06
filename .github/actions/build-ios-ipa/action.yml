@@ -170,14 +170,22 @@ runs:
         CLI_IPA: ${{ steps.locate.outputs.cli-ipa }}
       # The CLI already assembled a valid IPA (Payload/<name>.app); this only gives it a
       # predictable name and checks that the bundle is really inside before anything uploads it.
+      # Checked via python3 zipfile: unzip -Z1 / BSD grep on macOS mangles multibyte UTF-8 names
+      # (e.g. "Haust课程表.app") as binary or replacement characters.
       run: |
         set -euo pipefail
-        listing="$(unzip -Z1 "$CLI_IPA")"
-        if ! grep -q '^Payload/[^/]*\.app/Info\.plist$' <<< "$listing"; then
-          echo "::error::$CLI_IPA has no Payload/*.app/Info.plist; contents:"
-          sed -n 1,40p <<< "$listing"
-          exit 1
-        fi
+        python3 -c '
+import sys, zipfile
+ipa = sys.argv[1]
+with zipfile.ZipFile(ipa, "r") as z:
+    names = z.namelist()
+    has_plist = any(n.startswith("Payload/") and n.endswith(".app/Info.plist") for n in names)
+    if not has_plist:
+        print(f"::error::{ipa} has no Payload/*.app/Info.plist; contents:", file=sys.stderr)
+        for name in names[:40]:
+            print(f"  {name}", file=sys.stderr)
+        sys.exit(1)
+' "$CLI_IPA"
         version="$(node -p "require('./package.json').version")"
         out="course-mngr-iOS-${version}-unsigned.ipa"
         cp "$CLI_IPA" "$out"
