@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useBackClose } from "@/composables/useBackClose";
 import { useTheme } from "@/composables/useTheme";
 import { contrastColor, hexToHsv, hsvToHex, parseHex, pushRecent, type Hsv } from "@/utils/color";
 import {
@@ -142,6 +143,9 @@ const hsvFromHex = (hex: string): Hsv | null => {
   return next;
 };
 
+/// The back key counts as 取消: it closes the sheet and leaves /style where it is.
+const backClose = useBackClose(() => cancel());
+
 const begin = () => {
   original.value = parseHex(props.color) ?? "#000000";
   hsv.value = hexToHsv(original.value) ?? { h: 0, s: 0, v: 0 };
@@ -150,6 +154,7 @@ const begin = () => {
   dragging.value = null;
   dragId = -1;
   active = true;
+  backClose.push();
 };
 
 const finish = () => {
@@ -165,6 +170,7 @@ const confirm = () => {
   if (hex !== original.value) saveRecents(pushRecent(recents.value, hex));
   emit("confirm", hex);
   emit("update:show", false);
+  backClose.release();
 };
 
 const cancel = () => {
@@ -172,6 +178,7 @@ const cancel = () => {
   finish();
   emit("cancel");
   emit("update:show", false);
+  backClose.release();
 };
 
 watch(
@@ -418,7 +425,7 @@ const pick = (hex: string) => {
 }
 
 .sheet {
-  padding: 4px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding: 4px 20px calc(14px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .sheet-head {
@@ -558,7 +565,7 @@ const pick = (hex: string) => {
 }
 
 .hex-input:focus {
-  border-color: var(--color-primary, #1989fa);
+  border-color: var(--theme-accent, #1989fa);
 }
 
 .hex-input.is-invalid {
@@ -615,7 +622,7 @@ const pick = (hex: string) => {
   box-shadow:
     inset 0 0 0 1px var(--cs-line),
     0 0 0 2px var(--cs-bg),
-    0 0 0 4px var(--color-primary, #1989fa);
+    0 0 0 4px var(--theme-accent, #1989fa);
 }
 
 /* ---- footer ---- */
@@ -650,7 +657,7 @@ const pick = (hex: string) => {
 
 .btn.primary {
   flex: 1.4;
-  background: var(--color-primary, #1989fa);
+  background: var(--theme-accent, #1989fa);
   color: #fff;
   font-weight: 600;
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useBackClose } from "@/composables/useBackClose";
 import {
   MAX_ZOOM,
   clamp,
@@ -337,11 +338,19 @@ const reset = () => {
   errorText.value = "";
 };
 
+/// The back key closes the page like 取消 instead of leaving /style behind it.
+const backClose = useBackClose(() => {
+  // Not while the export is running: it finishes first (and then closes the page itself).
+  if (busy.value) return false;
+  cancel();
+});
+
 const start = async (file: File) => {
   reset();
   const mine = session;
   open.value = true;
   lockScroll();
+  backClose.push();
 
   try {
     await nextTick();
@@ -369,6 +378,7 @@ const start = async (file: File) => {
 
 const close = () => {
   open.value = false;
+  backClose.release();
 };
 
 // Runs once the fade-out has finished (or on unmount), so the picture is not torn down while
@@ -692,8 +702,8 @@ onBeforeUnmount(() => {
 .cropper-header {
   top: 0;
   text-align: center;
-  /* env(safe-area-inset-top) is 0 inside the Android WebView, same workaround as TopBar. */
-  padding: calc(10px + max(env(safe-area-inset-top, 0px), 26px)) 24px 10px;
+  /* --safe-top is the real status bar height where the app provides it. */
+  padding: calc(10px + var(--safe-top, env(safe-area-inset-top, 0px))) 24px 10px;
 }
 
 .cropper-header .title {
@@ -720,7 +730,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   gap: 12px;
-  padding: 12px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 20px calc(16px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .btn {
@@ -752,18 +762,25 @@ onBeforeUnmount(() => {
 }
 
 .btn.ghost {
-  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .btn.ghost:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
 }
 
+/* White on the fixed dark page: calm, and independent of any theme accent. */
 .btn.primary {
   flex: 1.4;
   max-width: 280px;
-  background: var(--color-primary, #1989fa);
+  background: #fff;
+  color: #111;
   font-weight: 600;
+}
+
+.btn.primary:active:not(:disabled) {
+  background: #e6e6e6;
 }
 
 /* Reduced motion drops the zoom-in on entry. The rebound stays, only shorter: it is the
