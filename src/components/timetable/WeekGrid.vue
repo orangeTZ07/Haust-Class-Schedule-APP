@@ -5,7 +5,7 @@ import { useCourses } from "@/composables/useCourses";
 import { useToday } from "@/composables/useToday";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule, commitEdit } = useCourses();
 const { todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
@@ -781,6 +781,7 @@ const handlePointerUp = async (event: PointerEvent) => {
         clearConflictOrbitImmediately();
       }
       showToast("已删除课段");
+      commitEdit();
     }
     return;
   }
@@ -801,7 +802,8 @@ const handlePointerUp = async (event: PointerEvent) => {
   syncDragTrashState();
 
   if (changed) {
-    await moveSchedule(currentDrag.scheduleId, currentTarget.day, currentTarget.period);
+    const moved = await moveSchedule(currentDrag.scheduleId, currentTarget.day, currentTarget.period);
+    if (moved) commitEdit();
     if (currentDrag.source === "floating") {
       closeConflictGroup();
     }

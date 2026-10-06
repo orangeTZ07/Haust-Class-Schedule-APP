@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
@@ -28,13 +28,14 @@ import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
+import EditModeBar from "@/components/edit/EditModeBar.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
-        coursesReady } = useCourses();
-
+        coursesReady, editing, sessionCount, canUndoEdit, canRedoEdit,
+        commitEdit, undoEdit, redoEdit, exitEditMode } = useCourses();
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
 /// How far the drawer is out, in px, from 0 (closed) to SIDEBAR_WIDTH (open). While a finger is
@@ -56,6 +57,10 @@ const trashTargetState = ref({
 // own failures: not being able to schedule a reminder must never get in the way of using the
 // timetable.
 const { refreshReminders } = useReminder();
+const onEditKey = (event: KeyboardEvent) => {
+  if (event.key !== "Escape" || !editing.value) return;
+  exitEditMode();
+};
 
 const toggleSidebar = () => {
   setSidebar(!sidebarVisible.value);
@@ -102,6 +107,7 @@ const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
         };
 
   await addSchedule(course.id, slot.day, slot.period, endPeriod, scheduleOptions);
+  commitEdit();
   addVisible.value = false;
   addSlot.value = null;
   const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
@@ -335,12 +341,17 @@ const considerReimportPrompt = async (): Promise<boolean> => {
 };
 
 onMounted(async () => {
+  document.addEventListener("keydown", onEditKey);
   refreshReminders();
   await coursesReady;
   const openImport = await considerReimportPrompt();
   bootstrapped.value = true;
   if (openImport) importVisible.value = true;
   else startAutoCoach();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onEditKey);
 });
 
 watch(importVisible, (open) => {
@@ -584,6 +595,16 @@ const onEdgeTouchEnd = () => {
           @request-add="onRequestAdd"
         />
       </div>
+
+      <EditModeBar
+        v-if="editing"
+        :can-undo="canUndoEdit"
+        :can-redo="canRedoEdit"
+        :count="sessionCount"
+        @undo="undoEdit"
+        @redo="redoEdit"
+        @exit="exitEditMode"
+      />
     </div>
   </div>
 </template>
