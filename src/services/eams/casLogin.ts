@@ -24,8 +24,12 @@ export interface EamsHttp {
       method?: string;
       body?: string;
       headers?: Record<string, string>;
-      /// 跳转策略。诊断连通性时用 "manual"，好把每一跳单独看清楚 —— 见 probeReachability。
-      redirect?: "follow" | "manual";
+      /// 最多跟随几次跳转。**0 = 完全不跟随**，由调用方自己逐跳走。
+      ///
+      /// 必须用这个名字：插件只认 `maxRedirections`，**没有** `redirect: "manual"` 这种东西 ——
+      /// 我上一版传了 `redirect: "manual"`，被静默忽略，插件照旧自己跟完了跳转，
+      /// 于是我看到的 403 是最后一跳的结果，却标成了"第 1 跳"。
+      maxRedirections?: number;
     }
   ): Promise<EamsResponse>;
 }

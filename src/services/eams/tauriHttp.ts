@@ -46,10 +46,12 @@ export const createTauriHttp = (): EamsHttp => ({
       const response = await tauriFetch(url, {
         method: init?.method ?? "GET",
         body: init?.body,
-        // 调用方指定的头优先，其余补上浏览器头。
-        headers: { ...BROWSER_HEADERS, ...(init?.headers ?? {}) },
-        // 默认跟随跳转；诊断连通性时传 "manual" 以便逐跳观察。
-        redirect: init?.redirect ?? "follow",
+        // 调用方指定的头优先。`Origin: ""` 是**有意为之**：插件源码里写明
+        // "In case empty origin is passed, remove it"（需 unsafe-headers 特性，已开启）——
+        // 因为浏览器直接打开页面时根本不发 Origin，而插件默认会补一个。
+        headers: { ...BROWSER_HEADERS, ...(init?.headers ?? {}) } as Record<string, string>,
+        // 跳转交给调用方决定：不传就跟随（正常流程），传 0 就自己逐跳走（诊断）。
+        ...(init?.maxRedirections === undefined ? {} : { maxRedirections: init.maxRedirections }),
         signal: controller.signal
       });
 

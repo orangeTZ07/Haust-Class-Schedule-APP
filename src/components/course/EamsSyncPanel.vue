@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { showToast } from "vant";
-import { DownloadCloud, FolderOpen, Loader2 } from "@lucide/vue";
+import { DownloadCloud, FolderOpen, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { fetchTimetable, type SyncResult } from "@/services/eams/eamsClient";
+import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
+import { formatMatrix, runDiagnosticMatrix } from "@/services/eams/diagnose";
 import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
 import { parseBackupFile } from "@/utils/backupFile";
@@ -26,6 +27,36 @@ const busy = ref(false);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
 const fileInput = ref<HTMLInputElement | null>(null);
+const diagnosing = ref(false);
+const diagnoseText = ref("");
+
+/// 网络诊断矩阵。
+///
+/// 起因是 issue #8 里 orangeTZ07 的指正，而且他说得对：我上一版传的 `redirect: "manual"`
+/// **不是插件的参数**，插件静默忽略它、自己跟完了跳转 —— 于是我看到的 403 是**最后一跳**的结果，
+/// 却被标成了"第 1 跳"，还据此下了结论。标签错了，结论就跟着错。
+///
+/// 现在每个变体都用 `maxRedirections: 0` 真正关掉自动跳转，由我们逐跳走、每跳留痕。
+/// 三个变体之间只差一个变量，这样"差别出在哪"才有意义。
+const diagnose = async () => {
+  if (diagnosing.value) return;
+  diagnosing.value = true;
+  diagnoseText.value = "正在逐个变体测试，请稍候…";
+  try {
+    const results = await runDiagnosticMatrix(
+      createTauriHttp(),
+      `https://${JWC_HOST}/eams/login.action`,
+      (text) => {
+        diagnoseText.value = text;
+      }
+    );
+    diagnoseText.value = formatMatrix(results);
+  } catch (error) {
+    diagnoseText.value = `诊断本身出错了：${describeError(error)}`;
+  } finally {
+    diagnosing.value = false;
+  }
+};
 
 /// 从文件导入。
 ///
@@ -220,6 +251,14 @@ const close = () => emit("update:show", false);
           <span>{{ busy ? "同步中…" : "开始同步" }}</span>
         </button>
 
+        <button class="diag haptics" :disabled="diagnosing" @click="diagnose">
+          <Loader2 v-if="diagnosing" :size="16" class="spin" />
+          <Stethoscope v-else :size="16" />
+          <span>{{ diagnosing ? "诊断中…" : "网络诊断（连不上时点这个）" }}</span>
+        </button>
+
+        <pre v-if="diagnoseText" class="diag-out">{{ diagnoseText }}</pre>
+
         <div class="note">
           <div>· <strong>方式一</strong>不需要任何网络设置，只要文件在手机上就能导入。</div>
           <div>· <strong>方式二</strong>需要手机能连上教务系统（先打开 aTrust 并连接，或连校园网）。</div>
@@ -363,4 +402,32 @@ const close = () => emit("update:show", false);
   border-radius: 8px;
 }
 .file-btn:disabled { opacity: 0.6; }
+.diag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--text-color-2, #646566);
+  background: transparent;
+  border: 1px solid var(--border-color, #dcdee0);
+  border-radius: 8px;
+}
+.diag:disabled { opacity: 0.6; }
+/* 诊断输出是等宽文本，必须能横向滚动 —— 里面的 URL 很长，换行会把地址截断得没法看 */
+.diag-out {
+  margin-top: 12px;
+  padding: 10px;
+  max-height: 40vh;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  background: #f7f8fa;
+  border-radius: 8px;
+  color: var(--text-color-2, #646566);
+}
 </style>
