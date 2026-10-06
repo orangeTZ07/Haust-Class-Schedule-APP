@@ -38,6 +38,7 @@ const emit = defineEmits<{
 /* Solid theme fill and a border, so the bar stays readable on a custom background or a dark preset.
    It sits in the page flow, not over a blocking overlay. */
 .edit-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -76,7 +77,10 @@ const emit = defineEmits<{
 }
 
 .edit-count {
-  flex: 0 0 auto;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   margin: 0;
   padding: 0;
   border: 0;
@@ -89,6 +93,7 @@ const emit = defineEmits<{
   letter-spacing: 0;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .edit-count.is-on-dark {
