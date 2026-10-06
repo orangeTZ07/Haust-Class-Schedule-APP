@@ -4,6 +4,7 @@ import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import { useReminder } from "@/composables/useReminder";
 import { checkBatteryOptimization, openBatterySettings } from "@/services/reminderService";
+import { describeError } from "@/utils/describeError";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 
 const {
@@ -86,7 +87,10 @@ const onToggleReminder = async () => {
     }
     await applyReminders();
   } catch (e) {
-    reminderMessage.value = `设置提醒失败：${(e as Error).message}`;
+    // 这里以前是 `${(e as Error).message}` —— 而 Tauri 拒绝 Promise 时给的是**错误值本身**，
+    // 对 Err(String) 就是字符串，取 .message 得到 undefined。于是一次真实失败被显示成
+    // 字面的 "undefined"，既没帮到用户，也让排查无从下手。现在用 describeError 取出原文。
+    reminderMessage.value = `设置提醒失败：${describeError(e)}`;
   } finally {
     reminderBusy.value = false;
   }

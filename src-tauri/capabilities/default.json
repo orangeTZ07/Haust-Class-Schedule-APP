@@ -15,6 +15,16 @@
     "notification:allow-create-channel",
     "dialog:default",
     "dialog:allow-open",
-    "reminder:default"
+    "reminder:default",
+    {
+      "identifier": "http:default",
+      "description": "只允许访问学校域名：CAS 认证与教务系统。白名单而不是通配，因为这个权限一旦放开，网页里任何脚本都能借它绕过同源策略发请求。",
+      "allow": [
+        { "url": "https://cas.haust.edu.cn/*" },
+        { "url": "https://jwgl.haust.edu.cn/*" },
+        { "url": "https://jwsxy.haust.edu.cn/*" },
+        { "url": "https://i.haust.edu.cn/*" }
+      ]
+    }
   ]
 }

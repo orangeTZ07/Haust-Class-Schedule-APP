@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets the workflow be started by hand for any branch, instead of only by a push to main or a
+  # pull request. Without it there is no way to get a branch compiled before a PR exists, which
+  # matters when the change touches Rust or Kotlin and cannot be checked on the machine it was
+  # written on.
+  #
+  # Note: this entry only appears in the Actions UI once the file is on the default branch, so it
+  # takes effect after this lands on main.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

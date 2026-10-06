@@ -12,6 +12,12 @@ tauri = { version = "2", features = [] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+# unsafe-headers：允许前端设置 User-Agent 这类"禁止的请求头"。
+#
+# 为什么非开不可：学校那台服务器对浏览器放行（200），对 Rust 客户端返回 **403 且正文为空** ——
+# 空正文的 403 是网关/防火墙按指纹拒绝的典型特征，而不是应用自己发的。而按 fetch 规范，
+# User-Agent 属于禁止的请求头，插件会**静默丢弃**，所以在代码里写是没用的，必须打开这个特性。
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
