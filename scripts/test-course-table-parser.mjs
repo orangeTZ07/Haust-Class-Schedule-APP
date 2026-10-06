@@ -33,7 +33,27 @@ check("奇数 1,3..15 -> 一条 odd", span([1, 3, 5, 7, 9, 11, 13, 15]).join(" "
 check("偶数 2,4,6,8 -> 一条 even", span([2, 4, 6, 8]).join(" ") === "2-8/even", span([2, 4, 6, 8]));
 check("[3,4,5,6,9] -> 拆成 3-6 与 9", span([3, 4, 5, 6, 9]).join(" ") === "3-6/all 9-9/all", span([3, 4, 5, 6, 9]));
 check("空周次 -> 整学期兜底", parser.toWeekSpans([])[0].approximated === true);
-check("位串 0101 -> 第 2、4 周", JSON.stringify(parser.weeksFromBits("0101")) === "[2,4]", parser.weeksFromBits("0101"));
+// 下标即周次，跳过下标 0。0101 → 第 1、3 周。旧断言「第 2、4 周」是 i+1 的错位。
+check("位串 0101 -> 第 1、3 周", JSON.stringify(parser.weeksFromBits("0101")) === "[1,3]", parser.weeksFromBits("0101"));
+check("下标 0 即使是 1 也不算周", JSON.stringify(parser.weeksFromBits("1101")) === "[1,3]", parser.weeksFromBits("1101"));
+check("不会产生第 0 周", !parser.weeksFromBits("1" + "0".repeat(52)).includes(0));
+const weeks1to16 = Array.from({ length: 16 }, (_, i) => i + 1);
+check(
+  "53 位、前 16 周有课 -> 第 1-16 周",
+  JSON.stringify(parser.weeksFromBits("0" + "1".repeat(16) + "0".repeat(36))) === JSON.stringify(weeks1to16)
+);
+const stamped = parser.rowsToBackup([{
+  course_name: "高等数学",
+  day_of_week: 1,
+  start_unit: 1,
+  end_unit: 2,
+  weeks: [1, 2, 3],
+  teacher: "张",
+  room: "A101"
+}]);
+check("教务备份盖上来源", stamped.backup.schedules.every((s) => s.source === "eams"));
+check("教务备份盖上 parserVersion 2", stamped.backup.schedules.every((s) => s.parserVersion === 2), stamped.backup.schedules[0]);
+check("第 1-3 周不再被写成第 2-4 周", stamped.backup.schedules[0].startWeek === 1 && stamped.backup.schedules[0].endWeek === 3);
 
 // ---------- B. 真实响应 ----------
 const realPath = process.argv[2] || "D:/Deepseek/Harness/haust-spider/dump_jwgl.haust.edu.cn_coursetable.html";
@@ -72,21 +92,24 @@ if (!existsSync(realPath)) {
   check("33/34 条能从 var teachers 取到教师", rows.filter((r) => r.teacher).length === 33, rows.filter((r) => r.teacher).length);
   check("能取到的那条是李学军", linAlg.filter((r) => r.teacher).every((r) => r.teacher === "李学军"), linAlg.map((r) => r.teacher));
 
-  // 周次 —— 用"两周三节"这个已知事实反证位串格式
+  // 周次。下标即周次、跳过下标 0。
+  // 旧断言写成「周一第 2-14 周、周五双周、奇数周 1 节」，那是 i+1 把整张课表推后一周之后的读数。
+  const rawBits = parser.taskActivityWeekBits(html);
+  check("真实响应每条位串下标 0 都是 0", rawBits.length > 0 && rawBits.every((bits) => bits[0] === "0"), rawBits.map((bits) => bits[0]));
+
   const mon = linAlg.find((r) => r.day_of_week === 1);
   const fri = linAlg.find((r) => r.day_of_week === 5);
   check("线性代数B 有周一那条", !!mon);
   check("线性代数B 有周五那条", !!fri);
   if (mon && fri) {
-    check("周一那条是连续第 2-14 周", JSON.stringify(mon.weeks) === JSON.stringify([...Array(13)].map((_, i) => i + 2)), mon.weeks);
-    check("周五那条是第 2,4,..,14 周（双周）", JSON.stringify(fri.weeks) === JSON.stringify([2, 4, 6, 8, 10, 12, 14]), fri.weeks);
-    // 合起来 = 奇数周 1 节、偶数周 2 节
+    check("周一那条是连续第 1-13 周", JSON.stringify(mon.weeks) === JSON.stringify([...Array(13)].map((_, i) => i + 1)), mon.weeks);
+    check("周五那条是第 1,3,..,13 周", JSON.stringify(fri.weeks) === JSON.stringify([1, 3, 5, 7, 9, 11, 13]), fri.weeks);
     const perWeek = {};
     [...mon.weeks, ...fri.weeks].forEach((w) => { perWeek[w] = (perWeek[w] || 0) + 1; });
     const oddWeeks = Object.entries(perWeek).filter(([w]) => Number(w) % 2 === 1);
     const evenWeeks = Object.entries(perWeek).filter(([w]) => Number(w) % 2 === 0);
-    check("奇数周每周 1 节", oddWeeks.every(([, n]) => n === 1), oddWeeks);
-    check("偶数周每周 2 节", evenWeeks.every(([, n]) => n === 2), evenWeeks);
+    check("奇数周每周 2 节", oddWeeks.every(([, n]) => n === 2), oddWeeks);
+    check("偶数周每周 1 节", evenWeeks.every(([, n]) => n === 1), evenWeeks);
   }
 
   // 名字清理
@@ -103,6 +126,56 @@ if (!existsSync(realPath)) {
   check("多教室/多教师都进了报告", report.notes.length >= 3, report.notes.length);
   check("每条日程都能对应到课程", backup.schedules.every((s) => backup.courses.some((c) => c.id === s.courseId)));
   check("weekType 只在 all/odd/even 内", backup.schedules.every((s) => ["all", "odd", "even"].includes(s.weekType)));
+  check("真实课表的课段带来源与 parserVersion", backup.schedules.every((s) => s.source === "eams" && s.parserVersion === parser.EAMS_PARSER_VERSION));
+}
+
+// ---------- C. 公开的真实 TaskActivity（仓库里这份没有个人信息以外的河科大课表）----------
+console.log("");
+console.log("=== C. 公开 EAMS 样本（位串下标 0）===");
+{
+  const samplePath = join(here, "fixtures", "eams-npu-public-sample.html");
+  const sample = readFileSync(samplePath, "utf8");
+  const bits = parser.taskActivityWeekBits(sample);
+  check("样本解析出 4 条位串", bits.length === 4, bits.length);
+  check("样本位串都是 53 位", bits.every((item) => item.length === 53), bits.map((item) => item.length));
+  check("样本每条下标 0 都是 0", bits.every((item) => item[0] === "0"), bits.map((item) => item[0]));
+  check("样本没有第 0 周", bits.every((item) => !parser.weeksFromBits(item).includes(0)));
+  // 离散数学第一条：下标 1..16 为 1 → 第 1–16 周。旧实现会把它存成第 2–17 周。
+  check(
+    "离散数学第一条是第 1-16 周",
+    JSON.stringify(parser.weeksFromBits(bits[1])) === JSON.stringify(Array.from({ length: 16 }, (_, i) => i + 1)),
+    parser.weeksFromBits(bits[1])
+  );
+  const { rows, problems } = parser.parseCourseTable(sample);
+  check("样本能解析且没有失败项", rows.length === 4 && problems.length === 0, { rows: rows.length, problems });
+  check("样本第 1 周不是空的", rows.some((row) => row.weeks.includes(1)));
+}
+
+// ---------- D. 《数据库开发技术》必须落在第 6 周 ----------
+// 应用里第 6 周缺这几门、第 7 周却有，对得上教务第 6 周的起点：旧解析把下标 6 存成了第 7 周。
+// 教务处「课表查询」的第 7 周图不是本应用截图。应用第 7 周（顶栏「第 7 周」，日期 10-12–18）
+// 的画面确认已经有了：那一周能看到这几门课。本测试锁的是课表 HTML，不靠截图。
+console.log("");
+console.log("=== D. 数据库开发技术 → 第 6 周 ===");
+{
+  const fixturePath = join(here, "..", "tests", "fixtures", "eams-database-dev-tech.html");
+  const html = readFileSync(fixturePath, "utf8");
+  const bits = parser.taskActivityWeekBits(html);
+  check("夹具有一条位串", bits.length === 1, bits.length);
+  check("位串长 53 且下标 0 是 0", bits[0]?.length === 53 && bits[0][0] === "0", bits[0]?.length);
+  check("第一位有课在下标 6（旧规则会当成第 7 周）", bits[0]?.indexOf("1") === 6, bits[0]?.indexOf("1"));
+  const weeks = parser.weeksFromBits(bits[0] ?? "");
+  check("解析周次含第 6 周、不含第 5 周", weeks.includes(6) && !weeks.includes(5), weeks);
+  const { rows, problems } = parser.parseCourseTable(html);
+  const course = rows.find((row) => row.course_name === "数据库开发技术");
+  check("解析出《数据库开发技术》", !!course && problems.length === 0, problems);
+  const { backup } = parser.rowsToBackup(rows);
+  const schedule = backup.schedules.find((item) =>
+    backup.courses.some((c) => c.id === item.courseId && c.name === "数据库开发技术")
+  );
+  check("startWeek === 6", schedule?.startWeek === 6, schedule);
+  check("第 6 周有课、第 5 周没有", !!schedule && schedule.startWeek <= 6 && schedule.endWeek >= 6 && schedule.startWeek > 5, schedule);
+  check("带来源与 parserVersion", schedule?.source === "eams" && schedule?.parserVersion === 2);
 }
 
 console.log("");

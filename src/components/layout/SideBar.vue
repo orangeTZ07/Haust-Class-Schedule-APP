@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { CalendarRange, Settings, Upload, Download, Users } from '@lucide/vue';
+import { CalendarRange, CircleHelp, Settings, Upload, Download, Users } from '@lucide/vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -30,6 +30,7 @@ interface MenuItem {
   label: string;
   route?: string;
   action?: string;
+  coach?: string;
 }
 
 /// Grouped so the drawer reads as clean sections rather than one long list. The 样式调整 entry
@@ -38,7 +39,7 @@ const groups: { title: string; items: MenuItem[] }[] = [
   {
     title: "课表",
     items: [
-      { icon: Download, label: "导入课表", action: "import" },
+      { icon: Download, label: "导入课表", action: "import", coach: "import" },
       { icon: Upload, label: "导出课表", action: "export" },
       { icon: CalendarRange, label: "选择课程表", route: "/tables" },
     ]
@@ -47,6 +48,7 @@ const groups: { title: string; items: MenuItem[] }[] = [
 
 /// Pinned to the bottom of the drawer, away from the everyday actions above.
 const footerItems: MenuItem[] = [
+  { icon: CircleHelp, label: "操作指南", action: "coach" },
   { icon: Settings, label: "设置", route: "/settings" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
@@ -93,6 +95,7 @@ const handleOverlayClick = () => {
             v-for="item in group.items"
             :key="item.label"
             class="menu-item"
+            :data-coach="item.coach"
             @click="handleItemClick(item)"
           >
             <component :is="item.icon" :size="20" />

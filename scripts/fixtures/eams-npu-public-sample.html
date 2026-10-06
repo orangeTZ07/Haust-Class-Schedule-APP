@@ -1,0 +1,36 @@
+<!--
+  公开的教务课表脚本节选，不是河科大私人课表。
+  来源：https://www.luu.moe/102 （西北工业大学 EAMS / TaskActivity，2020-01-12）
+  与河科大同一套 TaskActivity 线格式。用来锁定：每条周次位串长度 53，且下标 0 为 '0'。
+  原文作者写明「第一个字符是凑数用的」。
+  博文在周次位串处截断。后面的空参数和起止节次按同一段 index = N*unitCount+M 补全，
+  只为让解析器能读到 14 个参数；周次位串本身没有改。
+-->
+<script language="JavaScript">
+var table0 = new CourseTable(2018,91);
+var unitCount = 13;
+var index=0;
+var activity=null;
+activity = new TaskActivity("6966","陈俊梅","36856(U31G71001G.07)","体育1（武术）(U31G71001G.07)[长安校区]","3567","[体育场地]C0902云天苑田径场跑廊","00001111111111111111000000000000000000000000000000000","","","","","","11","12");
+index =1*unitCount+10;
+table0.activities[index][table0.activities[index].length]=activity;
+index =1*unitCount+11;
+table0.activities[index][table0.activities[index].length]=activity;
+activity = new TaskActivity("8730","李伟刚","38938(U14M11059.01)","离散数学(U14M11059.01)[长安校区]","1458","[教学西楼C座]教西C206","01111111111111111000000000000000000000000000000000000","","","","","","3","4");
+index =3*unitCount+2;
+table0.activities[index][table0.activities[index].length]=activity;
+index =3*unitCount+3;
+table0.activities[index][table0.activities[index].length]=activity;
+activity = new TaskActivity("8730","李伟刚","38938(U14M11059.01)","离散数学(U14M11059.01)[长安校区]","1458","[教学西楼C座]教西C206","01111111011111111000000000000000000000000000000000000","","","","","","3","4");
+index =1*unitCount+2;
+table0.activities[index][table0.activities[index].length]=activity;
+index =1*unitCount+3;
+table0.activities[index][table0.activities[index].length]=activity;
+activity = new TaskActivity("8730","李伟刚","38938(U14M11059.01)","离散数学(U14M11059.01)[长安校区]","-1","[ ]停课","00000000100000000000000000000000000000000000000000000","","","","","","3","4");
+index =1*unitCount+2;
+table0.activities[index][table0.activities[index].length]=activity;
+index =1*unitCount+3;
+table0.activities[index][table0.activities[index].length]=activity;
+table0.marshalTable(2,1,20);
+fillTable(table0,7,13,0);
+</script>

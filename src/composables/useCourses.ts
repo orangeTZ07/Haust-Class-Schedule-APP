@@ -169,7 +169,7 @@ const weekToOpenOn = (): number => {
 // the today column, the 本周 marks and the class reminders all go by the calendar. Outside the
 // semester the calendar has no week to offer, and then the saved week is kept rather than forcing
 // week 1 the way weekToOpenOn does for a freshly opened table.
-loadDataFromDb().then(() => {
+const coursesReady: Promise<void> = loadDataFromDb().then(() => {
   const week = weekNumberForDate(new Date());
   if (week !== null && week <= semesterWeekCount.value) {
     currentWeek.value = week;
@@ -369,7 +369,7 @@ export function useCourses() {
     dayOfWeek: number,
     startPeriod: number,
     endPeriod: number,
-    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled">> = {}
+    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion">> = {}
   ): Promise<CourseSchedule> => {
     const scheduleData = {
       courseId,
@@ -380,7 +380,11 @@ export function useCourses() {
       endWeek: options.endWeek ?? 20,
       weekType: options.weekType ?? ("all" as const),
       scope: options.scope ?? ("semester" as const),
-      isCancelled: options.isCancelled ?? false
+      isCancelled: options.isCancelled ?? false,
+      // Only when the caller actually has them. Defaulting these would stamp hand-entered
+      // segments as if a parser wrote them.
+      ...(options.source ? { source: options.source } : {}),
+      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {})
     };
     
     const id = await courseService.addSchedule(scheduleData);
@@ -724,7 +728,9 @@ export function useCourses() {
           endWeek: schedule.endWeek,
           weekType: schedule.weekType,
           scope: schedule.scope,
-          isCancelled: schedule.isCancelled
+          isCancelled: schedule.isCancelled,
+          source: schedule.source,
+          parserVersion: schedule.parserVersion
         });
         scheduleCount++;
       }
@@ -870,6 +876,7 @@ export function useCourses() {
     exportToCsv,
     exportToJsonBackup,
     clearAll,
+    coursesReady,
     switchCourseTable,
     createCourseTable,
     renameCourseTable,

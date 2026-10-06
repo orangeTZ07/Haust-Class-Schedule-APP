@@ -941,6 +941,15 @@ const getCellClass = (day: number, period: number) => {
   };
 };
 
+/// A cell a spanning course only covers visually is still occupied. The coach must not
+/// point "双击空白" at it.
+const isCellCovered = (day: number, period: number) =>
+  allBlocks.value.some(block =>
+    block.schedule.dayOfWeek === day &&
+    period >= block.startPeriod &&
+    period <= block.endPeriod
+  );
+
 const handleWindowResize = () => {
   if (activeConflictGroup.value) {
     clearConflictOrbitImmediately();
@@ -1035,6 +1044,7 @@ onUnmounted(() => {
             :class="getCellClass(day, slot.period)"
             :data-day="day"
             :data-period="slot.period"
+            :data-coach-empty="isCellCovered(day, slot.period) ? undefined : 'true'"
             @click="handleCellClick(day, slot.period)"
           >
             <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="block.schedule.id">

@@ -1,0 +1,25 @@
+<!--
+  最小化的河科大 EAMS 课表页片段，线格式与 courseTableParser.ts 里从真实响应记下的一致：
+  table0 = new CourseTable(2026, 98)，unitCount = 14（7 天 × 14 节）。
+
+  《数据库开发技术》的周次位串：下标 0 为占位 '0'，下标 6 起连续到 16 为 '1'
+  （第 6–16 周）。修正后的解析（下标即周次）必须得到 startWeek === 6。
+  旧的 i+1 会把它存成第 7 周，于是应用里的第 6 周看不到这门课。
+
+  完整个人课表不在仓库里。应用第 6 周缺这门课、第 7 周却有，对得上教务第 6 周的起点。
+  教务处「课表查询」上的第 7 周图片不是本应用截图，不作为依据。
+-->
+<script language="JavaScript">
+var table0 = new CourseTable(2026,98);
+var unitCount = 14;
+var index=0;
+var activity=null;
+activity = new TaskActivity("1001","教师","0413047","数据库开发技术","2001","教室A","00000011111111111000000000000000000000000000000000000","","","","","","1","2");
+index =0*unitCount+0;
+table0.activities[index][table0.activities[index].length]=activity;
+index =0*unitCount+1;
+table0.activities[index][table0.activities[index].length]=activity;
+var teachers = [{name:"教师"}];
+table0.marshalTable(2,1,20);
+fillTable(table0,7,14,0);
+</script>
