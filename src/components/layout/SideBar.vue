@@ -49,7 +49,7 @@ const groups: { title: string; items: MenuItem[] }[] = [
 /// Pinned to the bottom of the drawer, away from the everyday actions above.
 const footerItems: MenuItem[] = [
   { icon: CircleHelp, label: "操作指南", action: "coach" },
-  { icon: Settings, label: "设置", route: "/settings" },
+  { icon: Settings, label: "设置", route: "/settings", coach: "settings" },
   { icon: Users, label: "联系开发者", action: "contact" },
 ];
 
@@ -109,6 +109,7 @@ const handleOverlayClick = () => {
           v-for="item in footerItems"
           :key="item.label"
           class="menu-item"
+          :data-coach="item.coach"
           @click="handleItemClick(item)"
         >
           <component :is="item.icon" :size="20" />
@@ -183,6 +184,7 @@ const handleOverlayClick = () => {
 }
 
 .sidebar-header {
+  position: relative;
   padding: 24px 20px;
   padding-top: calc(24px + var(--safe-top));
   /* The drawer slides in from the left edge, so in landscape that is the side a cutout can be on. */

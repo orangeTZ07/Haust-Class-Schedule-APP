@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { Check, Redo2, Undo2 } from "@lucide/vue";
-import { useTheme } from "@/composables/useTheme";
 
 defineProps<{
   canUndo: boolean;
   canRedo: boolean;
   count: number;
 }>();
-
-const { isDark } = useTheme();
 
 const emit = defineEmits<{
   undo: [];
@@ -25,7 +22,7 @@ const emit = defineEmits<{
     <button type="button" class="edit-btn" aria-label="前进" :disabled="!canRedo" @click="emit('redo')">
       <Redo2 :size="18" />
     </button>
-    <p v-if="count !== 0" class="edit-count" :class="{ 'is-on-dark': isDark }">
+    <p v-if="count !== 0" class="edit-count">
       {{ count > 0 ? `+${count}` : `-${Math.abs(count)}` }}
     </p>
     <button type="button" class="edit-done" aria-label="完成" @click="emit('exit')">
@@ -39,6 +36,7 @@ const emit = defineEmits<{
    It sits in the page flow, not over a blocking overlay. */
 .edit-bar {
   position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -86,7 +84,7 @@ const emit = defineEmits<{
   border: 0;
   background: none;
   box-shadow: none;
-  color: #000;
+  color: var(--theme-body-text);
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
@@ -96,11 +94,8 @@ const emit = defineEmits<{
   pointer-events: none;
 }
 
-.edit-count.is-on-dark {
-  color: #fff;
-}
-
 .edit-done {
+  position: relative;
   margin-left: auto;
   color: var(--theme-on-accent);
   background: var(--theme-accent);

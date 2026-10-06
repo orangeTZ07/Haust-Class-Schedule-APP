@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useTheme, presetList } from "@/composables/useTheme";
+import { metalShineForPresetId, useTheme, presetList } from "@/composables/useTheme";
 import { useRouter } from "vue-router";
 import { ArrowLeft, Check } from '@lucide/vue';
 
@@ -39,7 +39,15 @@ const handleSelect = (id: string) => {
           @click="handleSelect(preset.id)"
         >
           <div class="preset-preview" :style="{ background: preset.preset.bgColor }">
-            <div class="p-header" :style="{ background: preset.preset.headerBgColor }"></div>
+            <div
+              class="p-header"
+              :class="{
+                'is-metal-strip': !!metalShineForPresetId(preset.id),
+                'is-metal-silver': metalShineForPresetId(preset.id) === 'silver',
+                'is-metal-gold': metalShineForPresetId(preset.id) === 'gold'
+              }"
+              :style="{ background: preset.preset.headerBgColor }"
+            ></div>
             <div class="p-card" :style="{ background: preset.preset.headerBgColor, opacity: preset.preset.cardOpacity/100 }"></div>
           </div>
           <div class="preset-name">{{ preset.name }}</div>
@@ -140,6 +148,8 @@ const handleSelect = (id: string) => {
 }
 
 .preset-preview .p-header {
+  position: relative;
+  overflow: hidden;
   height: 16px;
   width: 100%;
 }

@@ -5,7 +5,7 @@ import { useSystemBars } from "./composables/useSystemBars";
 import { useUpdateCheck } from "./composables/useUpdateCheck";
 import UpdateDialog from "./components/layout/UpdateDialog.vue";
 
-const { themeConfig, cssVariables } = useTheme();
+const { themeConfig, cssVariables, metalShine } = useTheme();
 // 把安卓状态栏 / 导航栏的真实尺寸写进 --native-safe-*，并让栏上的图标颜色跟着主题走；失败静默。
 useSystemBars();
 const { startAutoCheck } = useUpdateCheck();
@@ -19,7 +19,15 @@ onBeforeUnmount(() => stopAutoCheck?.());
 </script>
 
 <template>
-  <div id="app" :class="{ dark: themeConfig.mode === 'dark' }" :style="cssVariables">
+  <div
+    id="app"
+    :class="{
+      dark: themeConfig.mode === 'dark',
+      'metal-shine-silver': metalShine === 'silver',
+      'metal-shine-gold': metalShine === 'gold'
+    }"
+    :style="cssVariables"
+  >
     <router-view v-slot="{ Component }">
       <transition name="page-fade" mode="out-in">
         <component :is="Component" />

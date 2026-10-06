@@ -260,16 +260,17 @@ const gruvboxDarkPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-// 白金 / 黑金 / 网易云 / B站。名字用品牌简称，和预设列表里的短中文一致。
+// 白银 / 黑金 / 网易云 / B站。名字用品牌简称，和预设列表里的短中文一致。
+// 名字用品牌简称，和预设列表里的短中文一致。
 // 只加在预设表里，组件不写死这些颜色。
 // 背景 → bgColor，课程边框 → cardBorderColor，主色 → headerBgColor。
 // 网易云：主色 #EC4141，强调色 #FF6B6B，背景 #FFF5F5，边框 #F0B4B4。
 // B站：主色 #FB7299，强调色 #FF9FBC，背景 #FFF0F5，边框 #F5C0D0。
-// 白金主色 #9AA3B2、金 #C9A84C；黑金主色 #D4AF37、浅金 #F0D78C。
+// 白银主色 #9AA3B2、金 #C9A84C；黑金主色 #D4AF37、浅金 #F0D78C。
 // 强调色本应放进 headerTextColor，让 pickAccent 在它和背景达到 3:1 时选用。
 // 但这四组强调色和主色彼此只有大约 1.1–1.5:1，直接当表头字会让标题和「今天」圆角标记读不清。
 // 表头字因此改成在主色上达到 3:1 的字色（和课程名同一套对比）：
-// 白金、B站的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
+// 白银、B站的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
 // 黑金字用页面色，标记落到主色金。网易云字用白，标记落到主色红。
 // 正文色沿用现有亮色 / 暗色预设。
 const platinumPreset: ThemeConfig = {
@@ -535,8 +536,8 @@ export const presetList: PresetInfo[] = [
     color: "#fdf6e3"
   },
   {
-    id: "白金",
-    name: "白金",
+    id: "白银",
+    name: "白银",
     preset: platinumPreset,
     color: "#9AA3B2"
   },
@@ -559,6 +560,12 @@ export const presetList: PresetInfo[] = [
     color: "#FB7299"
   }
 ];
+
+export const metalShineForPresetId = (id: string): "silver" | "gold" | "" => {
+  if (id === "白银" || id === "白金") return "silver";
+  if (id === "黑金") return "gold";
+  return "";
+};
 
 export function useTheme() {
   const isDark = computed(() => themeConfig.value.mode === "dark");
@@ -594,7 +601,8 @@ export function useTheme() {
   const applyCatppuccinLattePreset = () => applyPreset(catppuccinLattePreset);
 
   const applyPresetById = (id: string) => {
-    const preset = presetList.find(p => p.id === id);
+    const resolved = id === "白金" ? "白银" : id;
+    const preset = presetList.find(p => p.id === resolved);
     if (preset) {
       applyPreset(preset.preset);
     }
@@ -607,6 +615,8 @@ export function useTheme() {
     );
     return current?.id || "catppuccin-latte";
   });
+
+  const metalShine = computed(() => metalShineForPresetId(currentPresetId.value));
 
   const updateConfig = (key: keyof ThemeConfig, value: any) => {
     (themeConfig.value as any)[key] = value;
@@ -633,6 +643,7 @@ export function useTheme() {
     isDark,
     cssVariables,
     currentPresetId,
+    metalShine,
     toggleMode,
     applyLightPreset,
     applyDarkPreset,

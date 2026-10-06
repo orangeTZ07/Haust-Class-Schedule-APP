@@ -125,6 +125,12 @@
   box-shadow: 0 6px 16px color-mix(in srgb, var(--theme-accent) 30%, transparent);
 }
 
+.app-btn--danger {
+  color: #fff;
+  background: var(--color-danger);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-danger) 30%, transparent);
+}
+
 .app-btn--outline {
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);

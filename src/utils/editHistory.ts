@@ -31,10 +31,11 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export const cloneSnapshot = (courses: Course[], schedules: CourseSchedule[]): TimetableSnapshot => ({
-  courses: courses.map(course => ({ ...course })),
-  schedules: schedules.map(schedule => ({ ...schedule }))
-});
+export const cloneSnapshot = (courses: Course[], schedules: CourseSchedule[]): TimetableSnapshot =>
+  JSON.parse(JSON.stringify({
+    courses: courses.map(course => ({ ...course })),
+    schedules: schedules.map(schedule => ({ ...schedule }))
+  }));
 
 const sameSnapshot = (left: TimetableSnapshot, right: TimetableSnapshot): boolean =>
   JSON.stringify(left) === JSON.stringify(right);

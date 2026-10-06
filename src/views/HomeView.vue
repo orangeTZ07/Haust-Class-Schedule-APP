@@ -8,9 +8,11 @@ import { confirmAction } from "@/utils/confirm";
 import {
   addSeenStepIds,
   autoCoachQueue,
+  isCourseBlockDeferred,
   isEmptyCellDeferred,
   manualCoachQueue,
   readSeenStepIds,
+  rememberCourseBlockUnanchored,
   rememberEmptyCellUnanchored,
   timetableFingerprint,
   type CoachPresentation
@@ -28,14 +30,16 @@ import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
+import DeleteScopeDialog from "@/components/course/DeleteScopeDialog.vue";
 import EditModeBar from "@/components/edit/EditModeBar.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
+import type { DeleteScopePayload } from "@/utils/scheduleDelete";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
         coursesReady, editing, sessionCount, canUndoEdit, canRedoEdit,
-        commitEdit, undoEdit, redoEdit, exitEditMode } = useCourses();
+        commitEdit, undoEdit, redoEdit, exitEditMode, removeScheduleInScope, getCourseById } = useCourses();
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
 /// How far the drawer is out, in px, from 0 (closed) to SIDEBAR_WIDTH (open). While a finger is
@@ -114,6 +118,36 @@ const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
   showToast({ message: `已添加「${payload.name}」${scopeDesc}`, type: "success" });
 };
 
+const deleteSlot = ref<{ scheduleId: number; day: number; period: number; courseName: string } | null>(null);
+const deleteVisible = ref(false);
+
+const onRequestDelete = (payload: { scheduleId: number }) => {
+  const schedule = schedules.value.find(item => item.id === payload.scheduleId)
+    ?? effectiveSchedules.value.find(item => item.id === payload.scheduleId);
+  if (!schedule) return;
+  const course = getCourseById(schedule.courseId);
+  deleteSlot.value = {
+    scheduleId: payload.scheduleId,
+    day: schedule.dayOfWeek,
+    period: schedule.startPeriod,
+    courseName: course?.name ?? ""
+  };
+  deleteVisible.value = true;
+};
+
+const onDeleteSubmit = async (payload: DeleteScopePayload) => {
+  const slot = deleteSlot.value;
+  if (!slot) return;
+  deleteVisible.value = false;
+  await weekGridRef.value?.playDeleteAnimation?.(slot.scheduleId);
+  const removed = await removeScheduleInScope(slot.scheduleId, payload);
+  deleteSlot.value = null;
+  if (removed) {
+    commitEdit();
+    showToast("已删除课段");
+  }
+};
+
 /// Set when a drawer drag ends. A touch can still deliver a click on release, and if that click
 /// lands on the overlay it would call closeSidebar and undo the gesture that just finished.
 let ignoreCloseUntil = 0;
@@ -124,7 +158,7 @@ const closeSidebar = () => {
 };
 
 const gridContainerRef = ref<HTMLElement | null>(null);
-const weekGridRef = ref<{ resetView: () => boolean } | null>(null);
+const weekGridRef = ref<{ resetView: () => boolean; playDeleteAnimation?: (id: number) => Promise<void> } | null>(null);
 
 // Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the horizontal
 // offset lives on this component's container, so neither had a way back: they are easy to disturb
@@ -270,7 +304,8 @@ const startAutoCoach = () => {
   startQueue("auto", autoCoachQueue({
     seenIds: readSeenStepIds(localStorage),
     hasCoursesOnCurrentWeek: effectiveSchedules.value.length > 0,
-    deferEmptyCell: isEmptyCellDeferred(currentWeek.value, coachFingerprint.value)
+    deferEmptyCell: isEmptyCellDeferred(currentWeek.value, coachFingerprint.value),
+    deferCourseBlock: isCourseBlockDeferred(currentWeek.value, coachFingerprint.value)
   }));
 };
 
@@ -308,6 +343,9 @@ const followCoachCue = () => {
 const onCoachUnanchored = () => {
   if (coachStep.value?.target === "empty-cell") {
     rememberEmptyCellUnanchored(currentWeek.value, coachFingerprint.value);
+  }
+  if (coachStep.value?.target === "course-block") {
+    rememberCourseBlockUnanchored(currentWeek.value, coachFingerprint.value);
   }
   const next = coachQueue.value.filter((_, index) => index !== coachIndex.value);
   coachQueue.value = next;
@@ -573,6 +611,17 @@ const onEdgeTouchEnd = () => {
       @submit="onAddSubmit"
     />
 
+    <!-- 拖到垃圾桶后选择删除范围 -->
+    <DeleteScopeDialog
+      v-model:show="deleteVisible"
+      :day="deleteSlot?.day ?? 1"
+      :period="deleteSlot?.period ?? 1"
+      :course-name="deleteSlot?.courseName ?? ''"
+      :current-week="currentWeek"
+      :total-weeks="semesterWeekCount"
+      @submit="onDeleteSubmit"
+    />
+
     <!-- 内容层 -->
     <div
       class="content-layer"
@@ -593,6 +642,7 @@ const onEdgeTouchEnd = () => {
           ref="weekGridRef"
           @drag-trash-state-change="handleDragTrashStateChange"
           @request-add="onRequestAdd"
+          @request-delete="onRequestDelete"
         />
       </div>
 

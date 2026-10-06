@@ -61,17 +61,25 @@ console.log("=== 引导步骤 ===");
   const fresh = coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: false });
   check("第一次打开不加「新功能」", fresh.every((step) => step.prefixNew === false));
   check("没课先不出现双击加课", fresh.every((step) => step.id !== "double-tap-empty-add-v1"));
-  check("第一次仍介绍菜单和导入", fresh.map((step) => step.id).join(",") === "menu-reopen-guide-v1,import-from-menu-v1", fresh.map((step) => step.id));
+  check("没课也不出现删除", fresh.every((step) => step.id !== "delete-course-v1"));
+  check("第一次仍介绍菜单、导入、主题和背景", fresh.map((step) => step.id).join(",") === "menu-reopen-guide-v1,import-from-menu-v1,theme-preset-v1,bg-image-v1", fresh.map((step) => step.id));
 
   const withCourses = coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: true });
   check("有课才把双击加课放进来", withCourses[0]?.id === "double-tap-empty-add-v1" && withCourses[0].prefixNew === false);
+  check("删除紧跟在双击加课后面", withCourses[1]?.id === "delete-course-v1");
+  check("删除步骤指课程块", withCourses[1]?.target === "course-block");
+  check(
+    "删除文案讲手势和范围对话框",
+    withCourses[1]?.body.includes("垃圾桶") && withCourses[1]?.body.includes("整学期") && withCourses[1]?.body.includes("仅当前周")
+  );
+  check("旧步骤 id 没改名", withCourses.some((step) => step.id === "double-tap-empty-add-v1") && withCourses.some((step) => step.id === "menu-reopen-guide-v1"));
 
   const later = coach.autoCoachQueue({
     seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1"],
     hasCoursesOnCurrentWeek: true
   });
-  check("只补没看过的步骤", later.map((step) => step.id).join(",") === "double-tap-empty-add-v1");
-  check("补看的步骤带「新功能」", later[0]?.prefixNew === true);
+  check("只补没看过的步骤", later.map((step) => step.id).join(",") === "double-tap-empty-add-v1,delete-course-v1,theme-preset-v1,bg-image-v1");
+  check("补看的步骤带「新功能」", later.every((step) => step.prefixNew === true));
 
   const done = coach.autoCoachQueue({
     seenIds: coach.COACH_STEPS.map((step) => step.id),
@@ -81,12 +89,17 @@ console.log("=== 引导步骤 ===");
 
   const manual = coach.manualCoachQueue();
   check("菜单重开是全部步骤且不加前缀", manual.length === coach.COACH_STEPS.length && manual.every((step) => step.prefixNew === false));
+  check("操作指南一共六步", manual.length === 6 && manual[1]?.id === "delete-course-v1" && manual[4]?.id === "theme-preset-v1");
   check("导入不在主屏", manual.find((step) => step.id === "import-from-menu-v1")?.offHome === true);
+  check("主题和背景从设置进去", manual.find((step) => step.id === "theme-preset-v1")?.target === "settings" && manual.find((step) => step.id === "bg-image-v1")?.target === "settings");
 
   coach.resetEmptyCellDeferral();
   check("格子还没画出来就继续等", coach.emptyCellAnchorState(0, 0) === "waiting");
   check("有格子但没空位就跳过这一步", coach.emptyCellAnchorState(70, 0) === "missing");
   check("有空格子才指向", coach.emptyCellAnchorState(70, 4) === "ready");
+  check("格子还没画出来，删除步骤也等", coach.courseBlockAnchorState(0, 0) === "waiting");
+  check("这一周没课块就推迟删除步骤", coach.courseBlockAnchorState(70, 0) === "missing");
+  check("有课块才指向删除", coach.courseBlockAnchorState(70, 3) === "ready");
 
   const pack = [
     { id: 1, dayOfWeek: 1, startPeriod: 1, endPeriod: 2, startWeek: 1, endWeek: 16 },
@@ -107,16 +120,23 @@ console.log("=== 引导步骤 ===");
     hasCoursesOnCurrentWeek: true,
     deferEmptyCell: true
   });
-  check("推迟空格子后继续后面的步骤", deferred.map((step) => step.id).join(",") === "menu-reopen-guide-v1,import-from-menu-v1");
+  check("推迟空格子后继续删除和后面的步骤", deferred.map((step) => step.id).join(",") === "delete-course-v1,menu-reopen-guide-v1,import-from-menu-v1,theme-preset-v1,bg-image-v1");
   check("推迟空格子不加「新功能」", deferred.every((step) => step.prefixNew === false));
   check(
     "关导入或回主页不会只剩空格子那一步空转",
     coach.autoCoachQueue({
-      seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1"],
+      seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "delete-course-v1", "theme-preset-v1", "bg-image-v1"],
       hasCoursesOnCurrentWeek: true,
       deferEmptyCell: coach.isEmptyCellDeferred(6, print)
     }).length === 0
   );
+  const bothDeferred = coach.autoCoachQueue({
+    seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "theme-preset-v1", "bg-image-v1"],
+    hasCoursesOnCurrentWeek: true,
+    deferEmptyCell: true,
+    deferCourseBlock: true
+  });
+  check("空格子和课块都推迟就不再空转", bothDeferred.length === 0);
   check(
     "不推迟时双击加课仍在最前",
     coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: true, deferEmptyCell: false })[0]?.id === "double-tap-empty-add-v1"
@@ -126,7 +146,25 @@ console.log("=== 引导步骤 ===");
     "翻周会重新跑自动引导（不只靠课表数据）",
     /watch\(\s*currentWeek\s*,/.test(home) && home.includes("startAutoCoach")
   );
+  const bar = readFileSync(join(here, "..", "src/components/edit/EditModeBar.vue"), "utf8");
+  check("编辑计数用主题正文色", bar.includes("color: var(--theme-body-text)") && !bar.includes("color: #000") && !bar.includes("is-on-dark"));
+  const grid = readFileSync(join(here, "..", "src/components/timetable/WeekGrid.vue"), "utf8");
+  check("今天不再铺列身浅色", !grid.includes(".cell.is-today") && grid.includes("day-header.is-today"));
+  const deleteDialog = readFileSync(join(here, "..", "src/components/course/DeleteScopeDialog.vue"), "utf8");
+  check("删除对话框默认仅当前周", deleteDialog.includes('weekScope = ref<DeleteWeekScope>("current")'));
+  check("删除整学期会二次确认", deleteDialog.includes("DELETE_SEMESTER_CONFIRM") && deleteDialog.includes("danger: true"));
+  check("Home 接了删除范围对话框", home.includes("DeleteScopeDialog") && home.includes("onRequestDelete"));
+  const shineCss = readFileSync(join(here, "..", "src/styles/global.css"), "utf8");
+  check(
+    "扫光只打在课表表头和预设色条",
+    shineCss.includes(".week-grid > .header::after") &&
+      shineCss.includes(".p-header.is-metal-strip::after") &&
+      !shineCss.includes(".coach-") &&
+      !shineCss.includes(".course-block") &&
+      shineCss.includes("prefers-reduced-motion")
+  );
   coach.resetEmptyCellDeferral();
+  coach.resetCourseBlockDeferral();
 
   const store = memory();
   check("没记录就是第一次", coach.readSeenStepIds(store) === null);

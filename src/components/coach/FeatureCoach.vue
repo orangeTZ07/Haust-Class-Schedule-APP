@@ -4,6 +4,7 @@ import { X } from "@lucide/vue";
 import {
   chooseAnchorIndex,
   COACH_CUE_LABEL,
+  courseBlockAnchorState,
   emptyCellAnchorState,
   placeBubble,
   type CoachPresentation,
@@ -77,6 +78,23 @@ const emptyCellAnchor = (): Rect | null => {
   return asRect(cells[index].getBoundingClientRect());
 };
 
+const courseBlockAnchor = (): Rect | null => {
+  const body = document.querySelector(".week-grid .body");
+  const blocks = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-coach-course='true']:not(.orbit-card)")
+  );
+  if (!body || blocks.length === 0) return null;
+  const view = asRect(body.getBoundingClientRect());
+  const rects = blocks.map(block => block.getBoundingClientRect());
+  const index = chooseAnchorIndex(rects.map(asRect), view);
+  if (index < 0) return null;
+  const rect = rects[index];
+  if (!onScreen(rect)) {
+    blocks[index].scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  return asRect(blocks[index].getBoundingClientRect());
+};
+
 const menuAnchor = (): Rect | null => {
   const el = document.querySelector<HTMLElement>("[data-coach='menu']");
   if (!el) return null;
@@ -91,9 +109,18 @@ const importAnchor = (): Rect | null => {
   return onScreen(rect) ? asRect(rect) : null;
 };
 
+const settingsAnchor = (): Rect | null => {
+  const el = document.querySelector<HTMLElement>("[data-coach='settings']");
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  return onScreen(rect) ? asRect(rect) : null;
+};
+
 const anchorFor = (step: CoachPresentation): Rect | null => {
   if (step.target === "empty-cell") return emptyCellAnchor();
+  if (step.target === "course-block") return courseBlockAnchor();
   if (step.target === "import" && props.phase === "spotlight") return importAnchor();
+  if (step.target === "settings" && props.phase === "spotlight") return settingsAnchor();
   // Off-home steps start at the menu button. Keep that anchor while the drawer is still sliding.
   return menuAnchor();
 };
@@ -106,13 +133,17 @@ const measure = () => {
     return;
   }
 
-  if (step.target === "empty-cell") {
+  if (step.target === "empty-cell" || step.target === "course-block") {
     const gridCells = document.querySelectorAll(".week-grid .cell[data-day][data-period]").length;
-    const emptyCells = document.querySelectorAll("[data-coach-empty='true']").length;
-    const state = emptyCellAnchorState(gridCells, emptyCells);
+    const state = step.target === "empty-cell"
+      ? emptyCellAnchorState(gridCells, document.querySelectorAll("[data-coach-empty='true']").length)
+      : courseBlockAnchorState(
+        gridCells,
+        document.querySelectorAll("[data-coach-course='true']:not(.orbit-card)").length
+      );
     if (state === "waiting") return;
     if (state === "missing") {
-      // Week is painted and full. Report once; the parent skips this step for this week/data.
+      // Week is painted but this step has nowhere honest to point. Skip it for this week/data.
       if (!reportedMissing) {
         reportedMissing = true;
         emit("unanchored");

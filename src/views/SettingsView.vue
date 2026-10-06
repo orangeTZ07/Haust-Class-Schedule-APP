@@ -22,7 +22,7 @@ const goBack = () => {
 
     <div class="content">
       <!-- 样式调整以前在侧栏里，现在归到设置下面，和别的设置放在一起找 -->
-      <div class="entry-card" @click="router.push('/style')">
+      <div class="entry-card" data-coach="style" @click="router.push('/style')">
         <Palette :size="20" stroke-width="1.5" class="entry-icon" />
         <div class="entry-text">
           <div class="entry-title">外观样式</div>
