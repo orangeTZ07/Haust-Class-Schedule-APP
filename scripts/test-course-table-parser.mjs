@@ -151,31 +151,67 @@ console.log("=== C. 公开 EAMS 样本（位串下标 0）===");
   check("样本第 1 周不是空的", rows.some((row) => row.weeks.includes(1)));
 }
 
-// ---------- D. 《数据库开发技术》必须落在第 6 周 ----------
-// 应用里第 6 周缺这几门、第 7 周却有，对得上教务第 6 周的起点：旧解析把下标 6 存成了第 7 周。
-// 教务处「课表查询」的第 7 周图不是本应用截图。应用第 7 周（顶栏「第 7 周」，日期 10-12–18）
-// 的画面确认已经有了：那一周能看到这几门课。本测试锁的是课表 HTML，不靠截图。
+// ---------- D. 截图对上的三格：第 6 周有，第 5 周没有 ----------
+// 教务第 6 周有这三格，应用第 6 周是空的，应用第 7 周又出现在同样的位置。
+// 教务第 5 周这三格本来就是空的。旧解析把下标 6 存成第 7 周。
+// 已经能对上的第 6 周格子是跨周课（第 5 周和第 6 周都有），修正后第 6 周仍包含它们。
 console.log("");
-console.log("=== D. 数据库开发技术 → 第 6 周 ===");
+console.log("=== D. 第 6 周三格归位，第 5 周仍空 ===");
 {
   const fixturePath = join(here, "..", "tests", "fixtures", "eams-database-dev-tech.html");
   const html = readFileSync(fixturePath, "utf8");
   const bits = parser.taskActivityWeekBits(html);
-  check("夹具有一条位串", bits.length === 1, bits.length);
-  check("位串长 53 且下标 0 是 0", bits[0]?.length === 53 && bits[0][0] === "0", bits[0]?.length);
-  check("第一位有课在下标 6（旧规则会当成第 7 周）", bits[0]?.indexOf("1") === 6, bits[0]?.indexOf("1"));
-  const weeks = parser.weeksFromBits(bits[0] ?? "");
-  check("解析周次含第 6 周、不含第 5 周", weeks.includes(6) && !weeks.includes(5), weeks);
-  const { rows, problems } = parser.parseCourseTable(html);
-  const course = rows.find((row) => row.course_name === "数据库开发技术");
-  check("解析出《数据库开发技术》", !!course && problems.length === 0, problems);
-  const { backup } = parser.rowsToBackup(rows);
-  const schedule = backup.schedules.find((item) =>
-    backup.courses.some((c) => c.id === item.courseId && c.name === "数据库开发技术")
+  check("夹具有三条位串", bits.length === 3, bits.length);
+  check("位串都是 53 位且下标 0 是 0", bits.every((item) => item.length === 53 && item[0] === "0"), bits.map((item) => item.length));
+  const policyBits = bits[0] ?? "";
+  check(
+    "形势与政策：下标 5 无课，下标 6 和 7 有课",
+    policyBits[5] === "0" && policyBits[6] === "1" && policyBits[7] === "1",
+    policyBits.slice(0, 8)
   );
-  check("startWeek === 6", schedule?.startWeek === 6, schedule);
-  check("第 6 周有课、第 5 周没有", !!schedule && schedule.startWeek <= 6 && schedule.endWeek >= 6 && schedule.startWeek > 5, schedule);
-  check("带来源与 parserVersion", schedule?.source === "eams" && schedule?.parserVersion === 2);
+  const dbBits = bits.filter((item) => item.indexOf("1") === 6 && item[16] === "1");
+  check("数据库开发技术两条位串的第一位有课在下标 6", dbBits.length === 2, bits.map((item) => item.indexOf("1")));
+  check(
+    "数据库开发技术解析为第 6–16 周，不含第 5 周",
+    dbBits.every((item) => {
+      const weeks = parser.weeksFromBits(item);
+      return weeks.includes(6) && !weeks.includes(5) && weeks.at(-1) === 16;
+    })
+  );
+
+  const { rows, problems } = parser.parseCourseTable(html);
+  check("三条活动都能解析", rows.length === 3 && problems.length === 0, { rows: rows.length, problems });
+  const { backup } = parser.rowsToBackup(rows);
+  const named = (schedule) => backup.courses.find((course) => course.id === schedule.courseId)?.name;
+  const slot = (name, day, start, end) =>
+    backup.schedules.find((item) =>
+      named(item) === name && item.dayOfWeek === day && item.startPeriod === start && item.endPeriod === end
+    );
+  const covers = (schedule, week) =>
+    !!schedule &&
+    schedule.startWeek <= week &&
+    schedule.endWeek >= week &&
+    (schedule.weekType === "all" || (schedule.weekType === "odd" ? week % 2 === 1 : week % 2 === 0));
+
+  const policy = slot("形势与政策(2)", 2, 7, 8);
+  const dbWed = slot("数据库开发技术", 3, 5, 6);
+  const dbFri = slot("数据库开发技术", 5, 7, 8);
+  const three = [policy, dbWed, dbFri];
+  check("周二 7-8 是《形势与政策(2)》", !!policy, policy);
+  check("周三 5-6 是《数据库开发技术》", !!dbWed, dbWed);
+  check("周五 7-8 是《数据库开发技术》", !!dbFri, dbFri);
+  check("数据库开发技术 startWeek === 6 且到第 16 周", dbWed?.startWeek === 6 && dbWed?.endWeek === 16 && dbFri?.startWeek === 6 && dbFri?.endWeek === 16, [dbWed, dbFri]);
+  check("第 6 周这三格都有课", three.every((item) => covers(item, 6)), three);
+  check("第 5 周这三格都是空的", three.every((item) => !covers(item, 5)), three);
+  check("形势与政策第 7 周仍有课", covers(policy, 7), policy);
+  check("带来源与 parserVersion", three.every((item) => item?.source === "eams" && item?.parserVersion === 2));
+
+  const spanning = parser.weeksFromBits("0" + "1".repeat(16) + "0".repeat(36));
+  check(
+    "第 1–16 周的课修正后第 6 周仍在",
+    spanning[0] === 1 && spanning.includes(5) && spanning.includes(6),
+    spanning
+  );
 }
 
 console.log("");

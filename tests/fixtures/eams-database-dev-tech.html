@@ -2,22 +2,42 @@
   最小化的河科大 EAMS 课表页片段，线格式与 courseTableParser.ts 里从真实响应记下的一致：
   table0 = new CourseTable(2026, 98)，unitCount = 14（7 天 × 14 节）。
 
-  《数据库开发技术》的周次位串：下标 0 为占位 '0'，下标 6 起连续到 16 为 '1'
-  （第 6–16 周）。修正后的解析（下标即周次）必须得到 startWeek === 6。
-  旧的 i+1 会把它存成第 7 周，于是应用里的第 6 周看不到这门课。
+  截图已经对上整周 +1，不必再等第 1 周的周一：
+  - 教务「课表查询」第 6 周有：周二 7-8《形势与政策(2)》、周三 5-6《数据库开发技术》、周五 7-8《数据库开发技术》。
+  - 应用第 6 周这三格是空的，其余第 6 周格子与教务一致。
+  - 应用第 7 周这三格出现在同样的位置，所以从第 6 周才开始的课被存成了第 7 周。
+  - 教务第 5 周这三格是空的。
 
-  完整个人课表不在仓库里。应用第 6 周缺这门课、第 7 周却有，对得上教务第 6 周的起点。
-  教务处「课表查询」上的第 7 周图片不是本应用截图，不作为依据。
+  《数据库开发技术》的周次位串来自真实响应：下标 0 为占位 '0'，下标 6 起连续到 16 为 '1'
+  （第 6–16 周）。周三 5-6 和周五 7-8 两条活动用同一条位串。
+  修正后（下标即周次）startWeek === 6，第 5 周没有，第 6 周有。
+  旧的 i+1 会把它存成第 7 周，于是应用第 6 周看不到这门课。
+
+  《形势与政策(2)》的完整位串不在仓库里。截图只确认第 5 周没有、第 6 周和第 7 周有，
+  所以这条最小化活动只在下标 6 和 7 写 '1'。下标 8 及以后保持 '0'，
+  不表示这门课到第 7 周就结束。
+
+  教室用占位名，不写入截图里的楼号。完整个人课表不在仓库里。
 -->
 <script language="JavaScript">
 var table0 = new CourseTable(2026,98);
 var unitCount = 14;
 var index=0;
 var activity=null;
-activity = new TaskActivity("1001","教师","0413047","数据库开发技术","2001","教室A","00000011111111111000000000000000000000000000000000000","","","","","","1","2");
-index =0*unitCount+0;
+activity = new TaskActivity("1002","教师","0000002","形势与政策(2)","2002","教室","00000011000000000000000000000000000000000000000000000","","","","","","7","8");
+index =1*unitCount+6;
 table0.activities[index][table0.activities[index].length]=activity;
-index =0*unitCount+1;
+index =1*unitCount+7;
+table0.activities[index][table0.activities[index].length]=activity;
+activity = new TaskActivity("1001","教师","0413047","数据库开发技术","2001","教室","00000011111111111000000000000000000000000000000000000","","","","","","5","6");
+index =2*unitCount+4;
+table0.activities[index][table0.activities[index].length]=activity;
+index =2*unitCount+5;
+table0.activities[index][table0.activities[index].length]=activity;
+activity = new TaskActivity("1001","教师","0413047","数据库开发技术","2001","教室","00000011111111111000000000000000000000000000000000000","","","","","","7","8");
+index =4*unitCount+6;
+table0.activities[index][table0.activities[index].length]=activity;
+index =4*unitCount+7;
 table0.activities[index][table0.activities[index].length]=activity;
 var teachers = [{name:"教师"}];
 table0.marshalTable(2,1,20);
