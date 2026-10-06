@@ -1,4 +1,4 @@
-// 白金 / 黑金 / 网易云红 / B站粉 只注册在预设表里，颜色和现有预设走同一套对比。
+// 白金 / 黑金 / 网易云 / B站 只注册在预设表里，颜色和现有预设走同一套对比。
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +11,8 @@ const accent = await loadTs(join(here, "..", "src/utils/themeAccent.ts"));
 const expected = {
   白金: { mode: "light", headerBgColor: "#9AA3B2", headerTextColor: "#374151", bgColor: "#F4F5F7", cardBorderColor: "#C5CAD3", accent: "#374151" },
   黑金: { mode: "dark", headerBgColor: "#D4AF37", headerTextColor: "#0F0F12", bgColor: "#0F0F12", cardBorderColor: "#3D3420", accent: "#D4AF37" },
-  网易云红: { mode: "light", headerBgColor: "#EC4141", headerTextColor: "#ffffff", bgColor: "#FFF5F5", cardBorderColor: "#F0B4B4", accent: "#EC4141" },
-  "B站粉": { mode: "light", headerBgColor: "#FB7299", headerTextColor: "#374151", bgColor: "#FFF0F5", cardBorderColor: "#F5C0D0", accent: "#374151" }
+  网易云: { mode: "light", headerBgColor: "#EC4141", headerTextColor: "#ffffff", bgColor: "#FFF5F5", cardBorderColor: "#F0B4B4", accent: "#EC4141" },
+  "B站": { mode: "light", headerBgColor: "#FB7299", headerTextColor: "#374151", bgColor: "#FFF0F5", cardBorderColor: "#F5C0D0", accent: "#374151" }
 };
 
 let failed = 0;

@@ -260,15 +260,17 @@ const gruvboxDarkPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-// 白金 / 黑金 / 网易云红 / B站粉。只加在预设表里，组件不写死这些颜色。
+// 白金 / 黑金 / 网易云 / B站。名字用品牌简称，和预设列表里的短中文一致。
+// 只加在预设表里，组件不写死这些颜色。
 // 背景 → bgColor，课程边框 → cardBorderColor，主色 → headerBgColor。
-// 品牌色：网易云红 #EC4141，B站粉 #FB7299。白金主色 #9AA3B2、金 #C9A84C；
-// 黑金主色 #D4AF37、浅金 #F0D78C。房间若另给色板，再替换这些值。
+// 网易云：主色 #EC4141，强调色 #FF6B6B，背景 #FFF5F5，边框 #F0B4B4。
+// B站：主色 #FB7299，强调色 #FF9FBC，背景 #FFF0F5，边框 #F5C0D0。
+// 白金主色 #9AA3B2、金 #C9A84C；黑金主色 #D4AF37、浅金 #F0D78C。
 // 强调色本应放进 headerTextColor，让 pickAccent 在它和背景达到 3:1 时选用。
 // 但这四组强调色和主色彼此只有大约 1.1–1.5:1，直接当表头字会让标题和「今天」圆角标记读不清。
 // 表头字因此改成在主色上达到 3:1 的字色（和课程名同一套对比）：
-// 白金、B站粉的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
-// 黑金字用页面色，标记落到主色金。网易云红字用白，标记落到主色红。
+// 白金、B站的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
+// 黑金字用页面色，标记落到主色金。网易云字用白，标记落到主色红。
 // 正文色沿用现有亮色 / 暗色预设。
 const platinumPreset: ThemeConfig = {
   mode: "light",
@@ -304,7 +306,7 @@ const blackGoldPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-const neteaseRedPreset: ThemeConfig = {
+const neteasePreset: ThemeConfig = {
   mode: "light",
   cardOpacity: 35,
   cardBorderWidth: 1,
@@ -321,7 +323,7 @@ const neteaseRedPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-const bilibiliPinkPreset: ThemeConfig = {
+const bilibiliPreset: ThemeConfig = {
   mode: "light",
   cardOpacity: 35,
   cardBorderWidth: 1,
@@ -545,15 +547,15 @@ export const presetList: PresetInfo[] = [
     color: "#D4AF37"
   },
   {
-    id: "网易云红",
-    name: "网易云红",
-    preset: neteaseRedPreset,
+    id: "网易云",
+    name: "网易云",
+    preset: neteasePreset,
     color: "#EC4141"
   },
   {
-    id: "B站粉",
-    name: "B站粉",
-    preset: bilibiliPinkPreset,
+    id: "B站",
+    name: "B站",
+    preset: bilibiliPreset,
     color: "#FB7299"
   }
 ];
