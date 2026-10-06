@@ -123,13 +123,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The unsigned IPA goes up after the APK release, in its own job. needs: release means the
-  # GitHub Release (APK, icon and changelog) is already published when this starts, so a macOS
-  # runner shortage or an iOS build failure cannot hold up or break the Android release. The
-  # release step then finds that release by tag and only uploads the file: with no body or
-  # body_path given, softprops/action-gh-release keeps the existing release notes and flags.
+  # Temporarily disabled: we are not shipping iOS packages right now.
+  # Flip `if` back to always-run (or delete it) when IPA CD is needed again.
   ios:
     name: Attach unsigned IPA
+    if: false
     runs-on: macos-15
     needs: release
     timeout-minutes: 90
