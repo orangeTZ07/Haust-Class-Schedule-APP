@@ -77,3 +77,25 @@ jobs:
           path: ${{ steps.signed.outputs.signed-apk }}
           if-no-files-found: error
           retention-days: 14
+
+  # Status check name in GitHub: "Changelog"
+  # Kept cheap on purpose (no install, no build) so a badly formatted entry fails in seconds
+  # rather than after the Android build. CHANGELOG.md is the single source of the release
+  # notes and of the in-app "new version" dialog, and release-android.yml runs the same script
+  # (with --release) before building, so what passes here will not fail there for format reasons.
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Check CHANGELOG.md format
+        run: node scripts/check-changelog.mjs

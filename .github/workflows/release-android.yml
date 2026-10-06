@@ -25,6 +25,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Fail before the build, not after it: the notes for this tag are produced from CHANGELOG.md
+      # only at the end of the job, so without this a malformed or missing section is discovered
+      # after the whole APK has been built. The script needs plain Node, which the runner image
+      # already has.
+      - name: Check changelog format
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/check-changelog.mjs --release "${TAG#v}"
+
       - name: Build Android APK
         uses: ./.github/actions/build-android-apk
         with:
