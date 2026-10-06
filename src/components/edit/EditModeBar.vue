@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Check, Redo2, Undo2 } from "@lucide/vue";
+
 defineProps<{
   canUndo: boolean;
   canRedo: boolean;
@@ -14,12 +16,18 @@ const emit = defineEmits<{
 
 <template>
   <div class="edit-bar" role="region" aria-label="编辑">
-    <button type="button" class="edit-btn" :disabled="!canUndo" @click="emit('undo')">回退</button>
-    <button type="button" class="edit-btn" :disabled="!canRedo" @click="emit('redo')">前进</button>
+    <button type="button" class="edit-btn" aria-label="回退" :disabled="!canUndo" @click="emit('undo')">
+      <Undo2 :size="18" />
+    </button>
+    <button type="button" class="edit-btn" aria-label="前进" :disabled="!canRedo" @click="emit('redo')">
+      <Redo2 :size="18" />
+    </button>
     <p v-if="count !== 0" class="edit-count" :class="{ 'is-negative': count < 0 }">
       {{ count > 0 ? `本次改动 ${count} 处` : `已回退之前的改动 ${Math.abs(count)} 处` }}
     </p>
-    <button type="button" class="edit-done" @click="emit('exit')">完成</button>
+    <button type="button" class="edit-done" aria-label="完成" @click="emit('exit')">
+      <Check :size="18" stroke-width="2.5" />
+    </button>
   </div>
 </template>
 
@@ -42,13 +50,15 @@ const emit = defineEmits<{
 
 .edit-btn,
 .edit-done {
-  min-height: 40px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex-shrink: 0;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 16%, var(--theme-bg-color));
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
   cursor: pointer;
 }
 
