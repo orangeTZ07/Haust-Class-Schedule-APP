@@ -437,11 +437,22 @@ export function useCourses() {
     nextScheduleId = 1;
   };
 
+  /// The week a table should open on: this week by the calendar, or week 1 when the calendar has
+  /// nothing useful to say (no semester start, today is before it, or the semester is already over).
+  /// semesterStartDate is one app-wide setting rather than a per-table one, so the same date applies
+  /// to whichever table is opened. Call it after the table's schedules are loaded: semesterWeekCount
+  /// grows with the weeks they use.
+  const weekToOpenOn = (): number => {
+    const week = weekNumberForDate(new Date());
+    return week !== null && week >= 1 && week <= semesterWeekCount.value ? week : 1;
+  };
+
   const switchCourseTable = async (id: number) => {
     await courseService.setActiveCourseTableId(id);
     activeCourseTableId.value = id;
-    currentWeek.value = 1;
+    // loadDataFromDb restores the last viewed week from storage, so the week is set after it.
     await loadDataFromDb();
+    currentWeek.value = weekToOpenOn();
   };
 
   const createCourseTable = async (name: string) => {
@@ -451,8 +462,8 @@ export function useCourses() {
     const id = await courseService.addCourseTable(trimmed);
     await courseService.setActiveCourseTableId(id);
     activeCourseTableId.value = id;
-    currentWeek.value = 1;
     await loadDataFromDb();
+    currentWeek.value = weekToOpenOn();
     return id;
   };
 
@@ -773,7 +784,7 @@ export function useCourses() {
       activeCourseTableId.value = previousTableId;
       await courseService.deleteCourseTable(newTableId);
       await loadDataFromDb();
-      // createCourseTable rewound the week to 1 for the new table.
+      // createCourseTable moved the week to the new table's opening week.
       currentWeek.value = previousWeek;
     } catch (e) {
       console.error("Failed to remove the course table left by a failed import", e);
