@@ -48,8 +48,14 @@ private data class SafeInsets(
     val bottom: Double,
     val left: Double,
 ) {
-    fun toJSObject(): JSObject =
-        JSObject().put("top", top).put("right", right).put("bottom", bottom).put("left", left)
+    // apply rather than chaining put(): whether put() returns JSObject or the JSONObject base
+    // depends on which overloads JSObject redeclares, and a chain would stop compiling on the latter.
+    fun toJSObject(): JSObject = JSObject().apply {
+        put("top", top)
+        put("right", right)
+        put("bottom", bottom)
+        put("left", left)
+    }
 
     /// A script that writes the four variables onto <html>. Inline style rather than a stylesheet
     /// rule so it wins over whatever the page declares for the same names, and so it needs no
