@@ -31,8 +31,8 @@ export const COACH_STEPS: CoachStep[] = [
   {
     id: "double-tap-empty-add-v1",
     title: "双击空白加课",
-    // 编辑模式上线后换成新 id（例如 double-tap-empty-add-v2），正文可以接上后半句：
-    // 「双击没有课程的格子，添加一节课；双击已有课程进入编辑模式。」
+    // 编辑模式上线后换成新 id（double-tap-empty-add-v2）。正文只留这一句，不要提回退开关，计数本身也不单独做一步：
+    // 「编辑后可一直点撤销，回退到更早的改动」
     body: "双击没有课程的格子，添加一节课。",
     target: "empty-cell",
     offHome: false,
