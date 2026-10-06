@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-system-bars"
+version = "0.1.0"
+edition = "2021"
+# The Gradle project name for the Android library is derived from this key: tauri-build turns
+# DEP_TAURI_PLUGIN_SYSTEM_BARS_ANDROID_LIBRARY_PATH into `tauri-plugin-system-bars`. Without
+# `links` cargo never exports that variable and the Kotlin module is silently left out of the APK.
+links = "tauri-plugin-system-bars"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = [] }

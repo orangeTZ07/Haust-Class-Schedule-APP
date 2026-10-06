@@ -31,6 +31,7 @@ tauri-plugin-opener = "~2.5"
 # 并且先在有 cargo 的机器上更新 Cargo.lock。
 tauri-plugin-http = { version = "~2.5", features = ["unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
+tauri-plugin-system-bars = { path = "plugins/system-bars" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
