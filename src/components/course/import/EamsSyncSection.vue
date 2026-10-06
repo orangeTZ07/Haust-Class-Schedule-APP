@@ -11,12 +11,14 @@ import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
 import { useConfirmReplace } from "./confirmReplace";
-import { importDateLabel, newTableNotice, type ImportOutcome } from "./importTable";
+import { importDateLabel, newTableNotice, newTableToast, skippedNotice, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
   /// The 连不上 hint points at the file route, which needs no network at all.
   "use-file": [];
+  /// Asked when the sync went through and left nothing the user has to read.
+  close: [];
 }>();
 
 const props = defineProps<{
@@ -136,13 +138,31 @@ const sync = async () => {
     }
 
     messageKind.value = "ok";
-    const extra = result.report.maxPeriod > 10
-      ? `\n注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
-      : "";
-    const where = imported.tableName ? newTableNotice(imported.tableName) : "已覆盖当前课表。";
-    message.value = `同步完成：${result.report.courses} 门课程、${result.report.schedules} 条日程。\n${where}${extra}`;
     password.value = "";
-    showToast(imported.tableName ? "已同步为新课表" : "课表已同步");
+    showToast(imported.tableName ? newTableToast(imported.tableName) : "课表已同步");
+
+    // A warning is something the user has to act on or at least read, so the sheet stays open to
+    // show it. Without one the toast says all there is to say and the sheet gets out of the way.
+    const warnings = [
+      result.report.maxPeriod > 10
+        ? `注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
+        : "",
+      skippedNotice(imported.skipped)
+    ].filter(Boolean);
+    if (warnings.length === 0) {
+      // Cleared as well, or the next time the sheet opens it would greet the user with a stale
+      // "同步完成".
+      message.value = "";
+      emit("close");
+      return;
+    }
+
+    const where = imported.tableName ? newTableNotice(imported.tableName) : "已覆盖当前课表。";
+    message.value = [
+      `同步完成：${result.report.courses} 门课程、${result.report.schedules - (imported.skipped ?? 0)} 条日程。`,
+      where,
+      ...warnings
+    ].join("\n");
   } catch (error) {
     messageKind.value = "err";
     // 这里以前写成 (error as Error).message —— 而 Tauri 拒绝时给的是错误值本身，对字符串错误

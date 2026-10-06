@@ -673,7 +673,7 @@ export function useCourses() {
   /// importAsNewCourseTable instead.
   const importFromJsonBackup = async (
     jsonStr: string
-  ): Promise<{ success: boolean; message: string; count: number }> => {
+  ): Promise<{ success: boolean; message: string; count: number; skipped?: number }> => {
     try {
       const parsed = JSON.parse(jsonStr);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -728,7 +728,8 @@ export function useCourses() {
         success: true,
         message: `已导入 ${courseCount} 门课程、${scheduleCount} 条课段` +
           (dropped > 0 ? `，跳过 ${dropped} 条找不到对应课程的课段` : ""),
-        count: courseCount
+        count: courseCount,
+        skipped: dropped
       };
     } catch (e) {
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
@@ -753,8 +754,8 @@ export function useCourses() {
   /// and week the user was on are put back, so a failed import leaves no empty table behind.
   const importAsNewCourseTable = async (
     baseName: string,
-    run: () => Promise<{ success: boolean; message: string; count: number }>
-  ): Promise<{ success: boolean; message: string; count: number; tableName: string }> => {
+    run: () => Promise<{ success: boolean; message: string; count: number; skipped?: number }>
+  ): Promise<{ success: boolean; message: string; count: number; skipped?: number; tableName: string }> => {
     const previousTableId = activeCourseTableId.value;
     const previousWeek = currentWeek.value;
     const tableName = uniqueCourseTableName(baseName);
@@ -769,7 +770,7 @@ export function useCourses() {
       return { success: false, message: "课表名称不能为空", count: 0, tableName };
     }
 
-    let result: { success: boolean; message: string; count: number };
+    let result: { success: boolean; message: string; count: number; skipped?: number };
     try {
       result = await run();
     } catch (e) {

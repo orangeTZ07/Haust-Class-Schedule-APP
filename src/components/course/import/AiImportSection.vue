@@ -6,7 +6,7 @@ import { CalendarDays, Check, Copy, FilePlus2, Plus, RefreshCcw } from "@lucide/
 import { useCourses } from "@/composables/useCourses";
 import { parseSemesterCSV } from "@/utils/csvImporter";
 import SegmentedControl from "./SegmentedControl.vue";
-import { importDateLabel, newTableNotice, type ImportOutcome } from "./importTable";
+import { importDateLabel, newTableToast, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
@@ -134,8 +134,7 @@ const handleImport = async () => {
       : await importFromSemesterCsv(csvInput.value, false);
 
   if (result.success) {
-    const message = result.tableName ? `${result.message}。${newTableNotice(result.tableName)}` : result.message;
-    showToast({ message, type: "success" });
+    showToast({ message: result.tableName ? newTableToast(result.tableName) : result.message, type: "success" });
     csvInput.value = "";
     emit("close");
   } else {

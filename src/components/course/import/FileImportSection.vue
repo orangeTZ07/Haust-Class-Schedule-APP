@@ -8,12 +8,17 @@ import { parseBackupFile } from "@/utils/backupFile";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
 import { useConfirmReplace } from "./confirmReplace";
-import { newTableNotice, tableNameFromFile, type ImportOutcome } from "./importTable";
+import { newTableNotice, newTableToast, skippedNotice, tableNameFromFile, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const props = defineProps<{
   /// Replace the current timetable instead of importing into a new one.
   overwrite: boolean;
+}>();
+
+const emit = defineEmits<{
+  /// Asked when the import went through and left nothing the user has to read.
+  close: [];
 }>();
 
 const { importFromJsonBackup, importAsNewCourseTable } = useCourses();
@@ -70,11 +75,22 @@ const onFilePicked = async (event: Event) => {
     }
 
     messageKind.value = "ok";
-    const summary = `导入完成：${result.courses} 门课程、${result.schedules} 条日程。（来自 ${file.name}）`;
-    message.value = imported.tableName
-      ? `${summary}\n${newTableNotice(imported.tableName)}`
-      : `${summary}\n已覆盖当前课表。`;
-    showToast(imported.tableName ? "已导入为新课表" : "已覆盖当前课表");
+    showToast(imported.tableName ? newTableToast(imported.tableName) : "已覆盖当前课表");
+
+    // Same rule as the 教务同步 tab: close unless there is a warning to read.
+    const skipped = skippedNotice(imported.skipped);
+    if (!skipped) {
+      message.value = "";
+      emit("close");
+      return;
+    }
+
+    const summary = `导入完成：${result.courses} 门课程、${result.schedules! - (imported.skipped ?? 0)} 条日程。（来自 ${file.name}）`;
+    message.value = [
+      summary,
+      imported.tableName ? newTableNotice(imported.tableName) : "已覆盖当前课表。",
+      skipped
+    ].join("\n");
   } catch (error) {
     messageKind.value = "err";
     message.value = `读取文件出错：${describeError(error)}`;
