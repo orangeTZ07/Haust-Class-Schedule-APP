@@ -454,7 +454,9 @@ const applyReminders = async () => {
 .section-hint {
   font-size: 11px;
   line-height: 1.6;
-  opacity: 0.5;
+  /* No colour was set, so the text inherited the page's fixed #333 and disappeared on dark themes. */
+  color: var(--theme-body-text);
+  opacity: 0.6;
   margin-top: 8px;
 }
 
