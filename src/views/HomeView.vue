@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
@@ -12,10 +12,12 @@ import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
 import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
+import EditModeBar from "@/components/edit/EditModeBar.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
-        periodSlots, addCourse, addSchedule } = useCourses();
+        periodSlots, addCourse, addSchedule, editing, sessionCount, canUndoEdit, canRedoEdit,
+        commitEdit, undoEdit, redoEdit, exitEditMode } = useCourses();
 
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -38,7 +40,19 @@ const trashTargetState = ref({
 // own failures: not being able to schedule a reminder must never get in the way of using the
 // timetable.
 const { refreshReminders } = useReminder();
-onMounted(refreshReminders);
+const onEditKey = (event: KeyboardEvent) => {
+  if (event.key !== "Escape" || !editing.value) return;
+  exitEditMode();
+};
+
+onMounted(() => {
+  document.addEventListener("keydown", onEditKey);
+  refreshReminders();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onEditKey);
+});
 
 const toggleSidebar = () => {
   setSidebar(!sidebarVisible.value);
@@ -85,6 +99,7 @@ const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
         };
 
   await addSchedule(course.id, slot.day, slot.period, endPeriod, scheduleOptions);
+  commitEdit();
   addVisible.value = false;
   addSlot.value = null;
   const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
@@ -410,6 +425,16 @@ const onEdgeTouchEnd = () => {
           @request-add="onRequestAdd"
         />
       </div>
+
+      <EditModeBar
+        v-if="editing"
+        :can-undo="canUndoEdit"
+        :can-redo="canRedoEdit"
+        :count="sessionCount"
+        @undo="undoEdit"
+        @redo="redoEdit"
+        @exit="exitEditMode"
+      />
     </div>
   </div>
 </template>

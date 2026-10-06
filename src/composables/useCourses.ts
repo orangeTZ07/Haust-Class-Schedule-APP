@@ -1,6 +1,20 @@
 import { ref, computed, watch } from "vue";
 import type { Course, CourseSchedule, CourseImportItem, CourseTable, PeriodTimeConfig } from "@/types/course";
 import { parseCSV, parseSemesterCSV, type ParsedCourse } from "@/utils/csvImporter";
+import {
+  canRedo,
+  canUndo,
+  cloneSnapshot,
+  forgetTableHistory,
+  pushSnapshot,
+  readTableHistory,
+  redoStep,
+  seedHistory,
+  stepSessionCount,
+  undoStep,
+  writeTableHistory,
+  type TableHistory
+} from "@/utils/editHistory";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -32,6 +46,16 @@ const currentWeek = ref(1);
 /// starting point: 设置 -> 网格设置 lets it be changed, and the value is persisted.
 const DEFAULT_SEMESTER_START = "2026-08-31";
 const semesterStartDate = ref(DEFAULT_SEMESTER_START);
+
+/// Edit mode is entered by a timetable gesture, not by a separate button. The bar stays up
+/// until the user finishes it. History itself is per course table; this flag is only the chrome.
+const editing = ref(false);
+/// How many edits this session is ahead of the timetable that was on screen when it started.
+/// Undo past that snapshot makes the count negative.
+const sessionCount = ref(0);
+const tableHistory = ref<TableHistory>({ snapshots: [], index: 0 });
+let historyTableId = 0;
+let applyingHistory = false;
 
 let nextCourseId = 1;
 let nextScheduleId = 1;
@@ -126,6 +150,7 @@ async function loadDataFromDb() {
     if (savedSemesterStart) {
       semesterStartDate.value = savedSemesterStart;
     }
+    adoptEditHistory();
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
   }
@@ -162,6 +187,90 @@ const semesterWeekCount = computed(() => {
 const weekToOpenOn = (): number => {
   const week = weekNumberForDate(new Date());
   return week !== null && week >= 1 && week <= semesterWeekCount.value ? week : 1;
+};
+
+const persistEditHistory = () => {
+  writeTableHistory(localStorage, activeCourseTableId.value, tableHistory.value);
+};
+
+/// Load this table's stored snapshots. Same table reloads (a delete that re-reads the db)
+/// keep the in-memory session, so the following commit still belongs to the edit in progress.
+const adoptEditHistory = () => {
+  if (applyingHistory) return;
+  const tableId = activeCourseTableId.value;
+  if (tableId === historyTableId && tableHistory.value.snapshots.length > 0) return;
+  historyTableId = tableId;
+  const stored = readTableHistory(localStorage, tableId);
+  if (!stored) {
+    tableHistory.value = seedHistory(cloneSnapshot(courses.value, schedules.value));
+    persistEditHistory();
+  } else {
+    tableHistory.value = stored;
+  }
+  editing.value = false;
+  sessionCount.value = 0;
+};
+
+/// Import and clear replace the timetable outright. They are not card edits, so the undo
+/// chain starts over at whatever is on screen now.
+const anchorEditHistory = () => {
+  if (applyingHistory) return;
+  historyTableId = activeCourseTableId.value;
+  tableHistory.value = seedHistory(cloneSnapshot(courses.value, schedules.value));
+  sessionCount.value = 0;
+  editing.value = false;
+  persistEditHistory();
+};
+
+const commitEdit = () => {
+  if (applyingHistory) return;
+  const next = cloneSnapshot(courses.value, schedules.value);
+  const starting = !editing.value;
+  const pushed = pushSnapshot(tableHistory.value, next);
+  if (!pushed.changed) return;
+  tableHistory.value = pushed.history;
+  if (starting) sessionCount.value = 0;
+  sessionCount.value = stepSessionCount(sessionCount.value, "edit");
+  editing.value = true;
+  persistEditHistory();
+};
+
+const canUndoEdit = computed(() => canUndo(tableHistory.value));
+const canRedoEdit = computed(() => canRedo(tableHistory.value));
+
+const applyHistoryIndex = async (next: TableHistory) => {
+  const snapshot = next.snapshots[next.index];
+  if (!snapshot) return;
+  applyingHistory = true;
+  try {
+    await courseService.replaceActiveTableContents(snapshot.courses, snapshot.schedules);
+    courses.value = snapshot.courses.map(course => ({ ...course }));
+    schedules.value = snapshot.schedules.map(schedule => ({ ...schedule }));
+    tableHistory.value = next;
+    if (courses.value.length > 0) nextCourseId = Math.max(...courses.value.map(course => course.id)) + 1;
+    if (schedules.value.length > 0) nextScheduleId = Math.max(...schedules.value.map(schedule => schedule.id)) + 1;
+    persistEditHistory();
+  } finally {
+    applyingHistory = false;
+  }
+};
+
+const undoEdit = async () => {
+  const next = undoStep(tableHistory.value);
+  if (!next) return;
+  await applyHistoryIndex(next);
+  sessionCount.value = stepSessionCount(sessionCount.value, "undo");
+};
+
+const redoEdit = async () => {
+  const next = redoStep(tableHistory.value);
+  if (!next) return;
+  await applyHistoryIndex(next);
+  sessionCount.value = stepSessionCount(sessionCount.value, "redo");
+};
+
+const exitEditMode = () => {
+  editing.value = false;
 };
 
 // Initial load. A cold start opens on this week by the calendar instead of the week saved from
@@ -454,6 +563,7 @@ export function useCourses() {
     schedules.value = [];
     nextCourseId = 1;
     nextScheduleId = 1;
+    anchorEditHistory();
   };
 
   const switchCourseTable = async (id: number) => {
@@ -485,6 +595,8 @@ export function useCourses() {
   };
 
   const deleteCourseTable = async (id: number) => {
+    forgetTableHistory(localStorage, id);
+    if (id === historyTableId) historyTableId = 0;
     await courseService.deleteCourseTable(id);
     await loadDataFromDb();
   };
@@ -599,6 +711,7 @@ export function useCourses() {
         count++;
       }
 
+      anchorEditHistory();
       return { success: true, message: `成功导入第 ${currentWeek.value} 周的 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
@@ -629,6 +742,7 @@ export function useCourses() {
       }
 
       setCurrentWeek(1);
+      anchorEditHistory();
 
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
@@ -659,6 +773,7 @@ export function useCourses() {
         }
       }
 
+      anchorEditHistory();
       return { success: true, message: `成功导入 ${count} 门课程`, count };
     } catch (e) {
       return { success: false, message: `JSON 解析错误: ${(e as Error).message}`, count: 0 };
@@ -732,6 +847,7 @@ export function useCourses() {
       // Report dropped rows rather than swallowing them: a restore that quietly loses part of
       // the data is worse than one that says what it could not place.
       const dropped = backupSchedules.length - scheduleCount;
+      anchorEditHistory();
 
       return {
         success: true,
@@ -792,6 +908,7 @@ export function useCourses() {
       // service pick a replacement on its own.
       await courseService.setActiveCourseTableId(previousTableId);
       activeCourseTableId.value = previousTableId;
+      forgetTableHistory(localStorage, newTableId);
       await courseService.deleteCourseTable(newTableId);
       await loadDataFromDb();
       // createCourseTable moved the week to the new table's opening week.
@@ -870,6 +987,14 @@ export function useCourses() {
     exportToCsv,
     exportToJsonBackup,
     clearAll,
+    editing,
+    sessionCount,
+    canUndoEdit,
+    canRedoEdit,
+    commitEdit,
+    undoEdit,
+    redoEdit,
+    exitEditMode,
     switchCourseTable,
     createCourseTable,
     renameCourseTable,
