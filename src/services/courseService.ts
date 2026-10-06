@@ -1,5 +1,13 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { Course, CourseSchedule, CourseTable } from "@/types/course";
+import {
+  capHistory,
+  forgetTableHistory,
+  normalizeHistory,
+  readTableHistory,
+  writeTableHistory,
+  type TableHistory
+} from "@/utils/editHistory";
 
 const DB_NAME = "sqlite:course_mngr.db";
 const DEFAULT_TABLE_ID = 1;
@@ -80,6 +88,23 @@ async function initDb(db: Database) {
   if (!scheduleColumns.some(column => column.name === "is_cancelled")) {
     await db.execute("ALTER TABLE schedules ADD COLUMN is_cancelled INTEGER NOT NULL DEFAULT 0");
   }
+
+  // One row per action group (the timetable after one user gesture), capped per course table.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS edit_action_groups (
+      table_id INTEGER NOT NULL,
+      position INTEGER NOT NULL,
+      courses_json TEXT NOT NULL,
+      schedules_json TEXT NOT NULL,
+      PRIMARY KEY (table_id, position)
+    );
+  `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS edit_history_heads (
+      table_id INTEGER PRIMARY KEY,
+      current_index INTEGER NOT NULL
+    );
+  `);
 }
 
 // --- Web Fallback Logic ---
@@ -201,6 +226,8 @@ export async function deleteCourseTable(id: number): Promise<void> {
   if (db) {
     await db.execute("DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)", [id]);
     await db.execute("DELETE FROM courses WHERE table_id = $1", [id]);
+    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [id]);
+    await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [id]);
     await db.execute("DELETE FROM course_tables WHERE id = $1", [id]);
   } else {
     const webCourses = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.COURSES) || "[]") as Array<Course & { tableId?: number }>;
@@ -215,6 +242,7 @@ export async function deleteCourseTable(id: number): Promise<void> {
       JSON.stringify(webSchedules.filter(schedule => !deletedCourseIds.has(schedule.courseId)))
     );
     localStorage.setItem(WEB_STORAGE_KEYS.TABLES, JSON.stringify(tables.filter(table => table.id !== id)));
+    forgetTableHistory(localStorage, id);
   }
 
   const activeId = await getActiveCourseTableId();
@@ -449,6 +477,82 @@ export async function replaceActiveTableContents(nextCourses: Course[], nextSche
   const restoredIds = new Set(nextSchedules.map(schedule => schedule.id));
   const keptSchedules = storedSchedules.filter(schedule => !removedIds.has(schedule.courseId) && !restoredIds.has(schedule.id));
   localStorage.setItem(WEB_STORAGE_KEYS.SCHEDULES, JSON.stringify([...keptSchedules, ...nextSchedules]));
+}
+
+/// Action groups for one course table. SQLite on the phone; localStorage when there is no database.
+/// At most 500 groups are kept. Older ones are already dropped before this is called.
+export async function readEditHistory(tableId: number): Promise<TableHistory | null> {
+  const db = await getDb();
+  if (!db) return readTableHistory(localStorage, tableId);
+
+  try {
+    const rows = await db.select<Array<{ position: number; courses_json: string; schedules_json: string }>>(
+      "SELECT position, courses_json, schedules_json FROM edit_action_groups WHERE table_id = $1 ORDER BY position ASC",
+      [tableId]
+    );
+    if (rows.length === 0) return null;
+    const heads = await db.select<Array<{ current_index: number }>>(
+      "SELECT current_index FROM edit_history_heads WHERE table_id = $1",
+      [tableId]
+    );
+    const snapshots = rows.map(row => ({
+      courses: JSON.parse(row.courses_json),
+      schedules: JSON.parse(row.schedules_json)
+    }));
+    return normalizeHistory({
+      snapshots,
+      index: heads[0]?.current_index ?? snapshots.length - 1
+    });
+  } catch (e) {
+    console.error("Failed to read edit history", e);
+    return null;
+  }
+}
+
+export async function writeEditHistory(tableId: number, history: TableHistory): Promise<void> {
+  const capped = capHistory(history);
+  const db = await getDb();
+  if (!db) {
+    writeTableHistory(localStorage, tableId, capped);
+    return;
+  }
+
+  await db.execute("BEGIN");
+  try {
+    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+    if (capped.snapshots.length === 0) {
+      await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
+      await db.execute("COMMIT");
+      return;
+    }
+
+    for (let position = 0; position < capped.snapshots.length; position++) {
+      const snapshot = capped.snapshots[position];
+      await db.execute(
+        "INSERT INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ($1, $2, $3, $4)",
+        [tableId, position, JSON.stringify(snapshot.courses), JSON.stringify(snapshot.schedules)]
+      );
+    }
+    await db.execute(
+      `INSERT INTO edit_history_heads (table_id, current_index) VALUES ($1, $2)
+       ON CONFLICT(table_id) DO UPDATE SET current_index = excluded.current_index`,
+      [tableId, capped.index]
+    );
+    await db.execute("COMMIT");
+  } catch (error) {
+    await db.execute("ROLLBACK");
+    throw error;
+  }
+}
+
+export async function forgetEditHistory(tableId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    forgetTableHistory(localStorage, tableId);
+    return;
+  }
+  await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+  await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
 }
 
 export async function deleteSchedule(id: number) {

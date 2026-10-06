@@ -16,8 +16,8 @@ const emit = defineEmits<{
   <div class="edit-bar" role="region" aria-label="编辑">
     <button type="button" class="edit-btn" :disabled="!canUndo" @click="emit('undo')">回退</button>
     <button type="button" class="edit-btn" :disabled="!canRedo" @click="emit('redo')">前进</button>
-    <p class="edit-count">
-      新增改动<span class="edit-count-num" :class="{ 'is-negative': count < 0 }">{{ count }}</span>处
+    <p v-if="count !== 0" class="edit-count" :class="{ 'is-negative': count < 0 }">
+      {{ count > 0 ? `本次改动 ${count} 处` : `已回退之前的改动 ${Math.abs(count)} 处` }}
     </p>
     <button type="button" class="edit-done" @click="emit('exit')">完成</button>
   </div>
@@ -71,7 +71,7 @@ const emit = defineEmits<{
   line-height: 1.2;
 }
 
-.edit-count-num.is-negative {
+.edit-count.is-negative {
   color: var(--color-danger);
 }
 
