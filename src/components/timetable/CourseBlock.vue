@@ -492,6 +492,8 @@ const periodText = computed(() => {
   opacity: 0.5;
   margin-top: auto;
   text-align: right;
+  /* On a 360px screen a column is about 40px wide, and "3-4节" used to break after the dash. */
+  white-space: nowrap;
 }
 
 .is-expanded .course-period {

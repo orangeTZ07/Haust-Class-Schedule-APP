@@ -88,16 +88,16 @@ const onCheck = async () => {
   margin-left: 6px;
   font-family: 'Monaco', 'Courier New', monospace;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .check-btn {
   height: 28px;
   padding: 0 12px;
   font-size: 12px;
-  background: color-mix(in srgb, var(--theme-header-bg) 10%, transparent);
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .status-hint {

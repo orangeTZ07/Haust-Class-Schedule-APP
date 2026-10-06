@@ -195,10 +195,12 @@ const handleDelete = async (id: number, name: string) => {
   gap: 2px;
 }
 
+/* body-text, not header-text, throughout this page: its header is painted with the page background,
+   and header-text is white on the Vant preset, so the title, back button and names vanished. */
 .title {
   font-size: 17px;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .subtitle {
@@ -252,7 +254,7 @@ const handleDelete = async (id: number, name: string) => {
 .icon-btn {
   border: none;
   border-radius: 8px;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
   display: flex;
   align-items: center;
@@ -263,6 +265,7 @@ const handleDelete = async (id: number, name: string) => {
   width: 40px;
   height: 40px;
   background: var(--theme-header-bg);
+  color: var(--theme-header-text);
 }
 
 .icon-btn {
@@ -314,7 +317,7 @@ const handleDelete = async (id: number, name: string) => {
 .table-name {
   font-size: 15px;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -308,15 +308,17 @@ const applyReminders = async () => {
   margin-bottom: 16px;
 }
 
+/* The small controls below sit on the page, not on the header band, so they are tinted with and
+   lettered in body-text. header-text is white on the Vant preset, which left them blank. */
 .reset-btn {
   height: 24px;
   padding: 0 10px;
   font-size: 11px;
-  background: var(--theme-header-bg); /* Fallback */
-  background: color-mix(in srgb, var(--theme-header-bg) 10%, transparent);
+  background: var(--theme-bg-color); /* Fallback */
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
   border: 1px solid var(--theme-grid-line-color); /* Fallback */
   border: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
 }
 
 .section {
@@ -384,17 +386,17 @@ const applyReminders = async () => {
 .time-value {
   font-size: 15px;
   font-weight: 700;
-  color: var(--theme-header-text);
+  color: var(--theme-body-text);
   font-family: 'Monaco', 'Courier New', monospace;
   padding: 4px 8px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--theme-header-bg) 8%, transparent);
+  background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
 }
 
 /* 适配 Vant 组件的主题色偏移 */
 :deep(.van-stepper__plus), :deep(.van-stepper__minus) {
-  background-color: color-mix(in srgb, var(--theme-header-bg) 15%, transparent) !important;
-  color: var(--theme-header-text) !important;
+  background-color: color-mix(in srgb, var(--theme-body-text) 10%, transparent) !important;
+  color: var(--theme-body-text) !important;
   border: none !important; /* 移除可能的默认边框 */
   opacity: 1 !important;
 }
@@ -458,8 +460,8 @@ const applyReminders = async () => {
 
 .date-input {
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
-  background: color-mix(in srgb, var(--theme-header-bg) 8%, transparent);
-  color: var(--theme-header-text);
+  background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
+  color: var(--theme-body-text);
   font-family: 'Monaco', 'Courier New', monospace;
   font-size: 14px;
   padding: 6px 8px;
@@ -486,7 +488,9 @@ const applyReminders = async () => {
   padding: 0 2px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--theme-card-border-color);
+  /* The accent: the card border colour is pale on the light presets and dim on the dark ones, which
+     made this link hard to find. */
+  color: var(--theme-accent);
   text-decoration: underline;
 }
 </style>

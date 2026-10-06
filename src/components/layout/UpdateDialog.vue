@@ -102,6 +102,8 @@ const onUpdateShow = (value: boolean) => {
 .notes-list {
   margin: 4px 0 0;
   padding-left: 18px;
+  /* Vant's reset strips list markers, which left the items indented with nothing in the gutter. */
+  list-style: disc;
   font-size: 13px;
   line-height: 1.6;
 }
