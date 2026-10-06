@@ -1,4 +1,5 @@
 import { ref, computed, watch } from "vue";
+import { pickAccent } from "@/utils/themeAccent";
 
 export type ThemeMode = "light" | "dark";
 
@@ -324,6 +325,7 @@ if (saved) {
 }
 
 function buildCssVariables(config: ThemeConfig) {
+  const { accent, onAccent } = pickAccent(config);
   return {
     "--theme-bg-color": config.bgColor,
     "--theme-card-opacity": config.cardOpacity / 100,
@@ -335,6 +337,8 @@ function buildCssVariables(config: ThemeConfig) {
     "--theme-header-bg": config.headerBgColor,
     "--theme-header-text": config.headerTextColor,
     "--theme-body-text": config.bodyTextColor,
+    "--theme-accent": accent,
+    "--theme-on-accent": onAccent,
     "--theme-bg-image": config.bgImage ? `url(${config.bgImage})` : "none",
     "--theme-bg-image-opacity": config.bgImageOpacity / 100,
     "--theme-bg-blur": `${config.bgBlur}px`,

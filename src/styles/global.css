@@ -21,6 +21,107 @@ body {
   min-height: 100vh;
 }
 
+/* ---------- Press feedback ----------
+   Every tappable thing sinks a little under the finger and springs back when it lets go. The
+   selectors sit inside :where() so they have zero specificity: a component that already declares its
+   own transform or transition (the orbit knob, the todo cards) keeps it, and only the plain buttons
+   that had nothing pick this up. Vant's own buttons are left out, they draw their own pressed mask. */
+:where(.haptics, button:not([class*="van-"])) {
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-fast) ease-out;
+}
+
+:where(.haptics:active, button:not([class*="van-"]):not(:disabled):active) {
+  transform: scale(var(--press-scale));
+  opacity: 0.85;
+  /* Going down is quick and has no overshoot; only the release bounces. */
+  transition:
+    transform 90ms ease-out,
+    opacity 90ms ease-out;
+}
+
+/* ---------- Vant popups ----------
+   Vant ships its own timings (0.3s, plain ease-out/ease-in); these bring its layers onto the shared
+   vocabulary so the import sheet, the dialogs and the toasts do not each move differently. */
+
+/* Centred popups (update, export, contact, toasts): grow from 0.92 on the spring. Scale and fade are
+   two animations because the spring overshoots, and an opacity that overshoots would flicker. */
+.van-popup--center.van-fade-enter-active {
+  animation:
+    pop-scale-in var(--dur-slow) var(--ease-spring) backwards,
+    pop-fade-in var(--dur-fast) ease-out backwards;
+}
+
+.van-popup--center.van-fade-leave-active {
+  animation:
+    pop-scale-out var(--dur-fast) var(--ease-exit) both,
+    pop-fade-out var(--dur-fast) var(--ease-exit) both;
+}
+
+/* The popup is centred with translateY(-50%), so the keyframes have to carry it or the popup would
+   jump while it scales. */
+@keyframes pop-scale-in {
+  from { transform: translateY(-50%) scale(0.92); }
+  to { transform: translateY(-50%) scale(1); }
+}
+
+@keyframes pop-scale-out {
+  from { transform: translateY(-50%) scale(1); }
+  to { transform: translateY(-50%) scale(0.96); }
+}
+
+@keyframes pop-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Bottom sheets (the import panel): a large surface, so smooth and without overshoot. */
+.van-popup-slide-bottom-enter-active {
+  transition-duration: var(--dur-slow);
+  transition-timing-function: var(--ease-smooth);
+}
+
+.van-popup-slide-bottom-leave-active {
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--ease-exit);
+}
+
+.van-overlay.van-fade-enter-active {
+  animation-duration: var(--dur-base);
+  animation-timing-function: ease-out;
+}
+
+.van-overlay.van-fade-leave-active {
+  animation-duration: var(--dur-fast);
+  animation-timing-function: ease-in;
+}
+
+/* Dialogs from showConfirmDialog use Vant's own bounce transition: 0.7 scale on a flat ease, which
+   is both too deep and has no spring. Same shape as the centred popups above. */
+.van-dialog-bounce-enter-active {
+  transition-duration: var(--dur-slow), var(--dur-fast);
+  transition-timing-function: var(--ease-spring), ease-out;
+}
+
+.van-dialog-bounce-leave-active {
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-exit);
+}
+
+.van-dialog-bounce-enter-from {
+  transform: translate3d(0, -50%, 0) scale(0.92);
+}
+
+.van-dialog-bounce-leave-active {
+  transform: translate3d(0, -50%, 0) scale(0.96);
+}
+
 /* Vant confirm dialogs are mounted outside component scope, so theme styles live globally. */
 .theme-confirm-dialog {
   background: var(--theme-bg-color) !important;
@@ -32,7 +133,7 @@ body {
 }
 
 .theme-confirm-dialog .van-dialog__header {
-  color: var(--theme-header-text) !important;
+  color: var(--theme-body-text) !important;
   font-weight: 700 !important;
   padding-top: 24px !important;
 }
@@ -59,9 +160,16 @@ body {
   font-size: 15px !important;
 }
 
+/* The accent, not header-text: header-text is white on the Vant preset and the dialog is white too,
+   so 确定 used to vanish there. */
 .theme-confirm-dialog .van-dialog__confirm {
-  color: var(--theme-header-text) !important;
+  color: var(--theme-accent) !important;
   font-weight: 700 !important;
+}
+
+/* For confirmations that throw data away (replace the timetable, restore a snapshot). */
+.theme-confirm-dialog.is-danger .van-dialog__confirm {
+  color: var(--color-danger) !important;
 }
 
 .theme-confirm-dialog .van-hairline--left::after {
