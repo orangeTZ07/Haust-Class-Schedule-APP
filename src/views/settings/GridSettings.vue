@@ -113,6 +113,7 @@ const oemSteps = [
 const oemOpen = ref(false);
 const notifyReturnTip = ref(false);
 let awaitingNotifySettings = false;
+let awaitingBatterySettings = false;
 
 const refreshBatteryState = async () => {
   batteryExempt.value = await checkBatteryOptimization();
@@ -124,32 +125,38 @@ const permissionMissing = computed(
   () => reminderPermission.value === "denied" || reminderPermission.value === "prompt"
 );
 
-const onNotifySettingsReturn = () => {
-  if (document.visibilityState !== "visible" || !awaitingNotifySettings) return;
-  awaitingNotifySettings = false;
-  refreshPermission()
-    .then(() => {
-      if (!permissionMissing.value) return;
-      try {
-        if (localStorage.getItem(NOTIFY_TIP_KEY) === "1") return;
-        localStorage.setItem(NOTIFY_TIP_KEY, "1");
-      } catch {
-        // Still show it this once if storage is unavailable.
-      }
-      notifyReturnTip.value = true;
-    })
-    .catch(() => {});
+const onForegroundReturn = () => {
+  if (document.visibilityState !== "visible") return;
+  if (awaitingNotifySettings) {
+    awaitingNotifySettings = false;
+    refreshPermission()
+      .then(() => {
+        if (!permissionMissing.value) return;
+        try {
+          if (localStorage.getItem(NOTIFY_TIP_KEY) === "1") return;
+          localStorage.setItem(NOTIFY_TIP_KEY, "1");
+        } catch {
+          // Still show it this once if storage is unavailable.
+        }
+        notifyReturnTip.value = true;
+      })
+      .catch(() => {});
+  }
+  if (awaitingBatterySettings) {
+    awaitingBatterySettings = false;
+    refreshBatteryState().catch(() => {});
+  }
 };
 
 onMounted(() => {
   refreshBatteryState();
   // Failing to read the permission only means the hint stays hidden.
   refreshPermission().catch(() => {});
-  document.addEventListener("visibilitychange", onNotifySettingsReturn);
+  document.addEventListener("visibilitychange", onForegroundReturn);
 });
 
 onUnmounted(() => {
-  document.removeEventListener("visibilitychange", onNotifySettingsReturn);
+  document.removeEventListener("visibilitychange", onForegroundReturn);
 });
 
 const onOpenNotificationSettings = async () => {
@@ -159,6 +166,16 @@ const onOpenNotificationSettings = async () => {
   } catch (e) {
     awaitingNotifySettings = false;
     reminderMessage.value = `无法打开系统设置：${describeError(e)}`;
+  }
+};
+
+const onOpenBatteryWhitelist = async () => {
+  awaitingBatterySettings = true;
+  try {
+    await openBatterySettings();
+  } catch (e) {
+    awaitingBatterySettings = false;
+    reminderMessage.value = `无法打开电池优化设置：${describeError(e)}`;
   }
 };
 
@@ -319,8 +336,8 @@ const applyReminders = async () => {
         </ul>
       </div>
       <div v-if="reminderPrefs.enabled && !batteryExempt" class="section-hint">
-        系统可能限制后台闹钟而导致提醒延后，建议把本应用加入电池优化白名单。
-        <button class="mini-link haptics" @click="openBatterySettings">去设置</button>
+        系统可能限制后台闹钟而导致提醒延后。点「去允许」加入电池优化白名单；没有弹窗的手机则打开系统列表。
+        <button type="button" class="mini-link haptics" @click="onOpenBatteryWhitelist">去允许</button>
       </div>
       <div v-if="reminderPrefs.enabled" class="section-hint">
         打开应用、从后台切回来、或者课表和上课时间有改动时，会为未来 7 天重新排一遍提醒；超过一周不打开应用，后面的提醒不会自动排上。

@@ -44,6 +44,8 @@ export async function checkBatteryOptimization(): Promise<boolean> {
   }
 }
 
+/// Android: ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS with this package, then the
+/// IGNORE_BATTERY_OPTIMIZATION_SETTINGS list if already exempt or the OEM hid the dialog.
 export async function openBatterySettings(): Promise<void> {
   await invoke(`${PREFIX}|open_battery_settings`);
 }

@@ -86,10 +86,12 @@ class ReminderPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun openBatterySettings(invoke: Invoke) {
         try {
-            WhitelistHelper.openBatteryOptimizationSettings(context)
+            // The Activity, not applicationContext: the request dialog should sit on this screen.
+            // Already exempt, or an OEM with no such activity, opens the system list instead.
+            WhitelistHelper.requestIgnoreOrOpenList(activity)
             invoke.resolve()
         } catch (e: Exception) {
-            invoke.reject(e.message ?: "无法打开电池优化设置页")
+            invoke.reject(e.message ?: "无法打开电池优化设置")
         }
     }
 
