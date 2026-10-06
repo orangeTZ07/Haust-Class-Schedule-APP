@@ -260,13 +260,15 @@ const gruvboxDarkPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-// 白金 / 黑金 / 绯红 / 樱粉。名字先用这四个，品牌名还没定。
+// 白金 / 黑金 / 网易云红 / B站粉。只加在预设表里，组件不写死这些颜色。
 // 背景 → bgColor，课程边框 → cardBorderColor，主色 → headerBgColor。
+// 品牌色：网易云红 #EC4141，B站粉 #FB7299。白金主色 #9AA3B2、金 #C9A84C；
+// 黑金主色 #D4AF37、浅金 #F0D78C。房间若另给色板，再替换这些值。
 // 强调色本应放进 headerTextColor，让 pickAccent 在它和背景达到 3:1 时选用。
 // 但这四组强调色和主色彼此只有大约 1.1–1.5:1，直接当表头字会让标题和「今天」圆角标记读不清。
 // 表头字因此改成在主色上达到 3:1 的字色（和课程名同一套对比）：
-// 白金、樱粉的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
-// 黑金字用页面色，标记落到主色金。绯红字用白，标记落到主色红。
+// 白金、B站粉的强调色和主色都不到页面上的 3:1，字用正文色，标记也落到正文色。
+// 黑金字用页面色，标记落到主色金。网易云红字用白，标记落到主色红。
 // 正文色沿用现有亮色 / 暗色预设。
 const platinumPreset: ThemeConfig = {
   mode: "light",
@@ -302,7 +304,7 @@ const blackGoldPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-const crimsonPreset: ThemeConfig = {
+const neteaseRedPreset: ThemeConfig = {
   mode: "light",
   cardOpacity: 35,
   cardBorderWidth: 1,
@@ -319,7 +321,7 @@ const crimsonPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
-const sakuraPinkPreset: ThemeConfig = {
+const bilibiliPinkPreset: ThemeConfig = {
   mode: "light",
   cardOpacity: 35,
   cardBorderWidth: 1,
@@ -543,15 +545,15 @@ export const presetList: PresetInfo[] = [
     color: "#D4AF37"
   },
   {
-    id: "绯红",
-    name: "绯红",
-    preset: crimsonPreset,
+    id: "网易云红",
+    name: "网易云红",
+    preset: neteaseRedPreset,
     color: "#EC4141"
   },
   {
-    id: "樱粉",
-    name: "樱粉",
-    preset: sakuraPinkPreset,
+    id: "B站粉",
+    name: "B站粉",
+    preset: bilibiliPinkPreset,
     color: "#FB7299"
   }
 ];
