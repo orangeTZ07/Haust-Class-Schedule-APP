@@ -131,8 +131,50 @@ async function loadDataFromDb() {
   }
 }
 
-// Initial Load
-loadDataFromDb();
+/// Which semester week a date falls in, or null when the semester start is missing or the date
+/// precedes it.
+///
+/// Counted in whole local days rather than by dividing timestamps: across a daylight-saving
+/// change a calendar day is not 24 hours, so a raw millisecond division lands on the wrong week
+/// for part of the year. Rounding after subtracting two local midnights absorbs that hour.
+const weekNumberForDate = (date: Date): number | null => {
+  const start = parseIsoDate(semesterStartDate.value);
+  if (!start) return null;
+
+  const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const to = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000);
+  if (days < 0) return null;
+
+  return Math.floor(days / 7) + 1;
+};
+
+const semesterWeekCount = computed(() => {
+  const maxImportedWeek = schedules.value.reduce((max, schedule) => Math.max(max, schedule.endWeek), 0);
+  return Math.max(maxImportedWeek, 20);
+});
+
+/// The week a table should open on: this week by the calendar, or week 1 when the calendar has
+/// nothing useful to say (no semester start, today is before it, or the semester is already over).
+/// semesterStartDate is one app-wide setting rather than a per-table one, so the same date applies
+/// to whichever table is opened. Call it after the table's schedules are loaded: semesterWeekCount
+/// grows with the weeks they use.
+const weekToOpenOn = (): number => {
+  const week = weekNumberForDate(new Date());
+  return week !== null && week >= 1 && week <= semesterWeekCount.value ? week : 1;
+};
+
+// Initial load. A cold start opens on this week by the calendar instead of the week saved from
+// the last session: by the time the app is reopened that week can be days or months stale, while
+// the today column, the 本周 marks and the class reminders all go by the calendar. Outside the
+// semester the calendar has no week to offer, and then the saved week is kept rather than forcing
+// week 1 the way weekToOpenOn does for a freshly opened table.
+loadDataFromDb().then(() => {
+  const week = weekNumberForDate(new Date());
+  if (week !== null && week <= semesterWeekCount.value) {
+    currentWeek.value = week;
+  }
+});
 
 export function useCourses() {
   // Watch for config changes and save to localStorage (config remains in localStorage for simplicity)
@@ -169,29 +211,6 @@ export function useCourses() {
   const setSemesterStartDate = (iso: string) => {
     semesterStartDate.value = iso;
   };
-
-  /// Which semester week a date falls in, or null when the semester start is missing or the date
-  /// precedes it.
-  ///
-  /// Counted in whole local days rather than by dividing timestamps: across a daylight-saving
-  /// change a calendar day is not 24 hours, so a raw millisecond division lands on the wrong week
-  /// for part of the year. Rounding after subtracting two local midnights absorbs that hour.
-  const weekNumberForDate = (date: Date): number | null => {
-    const start = parseIsoDate(semesterStartDate.value);
-    if (!start) return null;
-
-    const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const to = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const days = Math.round((to.getTime() - from.getTime()) / 86400000);
-    if (days < 0) return null;
-
-    return Math.floor(days / 7) + 1;
-  };
-
-  const semesterWeekCount = computed(() => {
-    const maxImportedWeek = schedules.value.reduce((max, schedule) => Math.max(max, schedule.endWeek), 0);
-    return Math.max(maxImportedWeek, 20);
-  });
 
   const semesterSchedules = computed(() => {
     return schedules.value.filter(schedule => getScheduleScope(schedule) === "semester");
@@ -435,16 +454,6 @@ export function useCourses() {
     schedules.value = [];
     nextCourseId = 1;
     nextScheduleId = 1;
-  };
-
-  /// The week a table should open on: this week by the calendar, or week 1 when the calendar has
-  /// nothing useful to say (no semester start, today is before it, or the semester is already over).
-  /// semesterStartDate is one app-wide setting rather than a per-table one, so the same date applies
-  /// to whichever table is opened. Call it after the table's schedules are loaded: semesterWeekCount
-  /// grows with the weeks they use.
-  const weekToOpenOn = (): number => {
-    const week = weekNumberForDate(new Date());
-    return week !== null && week >= 1 && week <= semesterWeekCount.value ? week : 1;
   };
 
   const switchCourseTable = async (id: number) => {

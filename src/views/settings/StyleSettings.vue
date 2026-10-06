@@ -279,7 +279,7 @@ const presetColors = [
   min-height: 100vh;
   background: var(--theme-bg-color);
   color: var(--theme-body-text);
-  padding-bottom: 40px;
+  padding-bottom: calc(40px + var(--safe-bottom));
 }
 
 .settings-header {
@@ -289,6 +289,8 @@ const presetColors = [
   background: var(--theme-bg-color);
   padding: 16px;
   padding-top: calc(16px + var(--safe-top));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -472,7 +474,9 @@ const presetColors = [
   background: color-mix(in srgb, var(--theme-header-bg) 15%, transparent);
   border: 1px solid var(--theme-grid-line-color); /* Fallback */
   border: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
-  color: var(--theme-header-text);
+  /* body-text, not header-text: on presets with a coloured header (Vant 经典) header-text is
+     white, and this button sits on the page background, not on the header. */
+  color: var(--theme-body-text);
 }
 
 .reset-btn.danger {
@@ -527,12 +531,12 @@ const presetColors = [
 :deep(.van-slider__button) {
   width: 14px;
   height: 14px;
-  background-color: var(--theme-header-text);
+  background-color: var(--theme-accent);
   box-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 
 :deep(.van-slider__bar) {
-  background-color: var(--theme-header-text) !important;
+  background-color: var(--theme-accent) !important;
 }
 
 /* The colour swatch is a button now; it reuses .color-picker-wrapper for its circle. */
