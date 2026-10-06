@@ -23,7 +23,7 @@ const emit = defineEmits<{
       <Redo2 :size="18" />
     </button>
     <p v-if="count !== 0" class="edit-count" :class="{ 'is-negative': count < 0 }">
-      {{ count > 0 ? `本次改动 ${count} 处` : `已回退之前的改动 ${Math.abs(count)} 处` }}
+      {{ count > 0 ? `+${count}` : `回退 ${Math.abs(count)}` }}
     </p>
     <button type="button" class="edit-done" aria-label="完成" @click="emit('exit')">
       <Check :size="18" stroke-width="2.5" />
