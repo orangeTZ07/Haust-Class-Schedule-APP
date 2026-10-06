@@ -7,9 +7,11 @@ import { useCourses } from "@/composables/useCourses";
 import { parseBackupFile } from "@/utils/backupFile";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
+import { useConfirmReplace } from "./confirmReplace";
 import "./importShared.css";
 
 const { importFromJsonBackup } = useCourses();
+const confirmReplace = useConfirmReplace();
 
 const busy = ref(false);
 const message = ref("");
@@ -44,6 +46,14 @@ const onFilePicked = async (event: Event) => {
       return;
     }
 
+    // Asked after the file has proved readable, so a bad file is reported as such instead of first
+    // being asked whether to replace the timetable with it.
+    if (!(await confirmReplace(`导入「${file.name}」`))) {
+      messageKind.value = "info";
+      message.value = "已取消，课表没有改动。";
+      return;
+    }
+
     const restored = await importFromJsonBackup(result.text!);
     if (!restored.success) {
       messageKind.value = "err";
@@ -73,7 +83,7 @@ const restoreFromPaste = async () => {
 
   // The restore replaces everything and there is no undo, so say so while the user can still
   // back out -- rather than letting them find out afterwards.
-  if (!confirm("恢复备份会清空当前课程表，再写入备份内容，此操作无法撤销。确定继续？")) {
+  if (!(await confirmReplace("恢复这份备份"))) {
     return;
   }
 

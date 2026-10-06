@@ -5,6 +5,7 @@ import { DownloadCloud, FolderOpen, History, Sparkles, X } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
+import { confirmAction } from "@/utils/confirm";
 import SegmentedControl from "./SegmentedControl.vue";
 import EamsSyncSection from "./EamsSyncSection.vue";
 import FileImportSection from "./FileImportSection.vue";
@@ -52,9 +53,13 @@ const restoreImportedTimetable = async () => {
     showToast("还没有可恢复的导入记录，需要先导入一次课表");
     return;
   }
-  if (!confirm("恢复到导入时的课表？导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。")) {
-    return;
-  }
+  const confirmed = await confirmAction({
+    title: "恢复到上次导入时的课表？",
+    message: "导入之后新增、修改或删除的课程都会被覆盖，且无法撤销。",
+    confirmText: "恢复",
+    danger: true,
+  });
+  if (!confirmed) return;
 
   const result = await restoreImportSnapshot();
   showToast({ message: result.message, type: result.success ? "success" : "fail" });
@@ -95,7 +100,7 @@ const restoreImportedTimetable = async () => {
       <footer class="sheet-foot">
         <button class="restore-btn" :class="{ 'is-empty': !hasImportSnapshot }" @click="restoreImportedTimetable">
           <History :size="15" />
-          <span>撤销：回到上次导入后的课表</span>
+          <span>恢复到上次导入时的课表</span>
         </button>
       </footer>
     </div>

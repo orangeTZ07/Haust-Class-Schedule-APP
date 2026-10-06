@@ -10,6 +10,7 @@ import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
+import { useConfirmReplace } from "./confirmReplace";
 import "./importShared.css";
 
 const emit = defineEmits<{
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 }>();
 
 const { importFromJsonBackup } = useCourses();
+const confirmReplace = useConfirmReplace();
 
 const username = ref("");
 const password = ref("");
@@ -89,6 +91,10 @@ const sync = async () => {
     message.value = "请先填学号和密码。";
     return;
   }
+
+  // Asked up front rather than after the fetch: the sync ends in a whole-timetable replacement, and
+  // a prompt that shows up after the wait is one the user is no longer expecting.
+  if (!(await confirmReplace("教务同步"))) return;
 
   busy.value = true;
   messageKind.value = "info";

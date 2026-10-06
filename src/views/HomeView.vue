@@ -4,6 +4,7 @@ import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
+import { confirmAction } from "@/utils/confirm";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
@@ -127,16 +128,20 @@ const sampleJson = `[
 const loadSample = async () => {
   const result = await importFromJson(sampleJson);
   if (result.success) {
-    alert(result.message);
+    showToast(result.message);
   }
   closeSidebar();
 };
 
-const handleClear = () => {
-  if (confirm("确定清空所有课程？")) {
-    clearAll();
-  }
+const handleClear = async () => {
   closeSidebar();
+  const confirmed = await confirmAction({
+    title: "清空所有课程？",
+    message: "课程和课段都会被删除，此操作无法撤销。",
+    confirmText: "清空",
+    danger: true,
+  });
+  if (confirmed) clearAll();
 };
 
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }) => {
