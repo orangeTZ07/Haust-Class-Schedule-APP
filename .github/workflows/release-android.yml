@@ -69,7 +69,9 @@ jobs:
         id: icon
         run: |
           set -euo pipefail
-          SRC="src-tauri/icons/icon.png"
+          # app-icon.png, not icon.png: the older exports have black corners outside the rounded
+          # square, which show up as a dark frame on the Release page.
+          SRC="src-tauri/icons/app-icon.png"
           if [ ! -f "$SRC" ]; then
             echo "Missing app icon at $SRC"
             exit 1
