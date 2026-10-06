@@ -8,23 +8,26 @@ name = "course_mngr_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-# Pin crate major.minor to the matching @tauri-apps/* npm packages. `tauri android/ios build`
-# compares Cargo.lock vs package-lock and exits if they differ on major.minor. A bare "2"
-# lets `cargo generate-lockfile` float to newer minors (e.g. tauri 2.12) and break CI.
-tauri = { version = "~2.11", features = [] }
-tauri-plugin-sql = { version = "~2.4", features = ["sqlite"] }
-tauri-plugin-notification = "~2.3"
-tauri-plugin-dialog = "~2.7"
-tauri-plugin-opener = "~2.5"
+# Exact pins matching the last CI-green graph (tauri 2.11.0 + runtime 2.11.0) and the
+# @tauri-apps/* packages in package-lock.json. A bare "2" / "~2.11" lets cargo float
+# tauri-runtime to 2.12 (API break) or tauri to 2.12 (npm major.minor mismatch).
+tauri = { version = "=2.11.0", features = [] }
+tauri-runtime = "=2.11.0"
+tauri-runtime-wry = { version = "=2.11.0", default-features = false }
+tauri-utils = "=2.9.0"
+tauri-macros = "=2.6.0"
+tauri-plugin-sql = { version = "=2.4.0", features = ["sqlite"] }
+tauri-plugin-notification = "=2.3.3"
+tauri-plugin-dialog = "=2.7.1"
+tauri-plugin-opener = "=2.5.5"
 # unsafe-headers：允许前端设置 User-Agent 这类"禁止的请求头"。
 #
 # 为什么非开不可：学校那台服务器对浏览器放行（200），对 Rust 客户端返回 **403 且正文为空** ——
 # 空正文的 403 是网关/防火墙按指纹拒绝的典型特征，而不是应用自己发的。而按 fetch 规范，
 # User-Agent 属于禁止的请求头，插件会**静默丢弃**，所以在代码里写是没用的，必须打开这个特性。
 #
-# 版本钉在 ~2.5，要和 package.json 里 @tauri-apps/plugin-http 的 ~2.5.9 保持同一个 major.minor。
-# 以后升级这个插件，Cargo.toml 和 package.json 两边一起改，并先更新 Cargo.lock。
-tauri-plugin-http = { version = "~2.5", features = ["unsafe-headers"] }
+# 与 package.json 里 @tauri-apps/plugin-http ~2.5.9 同 major.minor；升级时两边一起改。
+tauri-plugin-http = { version = "=2.5.9", features = ["unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }
 serde = { version = "1", features = ["derive"] }
@@ -35,7 +38,7 @@ thiserror = "2"
 jni = "0.21"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "=2.6.0", features = [] }
 
 [profile.release]
 opt-level = "s"      # 针对体积进行优化，比 "3" 快且产物更小

@@ -5,7 +5,7 @@ edition = "2021"
 links = "tauri-plugin-reminder"
 
 [dependencies]
-tauri = { version = "~2.11", features = [] }
+tauri = { version = "=2.11.0", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -17,7 +17,7 @@ jni = "0.21"
 # plugins (tauri-plugin-notification) spell it out for iOS so that an app disabling default
 # features cannot silently remove the call this crate depends on.
 [target.'cfg(target_os = "ios")'.dependencies]
-tauri = { version = "~2.11", features = ["wry"] }
+tauri = { version = "=2.11.0", features = ["wry"] }
 
 [build-dependencies]
-tauri-plugin = { version = "2", features = [] }
+tauri-plugin = { version = "=2.6.0", features = [] }
