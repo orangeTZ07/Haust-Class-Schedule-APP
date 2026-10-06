@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import { useTheme, presetList } from "@/composables/useTheme";
 import { useRouter } from "vue-router";
 import { ArrowLeft, ChevronRight, Palette, Image as ImageIcon, Sliders } from '@lucide/vue';
 import ImageCropper from "@/components/common/ImageCropper.vue";
+import ColorWheelPicker from "@/components/common/ColorWheelPicker.vue";
 
 const router = useRouter();
 const {
@@ -31,9 +32,39 @@ const goToPresets = () => {
   router.push("/style/presets");
 };
 
-const handleColorChange = (key: string, e: Event) => {
-  const target = e.target as HTMLInputElement;
-  updateConfig(key as any, target.value);
+/// The colour items open a colour wheel instead of the system picker. While it is open the colour
+/// is only previewed, as an inline CSS variable on this page: nothing is stored (and the theme,
+/// possibly carrying a megabyte of background image, is not re-saved on every drag frame) until
+/// 确定, and 取消 simply removes the override.
+const colorItems = {
+  bgColor: { label: "背景颜色", cssVar: "--theme-bg-color" },
+  gridLineColor: { label: "网格线色彩", cssVar: "--theme-grid-line-color" },
+  headerBgColor: { label: "页眉背景色", cssVar: "--theme-header-bg" },
+} as const;
+type ColorKey = keyof typeof colorItems;
+
+const pageEl = ref<HTMLElement | null>(null);
+const pickerOpen = ref(false);
+const pickingKey = ref<ColorKey>("bgColor");
+
+const openColorPicker = (key: ColorKey) => {
+  pickingKey.value = key;
+  pickerOpen.value = true;
+};
+
+const previewColor = (hex: string) => {
+  pageEl.value?.style.setProperty(colorItems[pickingKey.value].cssVar, hex);
+};
+
+const endColorPreview = () => {
+  pageEl.value?.style.removeProperty(colorItems[pickingKey.value].cssVar);
+};
+
+const confirmColor = (hex: string) => {
+  updateConfig(pickingKey.value, hex);
+  // Drop the override only once the theme has re-rendered with the new value, or the old
+  // colour would show for a frame.
+  nextTick(endColorPreview);
 };
 
 /// Picking a file no longer applies it: the cropper opens first and only its 完成 sets the
@@ -64,7 +95,7 @@ const presetColors = [
 </script>
 
 <template>
-  <div class="style-settings">
+  <div ref="pageEl" class="style-settings">
     <div class="settings-header">
       <div class="header-left">
         <div class="back-btn" @click="goBack">
@@ -94,14 +125,13 @@ const presetColors = [
       <div class="section">
         <div class="config-item">
           <span class="label">背景颜色</span>
-          <div class="color-picker-wrapper">
-            <input
-              type="color"
-              :value="themeConfig.bgColor"
-              @input="(e) => handleColorChange('bgColor', e)"
-              class="color-input"
-            />
-          </div>
+          <button
+            type="button"
+            class="color-picker-wrapper"
+            :style="{ background: themeConfig.bgColor }"
+            aria-label="选择背景颜色"
+            @click="openColorPicker('bgColor')"
+          />
         </div>
 
         <div class="preset-colors">
@@ -209,17 +239,38 @@ const presetColors = [
         <div class="config-grid">
           <div class="color-item-row" @click.self>
             <span class="color-label">网格线色彩</span>
-            <input type="color" :value="themeConfig.gridLineColor" @input="(e) => handleColorChange('gridLineColor', e)" />
+            <button
+              type="button"
+              class="color-picker-wrapper"
+              :style="{ background: themeConfig.gridLineColor }"
+              aria-label="选择网格线色彩"
+              @click="openColorPicker('gridLineColor')"
+            />
           </div>
           <div class="color-item-row">
             <span class="color-label">页眉背景色</span>
-            <input type="color" :value="themeConfig.headerBgColor" @input="(e) => handleColorChange('headerBgColor', e)" />
+            <button
+              type="button"
+              class="color-picker-wrapper"
+              :style="{ background: themeConfig.headerBgColor }"
+              aria-label="选择页眉背景色"
+              @click="openColorPicker('headerBgColor')"
+            />
           </div>
         </div>
       </div>
     </div>
 
     <ImageCropper :file="cropFile" @confirm="handleCropConfirm" @cancel="cropFile = null" />
+
+    <ColorWheelPicker
+      v-model:show="pickerOpen"
+      :title="colorItems[pickingKey].label"
+      :color="themeConfig[pickingKey]"
+      @preview="previewColor"
+      @confirm="confirmColor"
+      @cancel="endColorPreview"
+    />
   </div>
 </template>
 
@@ -477,5 +528,12 @@ const presetColors = [
 
 :deep(.van-slider__bar) {
   background-color: var(--theme-header-text) !important;
+}
+
+/* The colour swatch is a button now; it reuses .color-picker-wrapper for its circle. */
+button.color-picker-wrapper {
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
 }
 </style>
