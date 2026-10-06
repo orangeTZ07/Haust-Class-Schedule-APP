@@ -43,6 +43,15 @@ const STORAGE_KEYS = {
   IMPORT_SNAPSHOT: "course-mngr-import-snapshot"
 };
 
+/// Keys that older versions wrote and nothing reads any more, removed once at startup so they do not
+/// sit in storage forever. The learning-plan preference went with that feature.
+const LEGACY_STORAGE_KEYS = ["course-mngr-learning-plan-preference"];
+try {
+  for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
+} catch {
+  // Storage unavailable; there is nothing stored to clean up either.
+}
+
 /// Whether there is a snapshot to fall back to. Read once at load; refreshed whenever an import
 /// captures a new one. Declared here rather than beside the other refs because it reads
 /// STORAGE_KEYS, which is initialised just above.

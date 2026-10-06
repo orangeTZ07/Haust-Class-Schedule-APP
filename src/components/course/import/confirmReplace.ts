@@ -1,9 +1,8 @@
 import { useCourses } from "@/composables/useCourses";
 import { confirmAction } from "@/utils/confirm";
 
-/// Asks before an import swaps out the whole timetable. 选文件, 粘贴备份 and 教务同步 all end in the
-/// same destructive write, so they share this question instead of each deciding whether to ask:
-/// only the paste route used to, which is how a file or a sync could silently wipe a timetable.
+/// Asks before an import swaps out the whole timetable. 选文件 and 教务同步 both end in the same
+/// destructive write, so they share this question instead of each deciding whether to ask.
 ///
 /// An empty timetable has nothing to lose, so it goes straight through.
 export function useConfirmReplace() {

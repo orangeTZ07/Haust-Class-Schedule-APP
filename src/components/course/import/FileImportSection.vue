@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { showToast } from "vant";
-import { Check, FolderOpen, Loader2 } from "@lucide/vue";
+import { FolderOpen, Loader2 } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
 import { parseBackupFile } from "@/utils/backupFile";
@@ -17,7 +17,6 @@ const busy = ref(false);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
 const fileInput = ref<HTMLInputElement | null>(null);
-const jsonInput = ref("");
 
 /// 从文件导入。
 ///
@@ -71,38 +70,6 @@ const onFilePicked = async (event: Event) => {
     busy.value = false;
   }
 };
-
-/// 粘贴 JSON 备份恢复：和选文件是同一件事的另一种送达方式（比如备份是从聊天软件里复制出来的）。
-const restoreFromPaste = async () => {
-  if (busy.value) return;
-
-  if (!jsonInput.value.trim()) {
-    showToast("内容不能为空");
-    return;
-  }
-
-  // The restore replaces everything and there is no undo, so say so while the user can still
-  // back out -- rather than letting them find out afterwards.
-  if (!(await confirmReplace("恢复这份备份"))) {
-    return;
-  }
-
-  busy.value = true;
-  try {
-    const result = await importFromJsonBackup(jsonInput.value);
-    if (result.success) {
-      messageKind.value = "ok";
-      message.value = result.message;
-      jsonInput.value = "";
-      showToast({ message: "课表已恢复", type: "success" });
-    } else {
-      messageKind.value = "err";
-      message.value = result.message;
-    }
-  } finally {
-    busy.value = false;
-  }
-};
 </script>
 
 <template>
@@ -131,24 +98,6 @@ const restoreFromPaste = async () => {
         <Loader2 v-if="busy" :size="18" class="imp-spin" />
         <FolderOpen v-else :size="18" />
         <span>选择课表文件</span>
-      </button>
-    </div>
-
-    <div class="imp-card">
-      <div class="imp-card-head">
-        <span class="imp-card-title">或者粘贴备份内容</span>
-      </div>
-
-      <textarea
-        v-model="jsonInput"
-        class="imp-textarea"
-        rows="4"
-        placeholder="在此粘贴「完整 JSON」备份内容..."
-      />
-
-      <button class="imp-secondary-btn" :disabled="busy" @click="restoreFromPaste">
-        <Check :size="16" />
-        <span>确认恢复</span>
       </button>
     </div>
 

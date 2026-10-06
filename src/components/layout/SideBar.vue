@@ -32,9 +32,8 @@ interface MenuItem {
   action?: string;
 }
 
-/// Grouped so the drawer reads as three kinds of thing rather than one long list. The entries that
-/// used to sit here for 样式调整 (now under 设置), 自定义学习计划 and 恢复到导入时 (both now live in
-/// the import sheet, next to the thing they belong to) and the second 导入 entry were dropped.
+/// Grouped so the drawer reads as three kinds of thing rather than one long list. The 样式调整 entry
+/// now lives under 设置, and the duplicate 导入 entry was dropped.
 const groups: { title: string; items: MenuItem[] }[] = [
   {
     title: "课表",

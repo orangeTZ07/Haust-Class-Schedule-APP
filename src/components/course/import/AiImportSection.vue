@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useRouter } from "vue-router";
 import { showToast } from "vant";
-import { BookMarked, CalendarDays, Check, ChevronRight, Copy, Plus, RefreshCcw } from "@lucide/vue";
+import { CalendarDays, Check, Copy, Plus, RefreshCcw } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { useLearningPlan } from "@/composables/useLearningPlan";
 import SegmentedControl from "./SegmentedControl.vue";
 import "./importShared.css";
 
 const emit = defineEmits<{
-  /// Asked when the import went through, or when the user leaves for the learning-plan page.
+  /// Asked when the import went through.
   close: [];
 }>();
 
-const router = useRouter();
 const { importFromCsv, importFromSemesterCsv, currentWeek } = useCourses();
-const { preference, hasPreference } = useLearningPlan();
 
 const csvInput = ref("");
 const isOverwrite = ref(true);
@@ -96,42 +92,11 @@ const semesterPrompt = [
   "不要输出任何问候语、解释说明、或处理过程。我只需要纯粹的 CSV 数据以便于代码直接解析。"
 ].join("\n");
 
-const learningPlanPrompt = computed(() => {
-  if (!hasPreference.value) {
-    return "";
-  }
-
-  const lines = ["", "补充上下文（不要改变 CSV 格式要求，仅作为学习安排偏好备注）："];
-  if (preference.value.extraLearningContent) {
-    lines.push(`- 额外学习内容：${preference.value.extraLearningContent}`);
-  }
-  if (preference.value.desiredWorkload) {
-    lines.push(`- 期望学习负荷：${preference.value.desiredWorkload}`);
-  }
-  lines.push("输出时仍然只返回课表 CSV，不要新增字段，不要添加解释。");
-  return lines.join("\n");
-});
-
-const activePrompt = computed(() => {
-  const basePrompt = importKind.value === "weekly" ? weeklyPrompt : semesterPrompt;
-  return `${basePrompt}${learningPlanPrompt.value}`;
-});
+const activePrompt = computed(() => (importKind.value === "weekly" ? weeklyPrompt : semesterPrompt));
 
 const pastePlaceholder = computed(() =>
   importKind.value === "weekly" ? "在此粘贴按周 CSV..." : "在此粘贴按学期 CSV..."
 );
-
-const planSummary = computed(() => {
-  if (!hasPreference.value) {
-    return "补充你的学习安排，会一起写进给 AI 的指令";
-  }
-  return `已附加：${preference.value.extraLearningContent || "未填额外学习内容"} / ${preference.value.desiredWorkload || "未填学习负荷"}`;
-});
-
-const openLearningPlan = () => {
-  emit("close");
-  router.push("/learning-plan");
-};
 
 const copyPrompt = async () => {
   try {
@@ -183,14 +148,6 @@ const handleImport = async () => {
         <div class="prompt-preview">
           <pre>{{ activePrompt }}</pre>
         </div>
-        <button class="plan-row" @click="openLearningPlan">
-          <BookMarked :size="16" class="plan-icon" />
-          <span class="plan-text">
-            <span class="plan-title">自定义学习计划（可选）</span>
-            <span class="plan-sub">{{ planSummary }}</span>
-          </span>
-          <ChevronRight :size="16" class="plan-arrow" />
-        </button>
       </div>
 
       <div class="step">
@@ -302,55 +259,6 @@ const handleImport = async () => {
 
 .prompt-preview pre::-webkit-scrollbar {
   width: 0;
-}
-
-.plan-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  text-align: left;
-  border: 1px dashed color-mix(in srgb, var(--theme-body-text) 22%, transparent);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--theme-body-text);
-}
-
-.plan-row:active {
-  background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
-}
-
-.plan-icon {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-.plan-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.plan-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.plan-sub {
-  font-size: 11px;
-  line-height: 1.5;
-  opacity: 0.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-arrow {
-  flex-shrink: 0;
-  opacity: 0.35;
 }
 
 .mode-block {
