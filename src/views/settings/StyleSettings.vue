@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useTheme, presetList } from "@/composables/useTheme";
 import { useRouter } from "vue-router";
 import { ArrowLeft, ChevronRight, Palette, Image as ImageIcon, Sliders } from '@lucide/vue';
+import ImageCropper from "@/components/common/ImageCropper.vue";
 
 const router = useRouter();
 const {
@@ -35,42 +36,21 @@ const handleColorChange = (key: string, e: Event) => {
   updateConfig(key as any, target.value);
 };
 
-const compressImage = (dataUrl: string, maxWidth = 1280): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = dataUrl;
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      let width = img.width;
-      let height = img.height;
+/// Picking a file no longer applies it: the cropper opens first and only its 完成 sets the
+/// background, so 取消 leaves the current one untouched.
+const cropFile = ref<File | null>(null);
 
-      if (width > maxWidth) {
-        height = (maxWidth / width) * height;
-        width = maxWidth;
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(img, 0, 0, width, height);
-      // 使用 JPEG 压缩提高效率，质量 0.7
-      resolve(canvas.toDataURL("image/jpeg", 0.7));
-    };
-  });
-};
-
-const handleImageUpload = async (e: Event) => {
+const handleImageUpload = (e: Event) => {
   const target = e.target as HTMLInputElement;
   const file = target.files?.[0];
-  if (!file) return;
+  // Clear the input so picking the same picture again still fires `change`.
+  target.value = "";
+  if (file) cropFile.value = file;
+};
 
-  const reader = new FileReader();
-  reader.onload = async (event) => {
-    const dataUrl = event.target?.result as string;
-    const compressed = await compressImage(dataUrl);
-    setBgImage(compressed);
-  };
-  reader.readAsDataURL(file);
+const handleCropConfirm = (dataUrl: string) => {
+  setBgImage(dataUrl);
+  cropFile.value = null;
 };
 
 const triggerUpload = () => {
@@ -238,6 +218,8 @@ const presetColors = [
         </div>
       </div>
     </div>
+
+    <ImageCropper :file="cropFile" @confirm="handleCropConfirm" @cancel="cropFile = null" />
   </div>
 </template>
 
