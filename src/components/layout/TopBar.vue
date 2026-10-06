@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="topBarRef" class="top-bar" :class="{ 'is-trash-visible': showTrashTarget }">
     <div class="left">
-      <div class="menu-btn" @click="handleToggle">
+      <div class="menu-btn" data-coach="menu" @click="handleToggle">
         <Menu :size="22" />
       </div>
       <span class="title">课程表</span>
