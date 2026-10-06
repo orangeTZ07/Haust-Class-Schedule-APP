@@ -11,7 +11,7 @@ import WeekGrid from "@/components/timetable/WeekGrid.vue";
 import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
 import ContactPopup from "@/components/layout/ContactPopup.vue";
-import CourseForm from "@/components/course/CourseForm.vue";
+import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/CourseForm.vue";
 
 const { cssVariables, themeConfig } = useTheme();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
@@ -56,21 +56,39 @@ const onRequestAdd = (slot: { day: number; period: number }) => {
   addVisible.value = true;
 };
 
-const onAddSubmit = async (payload: {
-  name: string;
-  teacher?: string;
-  location?: string;
-  span: number;
-}) => {
+const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
   const slot = addSlot.value;
   if (!slot) return;
   // endPeriod is inclusive here -- WeekGrid derives a block's span as end - start + 1.
   const endPeriod = slot.period + payload.span - 1;
   const course = await addCourse(payload.name, payload.teacher, payload.location);
-  await addSchedule(course.id, slot.day, slot.period, endPeriod);
+
+  const scheduleOptions = payload.weekScope === "current"
+    ? {
+        startWeek: currentWeek.value,
+        endWeek: currentWeek.value,
+        weekType: "all" as const,
+        scope: "weekly" as const
+      }
+    : payload.weekScope === "custom"
+      ? {
+          startWeek: payload.startWeek ?? 1,
+          endWeek: payload.endWeek ?? semesterWeekCount.value,
+          weekType: payload.weekType ?? ("all" as const),
+          scope: "semester" as const
+        }
+      : {
+          startWeek: 1,
+          endWeek: semesterWeekCount.value,
+          weekType: "all" as const,
+          scope: "semester" as const
+        };
+
+  await addSchedule(course.id, slot.day, slot.period, endPeriod, scheduleOptions);
   addVisible.value = false;
   addSlot.value = null;
-  showToast({ message: `已添加「${payload.name}」`, type: "success" });
+  const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
+  showToast({ message: `已添加「${payload.name}」${scopeDesc}`, type: "success" });
 };
 
 /// Set when a drawer drag ends. A touch can still deliver a click on release, and if that click
@@ -364,6 +382,8 @@ const onEdgeTouchEnd = () => {
       v-model:show="addVisible"
       :day="addSlot?.day ?? 1"
       :period="addSlot?.period ?? 1"
+      :current-week="currentWeek"
+      :total-weeks="semesterWeekCount"
       :max-period="lastPeriod"
       @submit="onAddSubmit"
     />
