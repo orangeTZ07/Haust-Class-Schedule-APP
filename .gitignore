@@ -26,6 +26,8 @@ desktop.ini
 
 # Android
 *.apk
+# apksigner's v4 signature sidecar, written next to every signed APK
+*.idsig
 *.ap_
 *.aab
 *.dex

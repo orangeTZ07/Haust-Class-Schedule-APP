@@ -11,7 +11,7 @@
 2. **发版时**：
    - 把 `[Unreleased]` 里的条目剪到新版本节，例如 `## [0.3.0] - 2026-11-01`
    - 清空后留一个空的 `[Unreleased]`
-   - 同步改 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 的 `version`
+   - 同步改 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` / `src-tauri/tauri.ios.conf.json` 四处的 `version`（iOS 那份会盖过主配置，漏改的话 iOS 版会一直以为自己是旧版本，更新提示也会一直弹）
    - 提交后打 tag：`git tag v0.3.0 && git push origin v0.3.0`
    - 打 tag 后，工作流先检查这一节的格式，不对就在开始构建前直接失败；通过后把 `## [0.3.0]` 这一节填进 GitHub Release 正文（找不到对应节也会失败）
 3. **只有两个分类**（0.2.0 之后的版本）：
