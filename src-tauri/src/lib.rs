@@ -25,6 +25,8 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        // 「检查更新」要把用户带去浏览器下载新版 APK。能打开哪些网址由 capabilities 里的 scope 限定。
+        .plugin(tauri_plugin_opener::init())
         // 教务系统的请求走它。用官方插件而不是自己发请求的原因：WebView 里直接 fetch 会被
         // 同源策略拦住，而登录要跨到 cas.haust.edu.cn 和 jwgl.haust.edu.cn 两个域。
         .plugin(tauri_plugin_http::init())
