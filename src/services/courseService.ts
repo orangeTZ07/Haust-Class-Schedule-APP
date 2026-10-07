@@ -309,6 +309,22 @@ export async function getAllSchedules(): Promise<CourseSchedule[]> {
   }
 }
 
+export async function updateCourse(course: Course): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.execute(
+      "UPDATE courses SET name = $1, teacher = $2, location = $3, color = $4 WHERE id = $5",
+      [course.name, course.teacher || "", course.location || "", course.color, course.id]
+    );
+  } else {
+    const courses = JSON.parse(localStorage.getItem(WEB_STORAGE_KEYS.COURSES) || "[]") as Array<Course & { tableId?: number }>;
+    const index = courses.findIndex(item => item.id === course.id);
+    if (index === -1) return;
+    courses[index] = { ...courses[index], ...course };
+    localStorage.setItem(WEB_STORAGE_KEYS.COURSES, JSON.stringify(courses));
+  }
+}
+
 export async function addCourse(course: Omit<Course, "id">): Promise<number> {
   const db = await getDb();
   const tableId = await getActiveCourseTableId();

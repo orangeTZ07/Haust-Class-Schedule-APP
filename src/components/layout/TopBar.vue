@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ChevronDown, ChevronLeft, ChevronRight, Menu, Trash2 } from "@lucide/vue";
+import { ChevronDown, ChevronLeft, ChevronRight, Menu, Settings, Trash2 } from "@lucide/vue";
 import { useRouter } from "vue-router";
 import { useToday } from "@/composables/useToday";
 import { useCourses } from "@/composables/useCourses";
@@ -8,6 +8,7 @@ import { useCourses } from "@/composables/useCourses";
 const props = defineProps<{
   showTrashTarget?: boolean;
   trashTargetActive?: boolean;
+  gearTargetActive?: boolean;
   currentWeek: number;
   totalWeeks: number;
 }>();
@@ -188,14 +189,23 @@ onBeforeUnmount(() => {
     </div>
 
     <transition name="trash-pop">
-      <div
-        v-if="showTrashTarget"
-        class="trash-target"
-        :class="{ 'is-active': trashTargetActive }"
-        data-trash-target="schedule-delete"
-        aria-label="拖到这里删除课段"
-      >
-        <Trash2 :size="18" />
+      <div v-if="showTrashTarget" class="drop-targets">
+        <div
+          class="gear-target"
+          :class="{ 'is-active': gearTargetActive }"
+          data-edit-target="course-settings"
+          aria-label="拖到这里编辑课段"
+        >
+          <Settings :size="18" />
+        </div>
+        <div
+          class="trash-target"
+          :class="{ 'is-active': trashTargetActive }"
+          data-trash-target="schedule-delete"
+          aria-label="拖到这里删除课段"
+        >
+          <Trash2 :size="18" />
+        </div>
       </div>
     </transition>
 
@@ -520,17 +530,21 @@ onBeforeUnmount(() => {
   transform: scale(0.95);
 }
 
-/* ---- trash target ---- */
+/* ---- drop targets: gear (settings) left of danger trash, small gap ---- */
 
+.drop-targets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gear-target,
 .trash-target {
-  /* 36px was a small target for a finger and it is also the visual promise the drop test
-     keeps (see TRASH_TARGET_SLOP in WeekGrid.vue). */
   width: 44px;
   height: 44px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
   background: color-mix(in srgb, var(--theme-header-bg) 74%, transparent);
-  color: color-mix(in srgb, var(--theme-header-text) 82%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -542,6 +556,24 @@ onBeforeUnmount(() => {
     color var(--dur-fast) ease-out,
     border-color var(--dur-fast) ease-out,
     background-color var(--dur-fast) ease-out;
+}
+
+.gear-target {
+  color: var(--theme-header-text);
+}
+
+.gear-target.is-active {
+  transform: scale(1.12);
+  color: var(--theme-accent);
+  border-color: color-mix(in srgb, var(--theme-accent) 68%, transparent);
+  background: color-mix(in srgb, var(--theme-accent) 14%, var(--theme-header-bg));
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--theme-accent) 10%, transparent),
+    0 8px 18px color-mix(in srgb, var(--theme-accent) 22%, transparent);
+}
+
+.trash-target {
+  color: color-mix(in srgb, var(--theme-header-text) 82%, transparent);
 }
 
 /* Bigger and bouncier than a plain press: this is the "let go here and it is gone" cue. */

@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useUpdateCheck } from "@/composables/useUpdateCheck";
-import { displayVersion } from "@/services/updateService";
+import { displayVersion, updateOfferTitle } from "@/services/updateService";
 
 const { cssVariables } = useTheme();
 const {
@@ -18,7 +18,7 @@ const {
 } = useUpdateCheck();
 
 const title = computed(() =>
-  release.value ? `发现新版本 ${displayVersion(release.value.tag)}` : "发现新版本"
+  release.value ? updateOfferTitle(release.value.tag) : "发现新版本"
 );
 
 // 点遮罩或按返回键关掉，等同于「稍后」。

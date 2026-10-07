@@ -2,9 +2,8 @@ import { computed, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  fetchLatestRelease,
+  fetchUpdateCandidate,
   isAndroidUserAgent,
-  isNewerVersion,
   pickInstallUrl,
   summarizeReleaseBody,
   type ReleaseInfo
@@ -76,11 +75,11 @@ const runCheck = async (): Promise<CheckOutcome> => {
   checking.value = true;
   try {
     const current = await loadCurrentVersion();
-    const latest = await fetchLatestRelease();
+    const found = await fetchUpdateCandidate(current);
     // 只在成功时记时间：失败了就该让下一次启动再试，而不是等满 6 小时。
     writeStorage(LAST_CHECK_KEY, String(Date.now()));
-    return isNewerVersion(latest.tag, current)
-      ? { status: "available", release: latest }
+    return found
+      ? { status: "available", release: found }
       : { status: "latest" };
   } catch (e) {
     return { status: "error", message: describeError(e) };

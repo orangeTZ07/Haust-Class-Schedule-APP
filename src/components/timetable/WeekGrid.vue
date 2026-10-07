@@ -9,9 +9,10 @@ const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, wee
 const { todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
-  (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
+  (e: "drag-trash-state-change", state: { visible: boolean; active: boolean; gearActive: boolean }): void;
   (e: "request-add", slot: { day: number; period: number }): void;
   (e: "request-delete", payload: { scheduleId: number }): void;
+  (e: "request-edit", payload: { scheduleId: number }): void;
 }>();
 
 const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -701,27 +702,36 @@ const updateDropTarget = (clientX: number, clientY: number) => {
 // the box would move the icon; the icon is 44px, so the drop zone is roughly 124px across.
 const TRASH_TARGET_SLOP = 40;
 
-const isPointerOverTrashTarget = (clientX: number, clientY: number) => {
-  const target = document.querySelector<HTMLElement>('[data-trash-target="schedule-delete"]');
-  if (!target) return false;
-
+const distanceToTarget = (selector: string, clientX: number, clientY: number): number => {
+  const target = document.querySelector<HTMLElement>(selector);
+  if (!target) return Infinity;
   const rect = target.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return false;
-
-  // Shortest distance from the point to the rectangle -- zero when inside it.
+  if (rect.width === 0 && rect.height === 0) return Infinity;
   const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
   const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
-  return Math.hypot(dx, dy) <= TRASH_TARGET_SLOP;
+  const distance = Math.hypot(dx, dy);
+  return distance <= TRASH_TARGET_SLOP ? distance : Infinity;
+};
+
+const dropActionAt = (clientX: number, clientY: number): "trash" | "gear" | null => {
+  const trash = distanceToTarget('[data-trash-target="schedule-delete"]', clientX, clientY);
+  const gear = distanceToTarget('[data-edit-target="course-settings"]', clientX, clientY);
+  if (trash === Infinity && gear === Infinity) return null;
+  return trash <= gear ? "trash" : "gear";
 };
 
 const syncDragTrashState = (clientX?: number, clientY?: number) => {
   const visible = !!dragState.value?.hasMoved;
-  const active = visible && typeof clientX === "number" && typeof clientY === "number"
-    ? isPointerOverTrashTarget(clientX, clientY)
-    : false;
+  const action = visible && typeof clientX === "number" && typeof clientY === "number"
+    ? dropActionAt(clientX, clientY)
+    : null;
 
-  emit("drag-trash-state-change", { visible, active });
-  return active;
+  emit("drag-trash-state-change", {
+    visible,
+    active: action === "trash",
+    gearActive: action === "gear"
+  });
+  return action;
 };
 
 const handlePointerMove = (event: PointerEvent) => {
@@ -735,8 +745,8 @@ const handlePointerMove = (event: PointerEvent) => {
   dragState.value.hasMoved = dragState.value.hasMoved || Math.hypot(offsetX, offsetY) > 6;
 
   if (dragState.value.hasMoved) {
-    const overTrashTarget = syncDragTrashState(event.clientX, event.clientY);
-    if (overTrashTarget) {
+    const action = syncDragTrashState(event.clientX, event.clientY);
+    if (action) {
       dropTarget.value = null;
       return;
     }
@@ -784,9 +794,9 @@ const handlePointerUp = async (event: PointerEvent) => {
 
   const currentDrag = dragState.value;
   const currentTarget = dropTarget.value;
-  const shouldDelete = currentDrag?.hasMoved
+  const dropAction = currentDrag?.hasMoved
     ? syncDragTrashState(event.clientX, event.clientY)
-    : false;
+    : null;
 
   if (currentDrag?.hasMoved && currentDrag.source === "embedded-conflict") {
     suppressNextClick.value = true;
@@ -796,11 +806,15 @@ const handlePointerUp = async (event: PointerEvent) => {
   // keeps following the pointer while a dialog or the database write runs.
   endDragGesture();
 
-  if (shouldDelete && currentDrag?.hasMoved) {
+  if (dropAction && currentDrag?.hasMoved) {
     if (currentDrag.source === "floating" || conflictGroupByScheduleId.value.has(currentDrag.scheduleId)) {
       clearConflictOrbitImmediately();
     }
-    emit("request-delete", { scheduleId: currentDrag.scheduleId });
+    if (dropAction === "gear") {
+      emit("request-edit", { scheduleId: currentDrag.scheduleId });
+    } else {
+      emit("request-delete", { scheduleId: currentDrag.scheduleId });
+    }
     return;
   }
 

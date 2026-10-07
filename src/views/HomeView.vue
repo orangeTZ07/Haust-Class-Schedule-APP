@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
 import { useReminder } from "@/composables/useReminder";
 import { showToast } from "vant";
 import { confirmAction } from "@/utils/confirm";
 import {
-  addSeenStepIds,
-  autoCoachQueue,
   isCourseBlockDeferred,
   isEmptyCellDeferred,
-  manualCoachQueue,
+  isSettingsCoachTarget,
   readSeenStepIds,
   rememberCourseBlockUnanchored,
   rememberEmptyCellUnanchored,
-  timetableFingerprint,
-  type CoachPresentation
+  SETTINGS_COACH_PATH,
+  timetableFingerprint
 } from "@/utils/featureCoach";
+import { useFeatureCoach } from "@/composables/useFeatureCoach";
 import {
   markReimportPrompted,
   semesterNeedsReimport,
@@ -35,11 +35,24 @@ import EditModeBar from "@/components/edit/EditModeBar.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
 import type { DeleteScopePayload } from "@/utils/scheduleDelete";
 
+const router = useRouter();
 const { cssVariables, themeConfig } = useTheme();
+const {
+  coachMode,
+  coachStep,
+  coachPhase,
+  coachIsLast,
+  startAutoCoach: startAutoCoachQueue,
+  startManualCoach,
+  dismissCoach,
+  advanceCoach,
+  followCoachCue: setCueSpotlight,
+  dropCurrentStep
+} = useFeatureCoach();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
         coursesReady, editing, sessionCount, canUndoEdit, canRedoEdit,
-        commitEdit, undoEdit, redoEdit, exitEditMode, removeScheduleInScope, getCourseById } = useCourses();
+        commitEdit, undoEdit, redoEdit, exitEditMode, removeScheduleInScope, updateOccurrenceInScope, getCourseById } = useCourses();
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
 /// How far the drawer is out, in px, from 0 (closed) to SIDEBAR_WIDTH (open). While a finger is
@@ -52,8 +65,19 @@ const exportVisible = ref(false);
 const contactVisible = ref(false);
 const trashTargetState = ref({
   visible: false,
-  active: false
+  active: false,
+  gearActive: false
 });
+const courseFormMode = ref<"add" | "edit">("add");
+const editSlot = ref<{
+  scheduleId: number;
+  day: number;
+  period: number;
+  name: string;
+  teacher: string;
+  location: string;
+  span: number;
+} | null>(null);
 
 // Reminders cover a rolling seven-day window rather than the whole semester, so the window is
 // renewed every time the home screen opens. useReminder also renews it by itself when the
@@ -79,10 +103,16 @@ const lastPeriod = computed(() =>
 
 const onRequestAdd = (slot: { day: number; period: number }) => {
   addSlot.value = slot;
+  courseFormMode.value = "add";
+  editSlot.value = null;
   addVisible.value = true;
 };
 
-const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
+const onCourseFormSubmit = async (payload: CourseFormSubmitPayload) => {
+  if (courseFormMode.value === "edit") {
+    await onEditSubmit(payload);
+    return;
+  }
   const slot = addSlot.value;
   if (!slot) return;
   // endPeriod is inclusive here -- WeekGrid derives a block's span as end - start + 1.
@@ -116,6 +146,43 @@ const onAddSubmit = async (payload: CourseFormSubmitPayload) => {
   addSlot.value = null;
   const scopeDesc = payload.weekScope === "current" ? `（第 ${currentWeek.value} 周）` : "";
   showToast({ message: `已添加「${payload.name}」${scopeDesc}`, type: "success" });
+};
+
+const onRequestEdit = (payload: { scheduleId: number }) => {
+  const schedule = schedules.value.find(item => item.id === payload.scheduleId)
+    ?? effectiveSchedules.value.find(item => item.id === payload.scheduleId);
+  if (!schedule) return;
+  const course = getCourseById(schedule.courseId);
+  editSlot.value = {
+    scheduleId: schedule.id,
+    day: schedule.dayOfWeek,
+    period: schedule.startPeriod,
+    name: course?.name ?? "",
+    teacher: course?.teacher ?? "",
+    location: course?.location ?? "",
+    span: schedule.endPeriod - schedule.startPeriod + 1
+  };
+  courseFormMode.value = "edit";
+  addVisible.value = true;
+};
+
+const onEditSubmit = async (payload: CourseFormSubmitPayload) => {
+  const slot = editSlot.value;
+  if (!slot) return;
+  addVisible.value = false;
+  const changed = await updateOccurrenceInScope(slot.scheduleId, {
+    ...payload,
+    weekScope: payload.weekScope,
+    startWeek: payload.startWeek,
+    endWeek: payload.endWeek,
+    weekType: payload.weekType
+  });
+  editSlot.value = null;
+  courseFormMode.value = "add";
+  if (changed) {
+    commitEdit();
+    showToast({ message: `已更新「${payload.name}」`, type: "success" });
+  }
 };
 
 const deleteSlot = ref<{ scheduleId: number; day: number; period: number; courseName: string } | null>(null);
@@ -221,8 +288,12 @@ const handleClear = async () => {
   if (confirmed) clearAll();
 };
 
-const handleDragTrashStateChange = (state: { visible: boolean; active: boolean }) => {
-  trashTargetState.value = state;
+const handleDragTrashStateChange = (state: { visible: boolean; active: boolean; gearActive?: boolean }) => {
+  trashTargetState.value = {
+    visible: state.visible,
+    active: state.active,
+    gearActive: state.gearActive ?? false
+  };
 };
 
 // Swiping in from the left edge opens the sidebar, and swiping back closes it again. The menu
@@ -267,76 +338,50 @@ const setSidebar = (open: boolean) => {
   sidebarOffset.value = open ? SIDEBAR_WIDTH : 0;
 };
 
-const coachMode = ref<"auto" | "manual" | null>(null);
-const coachQueue = ref<CoachPresentation[]>([]);
-const coachIndex = ref(0);
-const coachPhase = ref<"cue" | "spotlight">("spotlight");
 const bootstrapped = ref(false);
 let promptingReimport = false;
 
-const coachStep = computed(() => coachQueue.value[coachIndex.value] ?? null);
-const coachIsLast = computed(() => coachQueue.value.length > 0 && coachIndex.value >= coachQueue.value.length - 1);
 const coachFingerprint = computed(() => timetableFingerprint(activeCourseTableId.value, schedules.value));
 
 const syncCoachChrome = () => {
   const step = coachStep.value;
   if (!step) return;
-  if (step.offHome && coachPhase.value === "spotlight") setSidebar(true);
+  if (step.target === "import" && coachPhase.value === "spotlight") setSidebar(true);
   else setSidebar(false);
-};
-
-const startQueue = (mode: "auto" | "manual", steps: CoachPresentation[]) => {
-  if (steps.length === 0) {
-    coachMode.value = null;
-    coachQueue.value = [];
-    return;
-  }
-  coachMode.value = mode;
-  coachQueue.value = steps;
-  coachIndex.value = 0;
-  coachPhase.value = steps[0].offHome ? "cue" : "spotlight";
-  syncCoachChrome();
 };
 
 /// Auto tour. Does not include a deferred step, and does not mark that step seen.
 const startAutoCoach = () => {
   if (coachMode.value || importVisible.value) return;
-  startQueue("auto", autoCoachQueue({
+  startAutoCoachQueue({
     seenIds: readSeenStepIds(localStorage),
     hasCoursesOnCurrentWeek: effectiveSchedules.value.length > 0,
     deferEmptyCell: isEmptyCellDeferred(currentWeek.value, coachFingerprint.value),
     deferCourseBlock: isCourseBlockDeferred(currentWeek.value, coachFingerprint.value)
-  }));
+  });
+  syncCoachChrome();
 };
 
-/// Full tutorial from the menu. Does not clear the seen-id record.
-const startManualCoach = () => {
-  startQueue("manual", manualCoachQueue());
-};
-
-const finishCoach = () => {
+const finishCoachOnHome = () => {
   const wasAuto = coachMode.value === "auto";
-  const ids = coachQueue.value.map(step => step.id);
-  coachMode.value = null;
-  coachQueue.value = [];
-  if (wasAuto) addSeenStepIds(localStorage, ids);
+  dismissCoach(false);
   setSidebar(false);
   if (wasAuto) startAutoCoach();
 };
 
-const advanceCoach = () => {
-  if (coachIndex.value < coachQueue.value.length - 1) {
-    coachIndex.value += 1;
-    const step = coachQueue.value[coachIndex.value];
-    coachPhase.value = step.offHome ? "cue" : "spotlight";
-    syncCoachChrome();
-    return;
-  }
-  finishCoach();
+const advanceCoachOnHome = () => {
+  advanceCoach(false);
+  syncCoachChrome();
 };
 
 const followCoachCue = () => {
-  coachPhase.value = "spotlight";
+  setCueSpotlight();
+  const step = coachStep.value;
+  if (step && isSettingsCoachTarget(step.target)) {
+    setSidebar(false);
+    router.push(SETTINGS_COACH_PATH);
+    return;
+  }
   syncCoachChrome();
 };
 
@@ -347,15 +392,7 @@ const onCoachUnanchored = () => {
   if (coachStep.value?.target === "course-block") {
     rememberCourseBlockUnanchored(currentWeek.value, coachFingerprint.value);
   }
-  const next = coachQueue.value.filter((_, index) => index !== coachIndex.value);
-  coachQueue.value = next;
-  if (next.length === 0) {
-    coachMode.value = null;
-    return;
-  }
-  if (coachIndex.value >= next.length) coachIndex.value = next.length - 1;
-  const step = next[coachIndex.value];
-  coachPhase.value = step.offHome ? "cue" : "spotlight";
+  dropCurrentStep();
   syncCoachChrome();
 };
 
@@ -385,7 +422,12 @@ onMounted(async () => {
   const openImport = await considerReimportPrompt();
   bootstrapped.value = true;
   if (openImport) importVisible.value = true;
-  else startAutoCoach();
+  else if (coachMode.value) {
+    if (isSettingsCoachTarget(coachStep.value?.target)) coachPhase.value = "cue";
+    syncCoachChrome();
+  } else {
+    startAutoCoach();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -416,7 +458,7 @@ watch(activeCourseTableId, async () => {
 
 watch(sidebarVisible, (open) => {
   const step = coachStep.value;
-  if (!step?.offHome) return;
+  if (!step?.offHome || isSettingsCoachTarget(step.target)) return;
   coachPhase.value = open ? "spotlight" : "cue";
 });
 
@@ -574,9 +616,9 @@ const onEdgeTouchEnd = () => {
       :step="coachStep"
       :phase="coachPhase"
       :is-last="coachIsLast"
-      @next="advanceCoach"
-      @skip="finishCoach"
-      @close="finishCoach"
+      @next="advanceCoachOnHome"
+      @skip="finishCoachOnHome"
+      @close="finishCoachOnHome"
       @follow-cue="followCoachCue"
       @unanchored="onCoachUnanchored"
     />
@@ -603,12 +645,17 @@ const onEdgeTouchEnd = () => {
     <!-- 点空格子添加课程 -->
     <CourseForm
       v-model:show="addVisible"
-      :day="addSlot?.day ?? 1"
-      :period="addSlot?.period ?? 1"
+      :mode="courseFormMode"
+      :day="(courseFormMode === 'edit' ? editSlot?.day : addSlot?.day) ?? 1"
+      :period="(courseFormMode === 'edit' ? editSlot?.period : addSlot?.period) ?? 1"
       :current-week="currentWeek"
       :total-weeks="semesterWeekCount"
       :max-period="lastPeriod"
-      @submit="onAddSubmit"
+      :initial-name="editSlot?.name ?? ''"
+      :initial-teacher="editSlot?.teacher ?? ''"
+      :initial-location="editSlot?.location ?? ''"
+      :initial-span="editSlot?.span ?? 1"
+      @submit="onCourseFormSubmit"
     />
 
     <!-- 拖到垃圾桶后选择删除范围 -->
@@ -631,6 +678,7 @@ const onEdgeTouchEnd = () => {
       <TopBar
         :show-trash-target="trashTargetState.visible"
         :trash-target-active="trashTargetState.active"
+        :gear-target-active="trashTargetState.gearActive"
         :current-week="currentWeek"
         :total-weeks="semesterWeekCount"
         @toggle-sidebar="toggleSidebar"
@@ -643,6 +691,7 @@ const onEdgeTouchEnd = () => {
           @drag-trash-state-change="handleDragTrashStateChange"
           @request-add="onRequestAdd"
           @request-delete="onRequestDelete"
+          @request-edit="onRequestEdit"
         />
       </div>
 
