@@ -47,10 +47,11 @@ const groups: { title: string; items: MenuItem[] }[] = [
 ];
 
 /// Pinned to the bottom of the drawer, away from the everyday actions above.
+/// 「设置」is last so it is the bottom-most row.
 const footerItems: MenuItem[] = [
   { icon: CircleHelp, label: "操作指南", action: "coach" },
-  { icon: Settings, label: "设置", route: "/settings", coach: "settings" },
   { icon: Users, label: "联系开发者", action: "contact" },
+  { icon: Settings, label: "设置", route: "/settings", coach: "settings" },
 ];
 
 const handleItemClick = (item: MenuItem) => {
