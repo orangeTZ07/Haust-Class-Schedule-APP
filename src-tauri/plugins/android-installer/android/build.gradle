@@ -23,5 +23,10 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // ActivityResult / startActivityForResult. InstallerPlugin.kt imports
+    // androidx.activity.result.ActivityResult; core-ktx does not pull that in.
+    // Upstream relied on appcompat's transitive activity dep. 1.9.x stays on
+    // compileSdk 34 (1.10+ requires 35+). Apache-2.0.
+    implementation("androidx.activity:activity-ktx:1.9.3")
     implementation(project(":tauri-android"))
 }
