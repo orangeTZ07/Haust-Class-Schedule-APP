@@ -200,3 +200,60 @@ body {
   color: #fff !important;
   background: var(--color-danger) !important;
 }
+
+/* Metal presets only (白银 / 黑金): a thin sheen across gold/silver header chrome and
+   the matching strip on the preset picker. Not the page, not coach rings, not course cards. */
+#app.metal-shine-gold {
+  --metal-sheen: 0.35;
+}
+#app.metal-shine-silver {
+  --metal-sheen: 0.2;
+}
+
+#app.metal-shine-silver .week-grid > .header,
+#app.metal-shine-gold .week-grid > .header,
+.p-header.is-metal-strip {
+  isolation: isolate;
+}
+
+#app.metal-shine-silver .week-grid > .header::after,
+#app.metal-shine-gold .week-grid > .header::after,
+.p-header.is-metal-strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgb(255 255 255 / var(--metal-sheen, 0.28)) 50%,
+    transparent 100%
+  );
+  background-size: 22% 100%;
+  background-repeat: no-repeat;
+  animation: metal-sweep 3.2s ease-in-out infinite;
+  z-index: 1;
+}
+
+.p-header.is-metal-strip.is-metal-silver::after {
+  --metal-sheen: 0.2;
+}
+
+.p-header.is-metal-strip.is-metal-gold::after {
+  --metal-sheen: 0.35;
+}
+
+@keyframes metal-sweep {
+  0%, 12% { background-position: -30% 0; }
+  88%, 100% { background-position: 130% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.metal-shine-silver .week-grid > .header::after,
+  #app.metal-shine-gold .week-grid > .header::after,
+  .p-header.is-metal-strip::after {
+    animation: none;
+    background: none;
+  }
+}

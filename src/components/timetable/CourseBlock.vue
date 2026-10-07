@@ -227,6 +227,7 @@ const periodText = computed(() => {
     ref="blockRef"
     class="course-block" 
     :data-schedule-id="schedule.id"
+    data-coach-course="true"
     :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting }"
     :style="style"
     @pointerdown="handlePointerDown"
@@ -303,7 +304,7 @@ const periodText = computed(() => {
 }
 
 @keyframes block-land {
-  from { transform: scale(0.88); }
+  from { scale: 0.88; }
 }
 
 @keyframes block-fade {
@@ -333,8 +334,8 @@ const periodText = computed(() => {
    Only `scale` is given a transition: the transform follows the finger and must never lag. */
 .course-block.is-dragging {
   cursor: grabbing;
-  pointer-events: none;
   scale: 1.05;
+  animation: none;
   transition: scale var(--dur-fast) var(--ease-spring);
   border-color: var(--theme-card-border-color);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;

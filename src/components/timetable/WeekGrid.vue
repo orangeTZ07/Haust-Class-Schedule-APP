@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { showToast } from "vant";
 import { useCourses } from "@/composables/useCourses";
 import { useToday } from "@/composables/useToday";
+import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, removeSchedule, commitEdit } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, commitEdit } = useCourses();
 const { todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean }): void;
   (e: "request-add", slot: { day: number; period: number }): void;
+  (e: "request-delete", payload: { scheduleId: number }): void;
 }>();
 
 const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -77,6 +78,8 @@ type OrbitPhase = "idle" | "opening" | "open" | "closing";
 
 const bodyRef = ref<HTMLElement | null>(null);
 const dragState = ref<DragState | null>(null);
+let dragPointerId = -1;
+let dragSourceEl: HTMLElement | null = null;
 const dropTarget = ref<{ day: number; period: number; valid: boolean } | null>(null);
 const openConflictGroupId = ref<string | null>(null);
 const closingConflictGroupId = ref<string | null>(null);
@@ -91,6 +94,12 @@ const suppressNextClick = ref(false);
 const deletingId = ref<number | null>(null);
 const DELETE_ANIMATION_MS = 240;
 let orbitAnimationTimer: ReturnType<typeof window.setTimeout> | null = null;
+
+const playDeleteAnimation = async (scheduleId: number) => {
+  deletingId.value = scheduleId;
+  await new Promise(resolve => setTimeout(resolve, DELETE_ANIMATION_MS));
+  deletingId.value = null;
+};
 
 const MIN_GRID_WIDTH = 360;
 const MAX_GRID_ZOOM = 2.2;
@@ -123,7 +132,7 @@ const resetView = (): boolean => {
   return changed;
 };
 
-defineExpose({ resetView });
+defineExpose({ resetView, playDeleteAnimation });
 
 /// Today's column (1-7), or 0 when there is none to mark. Only the week that is really the current
 /// one has a "today": the weekday alone says nothing about which week is on screen, and marking it
@@ -660,10 +669,9 @@ const getOrbitLineStyle = (block: MergedBlock, index: number, total: number) => 
 };
 
 const readCellFromPoint = (clientX: number, clientY: number) => {
-  const elements = document.elementsFromPoint(clientX, clientY);
-  const cell = elements
-    .find(element => !(element instanceof HTMLElement) || !element.closest(".conflict-orbit-center"))
-    ?.closest<HTMLElement>(".cell[data-day][data-period]");
+  const elements = document.elementsFromPoint(clientX, clientY)
+    .filter((element): element is HTMLElement => element instanceof HTMLElement);
+  const cell = cellFromHitStack(elements) as HTMLElement | null;
   if (!cell) return null;
 
   const day = Number(cell.dataset.day);
@@ -718,6 +726,7 @@ const syncDragTrashState = (clientX?: number, clientY?: number) => {
 
 const handlePointerMove = (event: PointerEvent) => {
   if (!dragState.value) return;
+  if (dragPointerId !== -1 && event.pointerId !== dragPointerId) return;
 
   const offsetX = event.clientX - dragState.value.startX;
   const offsetY = event.clientY - dragState.value.startY;
@@ -739,67 +748,69 @@ const handlePointerMove = (event: PointerEvent) => {
 };
 
 const stopDragListeners = () => {
-  window.removeEventListener("pointermove", handlePointerMove);
-  window.removeEventListener("pointerup", handlePointerUp);
-  window.removeEventListener("pointercancel", cancelDrag);
+  window.removeEventListener("pointermove", handlePointerMove, true);
+  window.removeEventListener("pointerup", handlePointerUp, true);
+  window.removeEventListener("pointercancel", cancelDrag, true);
 };
 
-const cancelDrag = () => {
+const releaseDragCapture = () => {
+  if (dragSourceEl && dragPointerId !== -1) {
+    try {
+      if (dragSourceEl.hasPointerCapture?.(dragPointerId)) {
+        dragSourceEl.releasePointerCapture(dragPointerId);
+      }
+    } catch {
+      // Capture is already gone (unmount, cancelled pointer). Fine.
+    }
+  }
+  dragPointerId = -1;
+  dragSourceEl = null;
+};
+
+const endDragGesture = () => {
   stopDragListeners();
+  releaseDragCapture();
   dragState.value = null;
   dropTarget.value = null;
   syncDragTrashState();
 };
 
+const cancelDrag = () => {
+  endDragGesture();
+};
+
 const handlePointerUp = async (event: PointerEvent) => {
+  if (dragPointerId !== -1 && event.pointerId !== dragPointerId) return;
+
   const currentDrag = dragState.value;
   const currentTarget = dropTarget.value;
   const shouldDelete = currentDrag?.hasMoved
     ? syncDragTrashState(event.clientX, event.clientY)
     : false;
-  stopDragListeners();
 
   if (currentDrag?.hasMoved && currentDrag.source === "embedded-conflict") {
     suppressNextClick.value = true;
   }
 
+  // Drop the gesture immediately so the undo bar is tappable and no other card
+  // keeps following the pointer while a dialog or the database write runs.
+  endDragGesture();
+
   if (shouldDelete && currentDrag?.hasMoved) {
-    // dragState deliberately survives the animation: clearing it first would snap the block
-    // back into its cell and then shrink it there, instead of shrinking it where the finger
-    // let go. The pointer listeners are already detached, so it stays put.
-    dropTarget.value = null;
-    deletingId.value = currentDrag.scheduleId;
-    await new Promise(resolve => setTimeout(resolve, DELETE_ANIMATION_MS));
-
-    dragState.value = null;
-    deletingId.value = null;
-    syncDragTrashState();
-
-    const removed = await removeSchedule(currentDrag.scheduleId);
-    if (removed) {
-      if (currentDrag.source === "floating" || conflictGroupByScheduleId.value.has(currentDrag.scheduleId)) {
-        clearConflictOrbitImmediately();
-      }
-      showToast("已删除课段");
-      commitEdit();
+    if (currentDrag.source === "floating" || conflictGroupByScheduleId.value.has(currentDrag.scheduleId)) {
+      clearConflictOrbitImmediately();
     }
+    emit("request-delete", { scheduleId: currentDrag.scheduleId });
     return;
   }
 
   if (!currentDrag?.hasMoved || !currentTarget?.valid) {
-    dragState.value = null;
-    dropTarget.value = null;
-    syncDragTrashState();
     return;
   }
 
   const schedule = effectiveSchedules.value.find(s => s.id === currentDrag.scheduleId);
   const changed = schedule &&
     (schedule.dayOfWeek !== currentTarget.day || schedule.startPeriod !== currentTarget.period);
-
-  dragState.value = null;
-  dropTarget.value = null;
-  syncDragTrashState();
 
   if (changed) {
     const moved = await moveSchedule(currentDrag.scheduleId, currentTarget.day, currentTarget.period);
@@ -873,7 +884,19 @@ const beginDrag = (
   source: "grid" | "floating" | "embedded-conflict" = "grid"
 ) => {
   event.stopPropagation();
+  if (event.cancelable) event.preventDefault();
   suppressCellClickUntil = Date.now() + 600;
+
+  const sourceEl = event.target instanceof Element
+    ? event.target.closest<HTMLElement>(".course-block")
+    : null;
+  dragSourceEl = sourceEl;
+  dragPointerId = event.pointerId;
+  try {
+    sourceEl?.setPointerCapture(event.pointerId);
+  } catch {
+    dragPointerId = event.pointerId;
+  }
 
   dragState.value = {
     scheduleId: block.schedule.id,
@@ -888,9 +911,9 @@ const beginDrag = (
 
   dropTarget.value = null;
   syncDragTrashState();
-  window.addEventListener("pointermove", handlePointerMove);
-  window.addEventListener("pointerup", handlePointerUp);
-  window.addEventListener("pointercancel", cancelDrag);
+  window.addEventListener("pointermove", handlePointerMove, true);
+  window.addEventListener("pointerup", handlePointerUp, true);
+  window.addEventListener("pointercancel", cancelDrag, true);
 };
 
 const startEmbeddedConflictDrag = (block: MergedBlock, event: PointerEvent) => {
@@ -904,16 +927,9 @@ const startEmbeddedConflictDrag = (block: MergedBlock, event: PointerEvent) => {
   startDrag(block, event, "embedded-conflict");
 };
 
-const isBlockDragging = (scheduleId: number) => {
-  return dragState.value?.scheduleId === scheduleId && dragState.value.hasMoved;
-};
+const isBlockDragging = (scheduleId: number) => isDraggingSchedule(dragState.value, scheduleId);
 
-const getBlockDragOffset = (scheduleId: number) => {
-  if (dragState.value?.scheduleId !== scheduleId) {
-    return { x: 0, y: 0 };
-  }
-  return { x: dragState.value.offsetX, y: dragState.value.offsetY };
-};
+const getBlockDragOffset = (scheduleId: number) => offsetForSchedule(dragState.value, scheduleId);
 
 const dropPreviewFrame = computed<DropPreviewFrame | null>(() => {
   const target = dropTarget.value;
@@ -936,12 +952,6 @@ const dropPreviewFrame = computed<DropPreviewFrame | null>(() => {
     valid: target.valid
   };
 });
-
-const getCellClass = (day: number, period: number) => {
-  return {
-    "is-today": todayDayNumber.value === day
-  };
-};
 
 /// A cell a spanning course only covers visually is still occupied. The coach must not
 /// point "双击空白" at it.
@@ -993,8 +1003,7 @@ onUnmounted(() => {
   if (weekSwitchTimer !== null) window.clearTimeout(weekSwitchTimer);
   clearOrbitAnimationTimer();
   clearLongPress();
-  stopDragListeners();
-  syncDragTrashState();
+  endDragGesture();
   window.removeEventListener("resize", handleWindowResize);
   window.removeEventListener("click", handleGlobalClick, true);
 });
@@ -1003,7 +1012,11 @@ onUnmounted(() => {
 <template>
   <div
     class="week-grid"
-    :class="[weekSwitching ? 'is-switching' : '', currentWeek % 2 ? 'week-odd' : 'week-even']"
+    :class="[
+      weekSwitching ? 'is-switching' : '',
+      currentWeek % 2 ? 'week-odd' : 'week-even',
+      dragState ? 'is-dragging-course' : ''
+    ]"
     :style="weekGridStyle"
     @touchstart="handleTouchStart"
     @touchmove="handleTouchMove"
@@ -1043,13 +1056,12 @@ onUnmounted(() => {
             v-for="day in dayNumbers"
             :key="day"
             class="cell"
-            :class="getCellClass(day, slot.period)"
             :data-day="day"
             :data-period="slot.period"
             :data-coach-empty="isCellCovered(day, slot.period) ? undefined : 'true'"
             @click="handleCellClick(day, slot.period)"
           >
-            <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="block.schedule.id">
+            <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="`sch-${block.schedule.id}-c${block.course.id}`">
               <CourseBlock
                 :course="block.course"
                 :schedule="block.schedule"
@@ -1170,6 +1182,10 @@ onUnmounted(() => {
   touch-action: pan-y;
 }
 
+.week-grid.is-dragging-course .course-block:not(.is-dragging) {
+  pointer-events: none;
+}
+
 .header {
   display: grid;
   grid-template-columns: var(--time-col-width) repeat(7, minmax(0, 1fr));
@@ -1178,6 +1194,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid color-mix(in srgb, var(--theme-grid-line-color) 60%, transparent);
   position: sticky;
+  overflow: hidden;
   top: 0;
   z-index: 10;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
@@ -1236,13 +1253,12 @@ onUnmounted(() => {
 }
 
 /* Today, and only on the week that is actually current (see todayDayNumber): a rounded pill in the
-   header, and a separate faint wash on the body cells. The wash must not paint the header. A tint
-   that continues from the column up into the header cell clashes with the pill.
+   header. The body column is not washed. A tint that continues from the column up into the header
+   cell clashes with the pill.
    The pill sits on the header band, so it uses that band's own pair, inverted (header-text fill,
    header-bg lettering): that pair is the one guaranteed to contrast *there*. The page accent is not:
    on the Vant preset the band is itself the accent blue, and a blue pill on a blue band was
-   invisible. On every other preset header-text is the accent anyway. The cells below sit on the
-   page, so they use --theme-accent (see useTheme). */
+   invisible. On every other preset header-text is the accent anyway. */
 .day-header.is-today .day-pill {
   background: var(--theme-header-text);
   color: var(--theme-header-bg);
@@ -1335,11 +1351,7 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Body only. An inset shadow rather than a background, so it lays over the morning / afternoon /
-   evening tint instead of replacing it, and it never continues up into the header pill. */
-.cell.is-today {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--theme-accent) 8%, transparent);
-}
+/* Body cells are not washed for today. The rounded header pill is the only live-day mark. */
 
 .cell:last-child {
   border-right: none;

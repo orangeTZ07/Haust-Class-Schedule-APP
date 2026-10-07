@@ -8,7 +8,7 @@ export const COACH_SEEN_STEP_IDS_KEY = "course-mngr-coach-seen-step-ids";
 
 export const COACH_CUE_LABEL = "新功能介绍请前往此处";
 
-export type CoachTarget = "menu" | "import" | "empty-cell";
+export type CoachTarget = "menu" | "import" | "empty-cell" | "course-block" | "settings";
 
 export interface CoachStep {
   id: string;
@@ -39,6 +39,14 @@ export const COACH_STEPS: CoachStep[] = [
     requiresCoursesOnCurrentWeek: true
   },
   {
+    id: "delete-course-v1",
+    title: "拖动删除课程",
+    body: "长按课程拖到顶栏垃圾桶即可删除。松手后会再问你删整学期、仅当前周还是自定义周次。",
+    target: "course-block",
+    offHome: false,
+    requiresCoursesOnCurrentWeek: true
+  },
+  {
     id: "menu-reopen-guide-v1",
     title: "菜单",
     body: "点左上角菜单可以导入课表。这份说明也能从菜单里的「操作指南」随时再打开。",
@@ -51,6 +59,22 @@ export const COACH_STEPS: CoachStep[] = [
     title: "导入课表",
     body: "教务系统同步和 AI 识别都在菜单的「导入课表」里。",
     target: "import",
+    offHome: true,
+    requiresCoursesOnCurrentWeek: false
+  },
+  {
+    id: "theme-preset-v1",
+    title: "主题预设",
+    body: "换配色：点菜单里的「设置」，再进「外观样式」选一套主题。",
+    target: "settings",
+    offHome: true,
+    requiresCoursesOnCurrentWeek: false
+  },
+  {
+    id: "bg-image-v1",
+    title: "背景图片",
+    body: "课表背景图也在「设置 → 外观样式」里，选一张图还能裁切。",
+    target: "settings",
     offHome: true,
     requiresCoursesOnCurrentWeek: false
   }
@@ -105,6 +129,7 @@ export const timetableFingerprint = (
 /// This session already failed to find an empty cell on this week + this timetable.
 /// Not written to seen-ids: flipping week or changing the table can show the step later.
 let emptyCellDeferral: { week: number; fingerprint: string } | null = null;
+let courseBlockDeferral: { week: number; fingerprint: string } | null = null;
 
 export const rememberEmptyCellUnanchored = (week: number, fingerprint: string): void => {
   emptyCellDeferral = { week, fingerprint };
@@ -119,6 +144,19 @@ export const resetEmptyCellDeferral = (): void => {
   emptyCellDeferral = null;
 };
 
+export const rememberCourseBlockUnanchored = (week: number, fingerprint: string): void => {
+  courseBlockDeferral = { week, fingerprint };
+};
+
+export const isCourseBlockDeferred = (week: number, fingerprint: string): boolean =>
+  courseBlockDeferral !== null &&
+  courseBlockDeferral.week === week &&
+  courseBlockDeferral.fingerprint === fingerprint;
+
+export const resetCourseBlockDeferral = (): void => {
+  courseBlockDeferral = null;
+};
+
 /// Grid not painted yet → wait. Cells exist but none empty → skip this step. Otherwise point at one.
 export const emptyCellAnchorState = (
   gridCellCount: number,
@@ -129,6 +167,16 @@ export const emptyCellAnchorState = (
   return "ready";
 };
 
+/// Grid not painted yet → wait. Painted but no course card to point at → skip. Otherwise ready.
+export const courseBlockAnchorState = (
+  gridCellCount: number,
+  courseBlockCount: number
+): "waiting" | "missing" | "ready" => {
+  if (gridCellCount <= 0) return "waiting";
+  if (courseBlockCount <= 0) return "missing";
+  return "ready";
+};
+
 /// Steps to show on launch. Deferred steps (no courses yet, or no empty cell on this week/data)
 /// are omitted, not marked seen by the caller.
 export const autoCoachQueue = (options: {
@@ -136,6 +184,8 @@ export const autoCoachQueue = (options: {
   hasCoursesOnCurrentWeek: boolean;
   /// Same session, same week, same table: do not put the empty-cell step back in.
   deferEmptyCell?: boolean;
+  /// Same idea for the delete step when this week has no course card to point at.
+  deferCourseBlock?: boolean;
 }): CoachPresentation[] => {
   const fresh = options.seenIds === null;
   const seen = new Set(options.seenIds ?? []);
@@ -143,6 +193,7 @@ export const autoCoachQueue = (options: {
     if (seen.has(step.id)) return false;
     if (step.requiresCoursesOnCurrentWeek && !options.hasCoursesOnCurrentWeek) return false;
     if (options.deferEmptyCell && step.target === "empty-cell") return false;
+    if (options.deferCourseBlock && step.target === "course-block") return false;
     return true;
   });
   return present(steps, !fresh);

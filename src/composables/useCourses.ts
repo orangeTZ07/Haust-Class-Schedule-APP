@@ -13,6 +13,14 @@ import {
   type TableHistory,
   type TimetableSnapshot
 } from "@/utils/editHistory";
+import {
+  cancelDraftForWeek,
+  idsForSemesterDelete,
+  needsWeeklyCancel,
+  weeklyRowToDelete,
+  weeksForDeleteScope,
+  type DeleteScopePayload
+} from "@/utils/scheduleDelete";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -567,24 +575,48 @@ export function useCourses() {
   };
 
   const removeSchedule = async (id: number): Promise<boolean> => {
-    const index = schedules.value.findIndex(s => s.id === id);
-    if (index === -1) return false;
+    return removeScheduleInScope(id, { weekScope: "current" });
+  };
 
-    const current = schedules.value[index];
-    if (getScheduleScope(current) === "semester" && isScheduleActiveInWeek(current, currentWeek.value)) {
-      await addSchedule(current.courseId, current.dayOfWeek, current.startPeriod, current.endPeriod, {
-        startWeek: currentWeek.value,
-        endWeek: currentWeek.value,
-        weekType: "all",
-        scope: "weekly",
-        isCancelled: true
-      });
+  const removeScheduleInScope = async (id: number, payload: DeleteScopePayload): Promise<boolean> => {
+    const current = schedules.value.find(s => s.id === id);
+    if (!current) return false;
+
+    const weeks = weeksForDeleteScope(payload, currentWeek.value);
+    if (weeks === "all") {
+      const ids = idsForSemesterDelete(schedules.value, current);
+      if (ids.length === 0) return false;
+      for (const scheduleId of ids) {
+        await courseService.deleteSchedule(scheduleId);
+      }
+      const drop = new Set(ids);
+      schedules.value = schedules.value.filter(schedule => !drop.has(schedule.id));
       return true;
     }
 
-    await courseService.deleteSchedule(id);
-    schedules.value.splice(index, 1);
-    return true;
+    let changed = false;
+    const snapshot = [...schedules.value];
+    for (const week of weeks) {
+      const weekly = weeklyRowToDelete(snapshot, current, week);
+      if (weekly) {
+        await courseService.deleteSchedule(weekly.id);
+        schedules.value = schedules.value.filter(schedule => schedule.id !== weekly.id);
+        changed = true;
+        continue;
+      }
+      if (needsWeeklyCancel(schedules.value, current, week)) {
+        const draft = cancelDraftForWeek(current, week);
+        await addSchedule(draft.courseId, draft.dayOfWeek, draft.startPeriod, draft.endPeriod, {
+          startWeek: draft.week,
+          endWeek: draft.week,
+          weekType: "all",
+          scope: "weekly",
+          isCancelled: true
+        });
+        changed = true;
+      }
+    }
+    return changed;
   };
 
   const clearAll = async (options?: { boundary?: boolean }) => {
@@ -1024,6 +1056,7 @@ export function useCourses() {
     addSchedule,
     moveSchedule,
     removeSchedule,
+    removeScheduleInScope,
     removeCourse,
     importFromCsv,
     importFromSemesterCsv,

@@ -107,7 +107,7 @@ const presetColors = [
 
     <div class="content">
       <!-- 预设选择入口：跳转到预设页面 -->
-      <div class="card clickable" @click="goToPresets">
+      <div class="card clickable" data-coach="theme-preset" @click="goToPresets">
         <div class="card-icon">
           <Palette :size="20" stroke-width="1.5" />
         </div>
@@ -148,7 +148,7 @@ const presetColors = [
 
         <div class="divider"></div>
 
-        <div class="config-item">
+        <div class="config-item" data-coach="bg-image">
           <span class="label">背景图片</span>
           <div class="image-actions">
             <input
