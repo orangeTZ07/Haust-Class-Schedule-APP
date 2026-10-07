@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
 import { ChevronDown, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
@@ -37,6 +38,14 @@ const diagnoseText = ref("");
 /// Folded away by default: most people never need it, and it is the part that made the old panel
 /// look like a debugging screen.
 const showTrouble = ref(false);
+
+const CREDIT_URL = "https://github.com/LinJX1210";
+
+const openCredit = () => {
+  openUrl(CREDIT_URL).catch(() => {
+    window.open(CREDIT_URL, "_blank", "noopener");
+  });
+};
 
 /// 网络诊断矩阵。
 ///
@@ -248,6 +257,13 @@ const sync = async () => {
         <pre v-if="diagnoseText" class="diag-out">{{ diagnoseText }}</pre>
       </div>
     </div>
+
+    <footer class="eams-footer">
+      <p class="eams-credit">
+        教务爬虫原型：
+        <button type="button" class="eams-credit-link" @click="openCredit">@LinJX1210</button>
+      </p>
+    </footer>
   </div>
 </template>
 
@@ -262,6 +278,33 @@ const sync = async () => {
   font-size: 12px;
   text-align: center;
   opacity: 0.6;
+}
+
+.eams-footer {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+}
+
+.eams-credit {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--theme-body-text);
+  opacity: 0.55;
+}
+
+.eams-credit-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--theme-accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .atrust {

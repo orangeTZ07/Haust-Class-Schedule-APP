@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useUpdateCheck } from "@/composables/useUpdateCheck";
-import { displayVersion } from "@/services/updateService";
-
-const CREDIT_URL = "https://github.com/LinJX1210";
+import {
+  displayVersion,
+  isPreviewEarlyAccessEnabled,
+  setPreviewEarlyAccessEnabled,
+  updateOfferTitle
+} from "@/services/updateService";
 
 const { currentVersion, checking, loadCurrentVersion, manualCheck } = useUpdateCheck();
+
+const previewEarlyAccess = ref(false);
 
 const statusMessage = ref("");
 const statusIsError = ref(false);
@@ -14,9 +18,14 @@ const statusIsError = ref(false);
 const versionText = computed(() => (currentVersion.value ? displayVersion(currentVersion.value) : "未知"));
 
 onMounted(() => {
-  // 读不到时只是显示「未知」；原因会在用户点「检查更新」时给出。
+  previewEarlyAccess.value = isPreviewEarlyAccessEnabled();
   loadCurrentVersion().catch(() => {});
 });
+
+const onPreviewEarlyAccessChange = (enabled: boolean) => {
+  previewEarlyAccess.value = enabled;
+  setPreviewEarlyAccessEnabled(enabled);
+};
 
 const onCheck = async () => {
   statusMessage.value = "";
@@ -24,7 +33,7 @@ const onCheck = async () => {
 
   const outcome = await manualCheck();
   if (outcome.status === "available") {
-    statusMessage.value = `发现新版本 ${displayVersion(outcome.release.tag)}`;
+    statusMessage.value = updateOfferTitle(outcome.release.tag);
   } else if (outcome.status === "latest") {
     statusMessage.value = "已是最新版本";
   } else if (outcome.status === "error") {
@@ -32,34 +41,33 @@ const onCheck = async () => {
     statusIsError.value = true;
   }
 };
-
-const openCredit = () => {
-  openUrl(CREDIT_URL).catch(() => {
-    window.open(CREDIT_URL, "_blank", "noopener");
-  });
-};
 </script>
 
 <template>
-  <div class="about-settings">
+  <div class="update-settings">
     <div class="section">
-      <div class="section-title">关于</div>
+      <div class="section-title">软件更新</div>
       <div class="config-item">
         <span class="label">当前版本 <span class="version-value">{{ versionText }}</span></span>
         <van-button class="check-btn" size="small" :loading="checking" @click="onCheck">检查更新</van-button>
       </div>
+      <div class="config-item preview-row">
+        <span class="label">预览版抢先体验</span>
+        <div class="switch-side">
+          <span v-if="previewEarlyAccess" class="risk-hint">预览版可能不稳定</span>
+          <van-switch
+            :model-value="previewEarlyAccess"
+            @update:model-value="onPreviewEarlyAccessChange"
+          />
+        </div>
+      </div>
       <div v-if="statusMessage" class="status-hint" :class="{ error: statusIsError }">{{ statusMessage }}</div>
-      <p class="credit">
-        教务课表爬虫原型由
-        <button type="button" class="credit-link" @click="openCredit">LinJX1210</button>
-        提供
-      </p>
     </div>
   </div>
 </template>
 
 <style scoped>
-.about-settings {
+.update-settings {
   padding: 0 16px;
 }
 
@@ -90,6 +98,25 @@ const openCredit = () => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
+}
+
+.preview-row {
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+}
+
+.switch-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.risk-hint {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color-danger);
+  max-width: 7em;
+  text-align: right;
 }
 
 .label {
@@ -126,25 +153,5 @@ const openCredit = () => {
 .status-hint.error {
   color: var(--color-danger);
   opacity: 1;
-}
-
-.credit {
-  padding: 0 16px 14px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--theme-body-text);
-  opacity: 0.7;
-}
-
-.credit-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--theme-accent);
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
 }
 </style>

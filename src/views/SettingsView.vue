@@ -3,7 +3,7 @@ import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ArrowLeft, ChevronRight, Menu, Palette } from "@lucide/vue";
 import GridSettings from "./settings/GridSettings.vue";
-import AboutSettings from "./settings/AboutSettings.vue";
+import UpdateSettings from "./settings/UpdateSettings.vue";
 import SideBar from "@/components/layout/SideBar.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
 import { presetList, useTheme } from "@/composables/useTheme";
@@ -86,7 +86,7 @@ onMounted(() => {
       </div>
 
       <GridSettings />
-      <AboutSettings />
+      <UpdateSettings />
     </div>
   </div>
 </template>

@@ -2,7 +2,7 @@
 //
 // 用法: node scripts/test-week-offset-and-coach.mjs
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -100,6 +100,18 @@ console.log("=== 引导步骤 ===");
   check("跟进设置是 router.push 而不是停在侧栏", home.includes("SETTINGS_COACH_PATH") && home.includes("router.push(SETTINGS_COACH_PATH)"));
   const settings = readFileSync(join(here, "..", "src/views/SettingsView.vue"), "utf8");
   check("设置页有外观锚点", settings.includes('data-coach="appearance"'));
+  check("设置页只有一份软件更新", settings.includes("UpdateSettings") && !settings.includes("AboutSettings"));
+  const updateSettings = readFileSync(join(here, "..", "src/views/settings/UpdateSettings.vue"), "utf8");
+  check(
+    "抢先体验绑 #20 偏好 API",
+    updateSettings.includes("isPreviewEarlyAccessEnabled") &&
+      updateSettings.includes("setPreviewEarlyAccessEnabled") &&
+      !updateSettings.includes("previewChannelEnabled") &&
+      updateSettings.includes("预览版可能不稳定")
+  );
+  check("没有第二套 previewChannel helper", !existsSync(join(here, "..", "src/services/previewChannelSettings.ts")));
+  const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
+  check("教务同步页底有爬虫致谢", eams.includes("eams-footer") && eams.includes("@LinJX1210") && eams.includes("连不上？"));
   const gridSettings = readFileSync(join(here, "..", "src/views/settings/GridSettings.vue"), "utf8");
   check("课时锚点打在时长和课间上", (gridSettings.match(/data-coach="period-timing"/g) || []).length >= 2);
   const topBar = readFileSync(join(here, "..", "src/components/layout/TopBar.vue"), "utf8");
