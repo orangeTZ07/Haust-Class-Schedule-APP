@@ -322,7 +322,7 @@ const applyReminders = async () => {
         系统不再弹窗时，请到系统设置里允许本应用发送通知，回到应用后会自动恢复。
       </div>
       <div v-if="reminderPrefs.enabled" class="section-hint">
-        不然课前提醒出不来
+        请在系统设置里允许本应用发送通知并打开横幅，不然课前提醒出不来
         <button type="button" class="mini-link haptics" @click="onOpenNotificationSettings">去系统设置</button>
         <p v-if="notifyReturnTip" class="notify-tip">回来后仍未允许通知。请打开通知，并允许横幅。</p>
         <button type="button" class="mini-link oem-toggle haptics" @click="oemOpen = !oemOpen">

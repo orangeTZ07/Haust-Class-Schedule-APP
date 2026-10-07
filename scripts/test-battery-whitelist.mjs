@@ -64,6 +64,21 @@ console.log("=== 文案 ===");
 const batteryBlock = settings.split("batteryExempt")[2] ?? "";
 check("按钮是「去允许」，不再只写「去设置」", /去允许/.test(settings) && /onOpenBatteryWhitelist/.test(settings));
 check("电池这一段不再用「去设置」当入口", !/openBatterySettings\">去设置/.test(batteryBlock) && !/@click=\"openBatterySettings\">去设置/.test(settings));
+check(
+  "系统设置提示先写要开通知和横幅",
+  settings.includes("请在系统设置里允许本应用发送通知并打开横幅，不然课前提醒出不来") &&
+    settings.includes("去系统设置")
+);
+check(
+  "不再用半截「不然课前提醒出不来」起句",
+  !/^\s+不然课前提醒出不来\s*$/m.test(settings)
+);
+check(
+  "自启动机型步骤仍是完整句",
+  settings.includes("应用管理里再打开自启动，省电策略选无限制。") &&
+    settings.includes("允许自启动和后台活动。") &&
+    !/不然[^。\n]{0,12}自启动/.test(settings)
+);
 
 if (failed) {
   console.error(`\n${failed} FAILED`);
