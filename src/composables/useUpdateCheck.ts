@@ -1,10 +1,16 @@
 import { computed, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
+import { appCacheDir, join } from "@tauri-apps/api/path";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { download } from "@tauri-apps/plugin-upload";
+import { canInstall, installApk, requestInstallPermission } from "@/services/androidInstaller";
+import { installApkInApp } from "@/services/apkUpdate";
 import {
   fetchUpdateCandidate,
   isAndroidUserAgent,
+  isDirectApkUrl,
   pickInstallUrl,
+  shouldAttemptAutoCheck,
   summarizeReleaseBody,
   type ReleaseInfo
 } from "@/services/updateService";
@@ -13,11 +19,6 @@ import { describeError } from "@/utils/describeError";
 const LAST_CHECK_KEY = "course-mngr-update-last-check";
 const SKIPPED_TAG_KEY = "course-mngr-update-skipped-tag";
 
-/// 自动检查最多每 6 小时一次。
-const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-/// 上次检查失败（没记下成功时间）时，自动检查两次尝试之间至少隔这么久。
-/// 否则断网时每次切回应用都会再发一次请求。
-const AUTO_RETRY_GAP_MS = 10 * 60 * 1000;
 /// 启动后等一会儿再查，别跟首屏加载抢网络和主线程。
 const STARTUP_DELAY_MS = 3000;
 
@@ -34,7 +35,10 @@ const checking = ref(false);
 const dialogVisible = ref(false);
 const release = ref<ReleaseInfo | null>(null);
 const actionError = ref("");
+const installing = ref(false);
+const downloadPercent = ref<number | null>(null);
 let lastAutoAttemptAt = 0;
+let updateGeneration = 0;
 
 // localStorage 在无痕窗口或被清理时可能抛错；检查更新不该因此坏掉。
 const readStorage = (key: string): string | null => {
@@ -101,13 +105,13 @@ const manualCheck = async (): Promise<CheckOutcome> => {
   return outcome;
 };
 
-/// 启动后和切回应用时调用。没到时间、已经在查、弹窗已经开着都直接返回；失败一律静默。
-const autoCheck = async () => {
+/// 启动后和切回应用时调用。已经在查、弹窗已经开着都直接返回；失败一律静默。
+/// `force`：冷启动，忽略 6 小时成功节流，仍受重试间隔 / busy / 弹窗守卫。
+const autoCheck = async (opts?: { force?: boolean }) => {
   const now = Date.now();
-  const sinceLastCheck = now - readLastCheckAt();
-  // sinceLastCheck 为负说明系统时间被往回调过，不能因此一直不查。
-  const due = sinceLastCheck < 0 || sinceLastCheck >= AUTO_CHECK_INTERVAL_MS;
-  if (!due || now - lastAutoAttemptAt < AUTO_RETRY_GAP_MS) return;
+  if (!shouldAttemptAutoCheck(now, readLastCheckAt(), lastAutoAttemptAt, opts?.force === true)) {
+    return;
+  }
   if (checking.value || dialogVisible.value) return;
 
   lastAutoAttemptAt = now;
@@ -119,10 +123,10 @@ const autoCheck = async () => {
 
 /// 在 App.vue 挂载时调用，返回清理函数。
 ///
-/// 除了启动后查一次，还在切回前台时查：手机上应用常常在后台挂好几天都不重启，只在启动时查的话，
-/// 「每 6 小时」基本等于「几乎不查」。切回前台时同样受 6 小时的限制。
+/// 冷启动（延迟那一次）每次进程都会查，不受 6 小时节流。切回前台仍受 6 小时限制，
+/// 避免在后台挂着时反复打 GitHub。
 const startAutoCheck = (): (() => void) => {
-  const timer = setTimeout(() => void autoCheck(), STARTUP_DELAY_MS);
+  const timer = setTimeout(() => void autoCheck({ force: true }), STARTUP_DELAY_MS);
   const onVisibilityChange = () => {
     if (document.visibilityState === "visible") void autoCheck();
   };
@@ -134,27 +138,85 @@ const startAutoCheck = (): (() => void) => {
   };
 };
 
+const closeDialog = () => {
+  updateGeneration += 1;
+  installing.value = false;
+  downloadPercent.value = null;
+  dialogVisible.value = false;
+};
+
 /// 「稍后」：只关掉，不记任何东西，下次自动检查到点还会再弹。
 const dismissDialog = () => {
-  dialogVisible.value = false;
+  closeDialog();
 };
 
 const skipThisVersion = () => {
   if (release.value) writeStorage(SKIPPED_TAG_KEY, release.value.tag);
-  dialogVisible.value = false;
+  closeDialog();
+};
+
+const openInBrowser = async (url: string) => {
+  try {
+    await openUrl(url);
+    closeDialog();
+  } catch (e) {
+    // 弹窗留着，用户还能点「查看完整更新说明」或者重试。
+    actionError.value = actionError.value
+      ? `${actionError.value}；也没能打开浏览器：${describeError(e)}`
+      : `没能打开浏览器：${describeError(e)}`;
+  }
 };
 
 const startUpdate = async () => {
-  if (!release.value) return;
-  const url = pickInstallUrl(release.value, isAndroidUserAgent(navigator.userAgent));
+  if (!release.value || installing.value) return;
+  const android = isAndroidUserAgent(navigator.userAgent);
+  const url = pickInstallUrl(release.value, android);
   actionError.value = "";
-  try {
-    await openUrl(url);
-    dialogVisible.value = false;
-  } catch (e) {
-    // 弹窗留着，用户还能点「查看完整更新说明」或者重试。
-    actionError.value = `没能打开浏览器：${describeError(e)}`;
+  const generation = (updateGeneration += 1);
+
+  if (android && isDirectApkUrl(url)) {
+    installing.value = true;
+    downloadPercent.value = 0;
+    try {
+      const outcome = await installApkInApp(
+        url,
+        {
+          download: (apkUrl, path, onProgress) =>
+            download(
+              apkUrl,
+              path,
+              onProgress,
+              new Map([["Accept", "application/octet-stream"]])
+            ),
+          canInstall,
+          requestInstallPermission,
+          install: installApk,
+          appCacheDir,
+          join
+        },
+        (percent) => {
+          if (generation === updateGeneration) downloadPercent.value = percent;
+        },
+        () => generation !== updateGeneration
+      );
+      if (generation !== updateGeneration) return;
+      if (outcome.status === "launched") return;
+      if (outcome.status === "permission-denied") {
+        actionError.value = "需要允许安装未知应用才能在应用内更新，已改为用浏览器下载";
+      } else if (outcome.message === "已取消") {
+        return;
+      } else {
+        actionError.value = `应用内安装失败：${outcome.message}，已改为用浏览器下载`;
+      }
+    } finally {
+      if (generation === updateGeneration) {
+        installing.value = false;
+        downloadPercent.value = null;
+      }
+    }
   }
+
+  await openInBrowser(url);
 };
 
 const openFullNotes = async () => {
@@ -179,6 +241,8 @@ export function useUpdateCheck() {
     release,
     notes,
     actionError,
+    installing,
+    downloadPercent,
     loadCurrentVersion,
     manualCheck,
     startAutoCheck,
