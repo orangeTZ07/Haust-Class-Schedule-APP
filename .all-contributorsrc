@@ -1,0 +1,85 @@
+{
+  "projectName": "Haust-Class-Schedule-APP",
+  "projectOwner": "orangeTZ07",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": false,
+  "skipCi": true,
+  "contributors": [
+    {
+      "login": "orangeTZ07",
+      "name": "orangeTZ07",
+      "avatar_url": "https://avatars.githubusercontent.com/u/141539459?v=4",
+      "profile": "https://github.com/orangeTZ07",
+      "contributions": [
+        "maintenance",
+        "code",
+        "design",
+        "doc",
+        "review"
+      ]
+    },
+    {
+      "login": "zhou18-book",
+      "name": "zhou18-book",
+      "avatar_url": "https://avatars.githubusercontent.com/u/222402196?v=4",
+      "profile": "https://github.com/zhou18-book",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "noisy-fly",
+      "name": "noisy-fly",
+      "avatar_url": "https://avatars.githubusercontent.com/u/232693317?v=4",
+      "profile": "https://github.com/noisy-fly",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "LinJX1210",
+      "name": "LinJX1210",
+      "avatar_url": "https://avatars.githubusercontent.com/u/183972389?v=4",
+      "profile": "https://github.com/LinJX1210",
+      "contributions": [
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "claude",
+      "name": "Claude",
+      "avatar_url": "https://avatars.githubusercontent.com/u/81847?v=4",
+      "profile": "https://github.com/claude",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "cursoragent",
+      "name": "Cursor",
+      "avatar_url": "https://avatars.githubusercontent.com/u/199161495?v=4",
+      "profile": "https://github.com/cursoragent",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "deepseek-ai",
+      "name": "DeepSeek",
+      "avatar_url": "https://avatars.githubusercontent.com/u/148330874?v=4",
+      "profile": "https://github.com/deepseek-ai",
+      "contributions": [
+        "code"
+      ]
+    }
+  ]
+}
