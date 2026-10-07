@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { showToast } from "vant";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTheme } from "@/composables/useTheme";
-import { X, MessageSquare, Gamepad2, JapaneseYen, Copy } from '@lucide/vue';
+import { X, MessageSquare, Gamepad2, JapaneseYen, Github, Copy } from '@lucide/vue';
+
+const GITHUB_REPO_URL = "https://github.com/orangeTZ07/Haust-Class-Schedule-APP";
+const GITHUB_REPO_SLUG = "orangeTZ07/Haust-Class-Schedule-APP";
 
 const props = defineProps<{
   show: boolean;
@@ -20,6 +24,12 @@ const copyToClipboard = async (text: string, label: string) => {
   } catch (e) {
     showToast({ message: "复制失败", type: "fail" });
   }
+};
+
+const openGitHubRepo = () => {
+  openUrl(GITHUB_REPO_URL).catch(() => {
+    window.open(GITHUB_REPO_URL, "_blank", "noopener");
+  });
 };
 </script>
 
@@ -79,6 +89,20 @@ const copyToClipboard = async (text: string, label: string) => {
             <div class="item-value">QQ群：776935834</div>
           </div>
           <button class="mini-copy-btn" aria-label="复制群号" @click.stop="copyToClipboard('776935834', '群号')">
+            <Copy :size="14" />
+          </button>
+        </div>
+
+        <!-- GitHub 仓库 -->
+        <div class="contact-item" @click="openGitHubRepo">
+          <div class="item-icon-box">
+            <Github :size="20" class="item-icon" />
+          </div>
+          <div class="item-info">
+            <div class="item-label">GitHub 仓库</div>
+            <div class="item-value">{{ GITHUB_REPO_SLUG }}</div>
+          </div>
+          <button class="mini-copy-btn" aria-label="复制仓库地址" @click.stop="copyToClipboard(GITHUB_REPO_URL, '仓库地址')">
             <Copy :size="14" />
           </button>
         </div>
@@ -145,6 +169,9 @@ const copyToClipboard = async (text: string, label: string) => {
 .item-value {
   font-size: 12px;
   opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mini-copy-btn {
