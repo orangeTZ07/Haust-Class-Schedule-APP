@@ -21,6 +21,16 @@ import {
   weeksForDeleteScope,
   type DeleteScopePayload
 } from "@/utils/scheduleDelete";
+import {
+  createDefaultPeriodConfig,
+  formatPeriodRange,
+  isValidPeriodConfig,
+  parseStoredPeriodConfig,
+  periodRange,
+  resizeSection,
+  sectionOfPeriod,
+  type PeriodSection
+} from "@/utils/periodSchedule";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -29,23 +39,11 @@ const COLORS = [
   "#10b981", "#6366f1"
 ];
 
-const defaultConfig: PeriodTimeConfig = {
-  morningStart: "08:00",
-  afternoonStart: "14:00",
-  eveningStart: "19:00",
-  periodDuration: 45,
-  breakDuration: 10,
-  longBreakDuration: 20,
-  morningPeriods: 4,
-  afternoonPeriods: 4,
-  eveningPeriods: 2
-};
-
 const courses = ref<Course[]>([]);
 const schedules = ref<CourseSchedule[]>([]);
 const courseTables = ref<CourseTable[]>([]);
 const activeCourseTableId = ref<number>(1);
-const periodConfig = ref<PeriodTimeConfig>({ ...defaultConfig });
+const periodConfig = ref<PeriodTimeConfig>(createDefaultPeriodConfig());
 const currentWeek = ref(1);
 /// Monday of week 1, as "YYYY-MM-DD". 2026-08-31 is the start of this institution's
 /// 2026-2027 first semester -- it is what makes week 4 read 09-21..09-27 -- and it is only a
@@ -144,10 +142,9 @@ async function loadDataFromDb() {
       nextScheduleId = Math.max(...schedules.value.map(s => s.id)) + 1;
     }
 
-    const savedPeriodConfig = localStorage.getItem(STORAGE_KEYS.PERIOD_CONFIG);
-    if (savedPeriodConfig) {
-      periodConfig.value = JSON.parse(savedPeriodConfig);
-    }
+    // Old-format and unreadable values are converted here and written back by the watcher in
+    // useCourses(); parseStoredPeriodConfig documents what each case keeps.
+    periodConfig.value = parseStoredPeriodConfig(localStorage.getItem(STORAGE_KEYS.PERIOD_CONFIG)).config;
 
     const savedCurrentWeek = Number(localStorage.getItem(STORAGE_KEYS.CURRENT_WEEK));
     if (Number.isFinite(savedCurrentWeek) && savedCurrentWeek > 0) {
@@ -404,70 +401,43 @@ export function useCourses() {
   /// current period configuration. Split out from getPeriodTime so the reminder scheduler can
   /// place an alarm at a real clock time without parsing the "08:00-08:45" display string.
   const getPeriodStartMinutes = (period: number): number | null => {
-    const config = periodConfig.value;
-    const totalPeriods = config.morningPeriods + config.afternoonPeriods + (config.eveningPeriods || 0);
-    if (!Number.isFinite(period) || period < 1 || period > totalPeriods) return null;
-
-    const [morningH, morningM] = config.morningStart.split(":").map(Number);
-    const [afternoonH, afternoonM] = config.afternoonStart.split(":").map(Number);
-    const [eveningH, eveningM] = (config.eveningStart || "19:00").split(":").map(Number);
-
-    let sectionStartTime: number;
-    let localPeriod: number;
-
-    if (period <= config.morningPeriods) {
-      sectionStartTime = morningH * 60 + morningM;
-      localPeriod = period;
-    } else if (period <= config.morningPeriods + config.afternoonPeriods) {
-      sectionStartTime = afternoonH * 60 + afternoonM;
-      localPeriod = period - config.morningPeriods;
-    } else {
-      sectionStartTime = eveningH * 60 + eveningM;
-      localPeriod = period - config.morningPeriods - config.afternoonPeriods;
-    }
-
-    const bigBlocks = Math.floor((localPeriod - 1) / 2);
-    const isSecondInBlock = (localPeriod - 1) % 2 === 1;
-
-    return sectionStartTime +
-      bigBlocks * (config.periodDuration * 2 + config.breakDuration + config.longBreakDuration) +
-      (isSecondInBlock ? (config.periodDuration + config.breakDuration) : 0);
+    return periodRange(periodConfig.value, period)?.start ?? null;
   };
 
   const getPeriodTime = (period: number): string => {
-    const startTimeMinutes = getPeriodStartMinutes(period);
-    if (startTimeMinutes === null) return "";
-
-    const format = (minutes: number) => {
-      const h = Math.floor(minutes / 60).toString().padStart(2, "0");
-      const m = (minutes % 60).toString().padStart(2, "0");
-      return `${h}:${m}`;
-    };
-
-    return `${format(startTimeMinutes)}-${format(startTimeMinutes + periodConfig.value.periodDuration)}`;
+    const range = periodRange(periodConfig.value, period);
+    return range ? formatPeriodRange(range) : "";
   };
 
   const periodSlots = computed(() => {
     const config = periodConfig.value;
-    const totalPeriods = config.morningPeriods + config.afternoonPeriods + (config.eveningPeriods || 0);
-    const slots = [];
-    for (let i = 1; i <= totalPeriods; i++) {
-      let section: "morning" | "afternoon" | "evening";
-      if (i <= config.morningPeriods) {
-        section = "morning";
-      } else if (i <= config.morningPeriods + config.afternoonPeriods) {
-        section = "afternoon";
-      } else {
-        section = "evening";
-      }
-      slots.push({
-        period: i,
-        time: getPeriodTime(i),
-        section
-      });
-    }
-    return slots;
+    return config.periods.map((_, index) => {
+      const period = index + 1;
+      return {
+        period,
+        time: getPeriodTime(period),
+        section: (sectionOfPeriod(config, period)?.section ?? "evening") as PeriodSection
+      };
+    });
   });
+
+  /// The one way to replace the clock from outside: a bad config (hand-edited storage, a bug in a
+  /// caller) is refused instead of reaching the grid and the reminder scheduler.
+  const setPeriodConfig = (next: PeriodTimeConfig): boolean => {
+    if (!isValidPeriodConfig(next)) return false;
+    periodConfig.value = next;
+    return true;
+  };
+
+  const resetPeriodConfig = () => {
+    periodConfig.value = createDefaultPeriodConfig();
+  };
+
+  /// 上午 / 下午 / 晚上 的节数。放不下（会超过 24:00）时返回 false，什么都不改。
+  const setSectionPeriodCount = (section: PeriodSection, count: number): boolean => {
+    const next = resizeSection(periodConfig.value, section, count);
+    return next ? setPeriodConfig(next) : false;
+  };
 
   const getCourseById = (id: number) => courses.value.find(c => c.id === id);
 
@@ -1151,6 +1121,9 @@ export function useCourses() {
     activeCourseTable,
     periodConfig,
     periodSlots,
+    setPeriodConfig,
+    resetPeriodConfig,
+    setSectionPeriodCount,
     currentWeek,
     semesterWeekCount,
     setCurrentWeek,

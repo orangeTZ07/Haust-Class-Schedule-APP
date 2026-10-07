@@ -3,11 +3,24 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useTheme } from "@/composables/useTheme";
 import { useReminder } from "@/composables/useReminder";
+import { showToast } from "vant";
+import {
+  applyLessonMinutes,
+  applySectionStart,
+  formatMinutes,
+  lessonMinutesOf,
+  sectionStartMinutes,
+  type PeriodSection,
+  type ScheduleReject
+} from "@/utils/periodSchedule";
 import { checkBatteryOptimization, openBatterySettings, openNotificationSettings } from "@/services/reminderService";
 import { describeError } from "@/utils/describeError";
 
 const {
   periodConfig,
+  resetPeriodConfig,
+  setPeriodConfig,
+  setSectionPeriodCount,
   semesterStartDate,
   setSemesterStartDate,
   weekNumberForDate,
@@ -40,34 +53,91 @@ const semesterStatus = computed(() => {
 
 const { themeConfig, isDark } = useTheme();
 
-const showPicker = ref(false);
-const currentKey = ref<string>("");
-const currentTime = ref<string[]>([]);
+const SECTION_STARTS: { section: PeriodSection; label: string }[] = [
+  { section: "morning", label: "上午开始" },
+  { section: "afternoon", label: "下午开始" },
+  { section: "evening", label: "晚课开始" }
+];
 
-const openPicker = (key: 'morningStart' | 'afternoonStart' | 'eveningStart') => {
-  currentKey.value = key;
-  currentTime.value = (periodConfig.value[key] || "08:00").split(":");
+const lessonMinutes = computed(() => lessonMinutesOf(periodConfig.value) ?? (periodConfig.value.periods[0]
+  ? periodConfig.value.periods[0].end - periodConfig.value.periods[0].start
+  : 45));
+const lessonsDiffer = computed(() => lessonMinutesOf(periodConfig.value) === null);
+
+const sectionStartRows = computed(() => SECTION_STARTS.flatMap(item => {
+  const minutes = sectionStartMinutes(periodConfig.value, item.section);
+  return minutes === null ? [] : [{ ...item, time: formatMinutes(minutes) }];
+}));
+
+const rejectText = (reason: ScheduleReject): string => {
+  if (reason === "past-day") return "会超过 24:00";
+  if (reason === "overlap") return "会和后面的课叠在一起";
+  if (reason === "before-prev") return "不能早于上一时段的结束";
+  return "这个时间排不进去";
+};
+
+/// Bumped when a duration change is refused, so the stepper shows the real length again.
+const lessonReset = ref(0);
+let suppressLessonChange = false;
+
+const onLessonMinutes = (value: number | string) => {
+  if (suppressLessonChange) return;
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes) || minutes === lessonMinutes.value) return;
+  const result = applyLessonMinutes(periodConfig.value, minutes);
+  if (!result.ok) {
+    suppressLessonChange = true;
+    lessonReset.value += 1;
+    showToast(rejectText(result.reason));
+    queueMicrotask(() => {
+      suppressLessonChange = false;
+    });
+    return;
+  }
+  setPeriodConfig(result.config);
+};
+
+const showPicker = ref(false);
+const editingSection = ref<PeriodSection | null>(null);
+const currentTime = ref<string[]>([]);
+const pickerTitle = computed(() => SECTION_STARTS.find(item => item.section === editingSection.value)?.label ?? "选择时间");
+
+const openSectionStart = (section: PeriodSection) => {
+  const minutes = sectionStartMinutes(periodConfig.value, section);
+  if (minutes === null) return;
+  editingSection.value = section;
+  currentTime.value = [
+    String(Math.floor(minutes / 60)).padStart(2, "0"),
+    String(minutes % 60).padStart(2, "0")
+  ];
   showPicker.value = true;
 };
 
-const onConfirm = ({ selectedValues }: any) => {
-  const timeStr = selectedValues.join(":");
-  (periodConfig.value as any)[currentKey.value] = timeStr;
+const onConfirmSectionStart = ({ selectedValues }: { selectedValues: string[] }) => {
+  const section = editingSection.value;
   showPicker.value = false;
+  if (!section) return;
+  const minutes = Number(selectedValues[0]) * 60 + Number(selectedValues[1]);
+  const result = applySectionStart(periodConfig.value, section, minutes);
+  if (!result.ok) {
+    showToast(rejectText(result.reason));
+    return;
+  }
+  setPeriodConfig(result.config);
+};
+
+/// Bumped when a count change is refused, so the stepper is rebuilt and shows the real count again
+/// (it would otherwise keep the number the user just tapped).
+const stepperReset = ref(0);
+
+const onSectionCount = (section: PeriodSection, value: number | string) => {
+  if (setSectionPeriodCount(section, Number(value))) return;
+  stepperReset.value += 1;
+  showToast("再加会超过 24:00");
 };
 
 const resetToDefaults = () => {
-  periodConfig.value = {
-    morningStart: "08:00",
-    afternoonStart: "14:00",
-    eveningStart: "19:00",
-    periodDuration: 45,
-    breakDuration: 10,
-    longBreakDuration: 20,
-    morningPeriods: 4,
-    afternoonPeriods: 4,
-    eveningPeriods: 2
-  };
+  resetPeriodConfig();
 };
 
 const {
@@ -277,15 +347,30 @@ const applyReminders = async () => {
     <div class="section">
       <div class="config-item">
         <span class="label">上午节数</span>
-        <van-stepper v-model="periodConfig.morningPeriods" :min="1" :max="8" integer theme="round" button-size="22" />
+        <van-stepper
+          :key="`morning-${stepperReset}`"
+          :model-value="periodConfig.morningPeriods"
+          :min="1" :max="8" integer theme="round" button-size="22"
+          @change="onSectionCount('morning', $event)"
+        />
       </div>
       <div class="config-item">
         <span class="label">下午节数</span>
-        <van-stepper v-model="periodConfig.afternoonPeriods" :min="1" :max="8" integer theme="round" button-size="22" />
+        <van-stepper
+          :key="`afternoon-${stepperReset}`"
+          :model-value="periodConfig.afternoonPeriods"
+          :min="1" :max="8" integer theme="round" button-size="22"
+          @change="onSectionCount('afternoon', $event)"
+        />
       </div>
       <div class="config-item">
         <span class="label">晚课节数</span>
-        <van-stepper v-model="periodConfig.eveningPeriods" :min="0" :max="6" integer theme="round" button-size="22" />
+        <van-stepper
+          :key="`evening-${stepperReset}`"
+          :model-value="periodConfig.eveningPeriods"
+          :min="0" :max="6" integer theme="round" button-size="22"
+          @change="onSectionCount('evening', $event)"
+        />
       </div>
     </div>
 
@@ -344,49 +429,37 @@ const applyReminders = async () => {
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" data-coach="period-timing">
       <div class="section-title">时间细节</div>
-      <div class="config-item" data-coach="period-timing">
-        <span class="label">每节时长</span>
-        <div class="input-group">
-          <van-stepper v-model="periodConfig.periodDuration" :min="30" :max="120" :step="5" integer theme="round" button-size="22" />
-          <span class="unit">min</span>
-        </div>
-      </div>
-      <div class="config-item" data-coach="period-timing">
-        <span class="label">小课间</span>
-        <div class="input-group">
-          <van-stepper v-model="periodConfig.breakDuration" :min="0" :max="30" :step="5" integer theme="round" button-size="22" />
-          <span class="unit">min</span>
-        </div>
+      <div class="section-hint period-hint">
+        单独改某一节，长按课表左侧的时间。同一时段里后面的节次会跟着平移。超过 24:00 的调整不会生效。
       </div>
       <div class="config-item">
-        <span class="label">大课间</span>
+        <span class="label">每节时长</span>
         <div class="input-group">
-          <van-stepper v-model="periodConfig.longBreakDuration" :min="0" :max="60" :step="5" integer theme="round" button-size="22" />
+          <van-stepper
+            :key="`lesson-${lessonReset}`"
+            :model-value="lessonMinutes"
+            :min="30"
+            :max="120"
+            :step="5"
+            integer
+            theme="round"
+            button-size="22"
+            @change="onLessonMinutes"
+          />
           <span class="unit">min</span>
         </div>
       </div>
-
-      <div class="config-item clickable" @click="openPicker('morningStart')">
-        <span class="label">上午开始</span>
-        <div class="time-value">
-          {{ periodConfig.morningStart }}
-        </div>
-      </div>
-
-      <div class="config-item clickable" @click="openPicker('afternoonStart')">
-        <span class="label">下午开始</span>
-        <div class="time-value">
-          {{ periodConfig.afternoonStart }}
-        </div>
-      </div>
-
-      <div class="config-item clickable" @click="openPicker('eveningStart')">
-        <span class="label">晚课开始</span>
-        <div class="time-value">
-          {{ periodConfig.eveningStart }}
-        </div>
+      <div v-if="lessonsDiffer" class="section-hint">各节时长现在不一样，改动后会统一。</div>
+      <div
+        v-for="row in sectionStartRows"
+        :key="row.section"
+        class="config-item clickable"
+        @click="openSectionStart(row.section)"
+      >
+        <span class="label">{{ row.label }}</span>
+        <div class="time-value">{{ row.time }}</div>
       </div>
     </div>
 
@@ -400,8 +473,8 @@ const applyReminders = async () => {
       <div class="app-sheet-handle" />
       <van-time-picker
         v-model="currentTime"
-        title="选择时间"
-        @confirm="onConfirm"
+        :title="pickerTitle"
+        @confirm="onConfirmSectionStart"
         @cancel="showPicker = false"
       />
       <div class="app-sheet-safe" />
@@ -525,52 +598,9 @@ const applyReminders = async () => {
   margin: 0 4px !important;
 }
 
-/* Transparent, so the sheet's own glass shows through instead of an opaque block inside it. */
-:deep(.van-picker) {
-  background-color: transparent !important;
+.period-hint {
+  margin-bottom: 6px;
 }
-
-:deep(.van-picker__mask) {
-  background-image: none !important; /* 彻底去掉白色渐变遮罩 */
-}
-
-:deep(.van-picker__hairline) {
-  border-top: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent) !important;
-  background-color: color-mix(in srgb, var(--theme-accent) 6%, transparent);
-}
-
-:deep(.van-picker__toolbar) {
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-body-text) 10%, transparent);
-  background-color: transparent !important;
-}
-
-:deep(.van-picker__cancel) {
-  color: var(--theme-body-text) !important;
-  opacity: 0.6;
-}
-
-/* The accent, not Vant's default blue, so 确定 matches the other confirm buttons. */
-:deep(.van-picker__confirm) {
-  color: var(--theme-accent) !important;
-  font-weight: 700;
-}
-
-:deep(.van-picker-column__item) {
-  color: var(--theme-body-text) !important;
-  opacity: 0.4;
-}
-
-:deep(.van-picker-column__item--selected) {
-  color: var(--theme-accent) !important;
-  opacity: 1;
-  font-weight: 700;
-}
-
-:deep(.van-picker__title) {
-  color: var(--theme-body-text) !important;
-}
-
 .date-input {
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
   background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
