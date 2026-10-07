@@ -81,6 +81,38 @@ export const isNewerVersion = (candidate: string, current: string): boolean =>
 export const displayVersion = (raw: string): string => `v${raw.trim().replace(/^[vV]/, "")}`;
 
 // ---------------------------------------------------------------------------
+// 预览版抢先体验（本地偏好，供后续更新检查读取）
+// ---------------------------------------------------------------------------
+
+/// localStorage 键名。默认关闭；值为 `"1"` 表示开启。
+export const PREVIEW_EARLY_ACCESS_STORAGE_KEY = "course-mngr-update-preview-early-access";
+
+const readPreviewEarlyAccessStorage = (): string | null => {
+  try {
+    return localStorage.getItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const writePreviewEarlyAccessStorage = (enabled: boolean) => {
+  try {
+    if (enabled) localStorage.setItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY, "1");
+    else localStorage.removeItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY);
+  } catch {
+    // 记不下来就只影响本次会话，不打扰用户。
+  }
+};
+
+/// 是否参与预览版抢先体验。未设置或非 `"1"` 视为关闭。
+export const isPreviewEarlyAccessEnabled = (): boolean =>
+  readPreviewEarlyAccessStorage() === "1";
+
+export const setPreviewEarlyAccessEnabled = (enabled: boolean): void => {
+  writePreviewEarlyAccessStorage(enabled);
+};
+
+// ---------------------------------------------------------------------------
 // 更新说明
 // ---------------------------------------------------------------------------
 

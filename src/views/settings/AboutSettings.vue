@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useUpdateCheck } from "@/composables/useUpdateCheck";
-import { displayVersion } from "@/services/updateService";
+import {
+  displayVersion,
+  isPreviewEarlyAccessEnabled,
+  setPreviewEarlyAccessEnabled
+} from "@/services/updateService";
 
 const { currentVersion, checking, loadCurrentVersion, manualCheck } = useUpdateCheck();
 
 const statusMessage = ref("");
 const statusIsError = ref(false);
+const previewEarlyAccess = ref(isPreviewEarlyAccessEnabled());
+
+const onPreviewEarlyAccessChange = (enabled: boolean) => {
+  previewEarlyAccess.value = enabled;
+  setPreviewEarlyAccessEnabled(enabled);
+};
 
 const versionText = computed(() => (currentVersion.value ? displayVersion(currentVersion.value) : "未知"));
 
@@ -41,6 +51,16 @@ const onCheck = async () => {
         <van-button class="check-btn" size="small" :loading="checking" @click="onCheck">检查更新</van-button>
       </div>
       <div v-if="statusMessage" class="status-hint" :class="{ error: statusIsError }">{{ statusMessage }}</div>
+      <div class="config-item preview-row">
+        <span class="label">预览版抢先体验</span>
+        <div class="switch-side">
+          <span v-if="previewEarlyAccess" class="risk-hint">预览版可能不稳定</span>
+          <van-switch
+            :model-value="previewEarlyAccess"
+            @update:model-value="onPreviewEarlyAccessChange"
+          />
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -99,6 +119,21 @@ const onCheck = async () => {
   background: color-mix(in srgb, var(--theme-body-text) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 20%, transparent);
   color: var(--theme-body-text);
+}
+
+.switch-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.risk-hint {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color-danger);
+  max-width: 7em;
+  text-align: right;
 }
 
 .status-hint {
