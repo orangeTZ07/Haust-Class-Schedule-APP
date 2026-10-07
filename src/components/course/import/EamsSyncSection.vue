@@ -232,12 +232,6 @@ const sync = async () => {
       </button>
 
       <p class="imp-hint small">默认同步为一个新课表，原来的课表不受影响。</p>
-
-      <p class="eams-credit">
-        教务处爬虫原型由
-        <button type="button" class="eams-credit-link" @click="openCredit">LinJX1210</button>
-        提供，本应用的教务同步基于此实现。
-      </p>
     </div>
 
     <div class="trouble">
@@ -263,6 +257,13 @@ const sync = async () => {
         <pre v-if="diagnoseText" class="diag-out">{{ diagnoseText }}</pre>
       </div>
     </div>
+
+    <footer class="eams-footer">
+      <p class="eams-credit">
+        教务爬虫原型：
+        <button type="button" class="eams-credit-link" @click="openCredit">@LinJX1210</button>
+      </p>
+    </footer>
   </div>
 </template>
 
@@ -279,13 +280,19 @@ const sync = async () => {
   opacity: 0.6;
 }
 
+.eams-footer {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+}
+
 .eams-credit {
-  margin: 4px 0 0;
-  font-size: 12px;
+  margin: 0;
+  font-size: 11px;
   line-height: 1.6;
   text-align: center;
   color: var(--theme-body-text);
-  opacity: 0.65;
+  opacity: 0.55;
 }
 
 .eams-credit-link {

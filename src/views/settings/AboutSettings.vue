@@ -2,8 +2,14 @@
 import { computed, onMounted, ref } from "vue";
 import { useUpdateCheck } from "@/composables/useUpdateCheck";
 import { displayVersion } from "@/services/updateService";
+import {
+  previewChannelEnabled as readPreviewChannelEnabled,
+  setPreviewChannelEnabled
+} from "@/services/previewChannelSettings";
 
 const { currentVersion, checking, loadCurrentVersion, manualCheck } = useUpdateCheck();
+
+const previewChannel = ref(false);
 
 const statusMessage = ref("");
 const statusIsError = ref(false);
@@ -11,9 +17,15 @@ const statusIsError = ref(false);
 const versionText = computed(() => (currentVersion.value ? displayVersion(currentVersion.value) : "未知"));
 
 onMounted(() => {
+  previewChannel.value = readPreviewChannelEnabled();
   // 读不到时只是显示「未知」；原因会在用户点「检查更新」时给出。
   loadCurrentVersion().catch(() => {});
 });
+
+const onPreviewChannelChange = (enabled: boolean) => {
+  previewChannel.value = enabled;
+  setPreviewChannelEnabled(enabled);
+};
 
 const onCheck = async () => {
   statusMessage.value = "";
@@ -39,6 +51,17 @@ const onCheck = async () => {
       <div class="config-item">
         <span class="label">当前版本 <span class="version-value">{{ versionText }}</span></span>
         <van-button class="check-btn" size="small" :loading="checking" @click="onCheck">检查更新</van-button>
+      </div>
+      <div class="config-item config-item--toggle">
+        <div class="toggle-copy">
+          <span class="label">预览版抢先体验</span>
+          <p class="toggle-hint">开启后会提示预览版、测试版更新；关闭时只按稳定版检查。</p>
+        </div>
+        <van-switch
+          :model-value="previewChannel"
+          size="20px"
+          @update:model-value="onPreviewChannelChange"
+        />
       </div>
       <div v-if="statusMessage" class="status-hint" :class="{ error: statusIsError }">{{ statusMessage }}</div>
     </div>
@@ -77,6 +100,26 @@ const onCheck = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
+}
+
+.config-item--toggle {
+  align-items: flex-start;
+  gap: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-body-text) 8%, transparent);
+}
+
+.toggle-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--theme-body-text);
+  opacity: 0.55;
+  font-weight: 400;
 }
 
 .label {
