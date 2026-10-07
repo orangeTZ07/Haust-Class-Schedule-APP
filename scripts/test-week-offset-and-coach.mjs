@@ -116,6 +116,12 @@ console.log("=== 引导步骤 ===");
   check("课时锚点打在时长和课间上", (gridSettings.match(/data-coach="period-timing"/g) || []).length >= 2);
   const topBar = readFileSync(join(here, "..", "src/components/layout/TopBar.vue"), "utf8");
   check("齿轮在垃圾桶左边", topBar.indexOf("data-edit-target") < topBar.indexOf("data-trash-target") && topBar.includes("Settings"));
+  const sidebar = readFileSync(join(here, "..", "src/components/layout/SideBar.vue"), "utf8");
+  const footer = sidebar.match(/const footerItems: MenuItem\[\] = \[([\s\S]*?)\];/);
+  const footerLabels = footer
+    ? [...footer[1].matchAll(/label: "([^"]+)"/g)].map((m) => m[1])
+    : [];
+  check("设置是侧栏菜单最后一项", footerLabels.length > 0 && footerLabels.at(-1) === "设置");
 
   coach.resetEmptyCellDeferral();
   check("格子还没画出来就继续等", coach.emptyCellAnchorState(0, 0) === "waiting");
