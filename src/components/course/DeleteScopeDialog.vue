@@ -120,7 +120,7 @@ const submit = async () => {
             :class="{ active: weekScope === 'all', danger: weekScope === 'all' }"
             @click="weekScope = 'all'"
           >
-            整学期
+            删除本学期该课全部安排
           </button>
           <button
             type="button"
@@ -128,7 +128,7 @@ const submit = async () => {
             :class="{ active: weekScope === 'current' }"
             @click="weekScope = 'current'"
           >
-            仅当前周（第 {{ currentWeek }} 周）
+            仅删除本周安排
           </button>
           <button
             type="button"
@@ -136,7 +136,7 @@ const submit = async () => {
             :class="{ active: weekScope === 'custom' }"
             @click="weekScope = 'custom'"
           >
-            自定义周次
+            选择要删除的周次
           </button>
         </div>
 
@@ -202,9 +202,9 @@ const submit = async () => {
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
   background: transparent;
   color: var(--theme-body-text);
-  font-size: 11px;
+  font-size: 10px;
   opacity: 0.75;
-  white-space: nowrap;
+  white-space: normal;
   display: flex;
   align-items: center;
   justify-content: center;

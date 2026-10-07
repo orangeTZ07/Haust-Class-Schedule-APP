@@ -153,11 +153,14 @@ console.log("=== 引导步骤 ===");
   const deleteDialog = readFileSync(join(here, "..", "src/components/course/DeleteScopeDialog.vue"), "utf8");
   check("删除对话框默认仅当前周", deleteDialog.includes('weekScope = ref<DeleteWeekScope>("current")'));
   check("删除整学期会二次确认", deleteDialog.includes("DELETE_SEMESTER_CONFIRM") && deleteDialog.includes("danger: true"));
+  check("删除范围文案", deleteDialog.includes("仅删除本周安排") && deleteDialog.includes("删除本学期该课全部安排") && deleteDialog.includes("选择要删除的周次"));
   check("Home 接了删除范围对话框", home.includes("DeleteScopeDialog") && home.includes("onRequestDelete"));
   const shineCss = readFileSync(join(here, "..", "src/styles/global.css"), "utf8");
   check(
     "扫光只打在课表表头和预设色条",
-    shineCss.includes(".week-grid > .header::after") &&
+    shineCss.includes(".metal-sheen-surface::after") &&
+      shineCss.includes(".week-grid > .header::after") &&
+      shineCss.includes(".top-bar::after") &&
       shineCss.includes(".p-header.is-metal-strip::after") &&
       !shineCss.includes(".coach-") &&
       !shineCss.includes(".course-block") &&

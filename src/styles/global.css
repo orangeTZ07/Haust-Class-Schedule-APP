@@ -201,23 +201,33 @@ body {
   background: var(--color-danger) !important;
 }
 
-/* Metal presets only (白银 / 黑金): a thin sheen across gold/silver header chrome and
-   the matching strip on the preset picker. Not the page, not coach rings, not course cards. */
+/* Metal presets only (白银 / 黑金): one shared sheen template on header chrome, preset strips,
+   and metal accent borders. Never coach bubbles, highlight rings, or course cells. */
 #app.metal-shine-gold {
   --metal-sheen: 0.35;
+  --metal-sheen-duration: 3s;
 }
 #app.metal-shine-silver {
   --metal-sheen: 0.2;
+  --metal-sheen-duration: 2.8s;
 }
 
+.metal-sheen-surface,
 #app.metal-shine-silver .week-grid > .header,
 #app.metal-shine-gold .week-grid > .header,
+#app.metal-shine-silver .top-bar,
+#app.metal-shine-gold .top-bar,
 .p-header.is-metal-strip {
   isolation: isolate;
+  position: relative;
+  overflow: hidden;
 }
 
+.metal-sheen-surface::after,
 #app.metal-shine-silver .week-grid > .header::after,
 #app.metal-shine-gold .week-grid > .header::after,
+#app.metal-shine-silver .top-bar::after,
+#app.metal-shine-gold .top-bar::after,
 .p-header.is-metal-strip::after {
   content: "";
   position: absolute;
@@ -230,10 +240,35 @@ body {
     rgb(255 255 255 / var(--metal-sheen, 0.28)) 50%,
     transparent 100%
   );
-  background-size: 22% 100%;
+  background-size: 18% 100%;
   background-repeat: no-repeat;
-  animation: metal-sweep 3.2s ease-in-out infinite;
+  background-position: -30% 0;
+  animation: metal-sweep var(--metal-sheen-duration, 3s) ease-in-out infinite;
+  animation-delay: var(--metal-sheen-delay, 0s);
   z-index: 1;
+}
+
+#app.metal-shine-gold .week-grid > .header::after {
+  --metal-sheen-delay: 0s;
+}
+#app.metal-shine-silver .week-grid > .header::after {
+  --metal-sheen-delay: 0.35s;
+}
+#app.metal-shine-gold .top-bar::after {
+  --metal-sheen-delay: 1.15s;
+}
+#app.metal-shine-silver .top-bar::after {
+  --metal-sheen-delay: 1.5s;
+}
+
+.preset-list .preset-item:nth-child(3n + 1) .p-header.is-metal-strip::after {
+  --metal-sheen-delay: 0.2s;
+}
+.preset-list .preset-item:nth-child(3n + 2) .p-header.is-metal-strip::after {
+  --metal-sheen-delay: 0.95s;
+}
+.preset-list .preset-item:nth-child(3n) .p-header.is-metal-strip::after {
+  --metal-sheen-delay: 1.7s;
 }
 
 .p-header.is-metal-strip.is-metal-silver::after {
@@ -244,14 +279,26 @@ body {
   --metal-sheen: 0.35;
 }
 
+#app.metal-shine-gold .week-grid > .header,
+#app.metal-shine-silver .week-grid > .header {
+  border-bottom-color: color-mix(in srgb, var(--theme-header-bg) 72%, var(--theme-accent) 28%);
+}
+
+#app.metal-shine-gold .preset-item.active .preset-preview,
+#app.metal-shine-silver .preset-item.active .preset-preview {
+  border-color: color-mix(in srgb, var(--theme-accent) 55%, transparent);
+}
+
 @keyframes metal-sweep {
-  0%, 12% { background-position: -30% 0; }
-  88%, 100% { background-position: 130% 0; }
+  0%, 14% { background-position: -30% 0; }
+  86%, 100% { background-position: 130% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   #app.metal-shine-silver .week-grid > .header::after,
   #app.metal-shine-gold .week-grid > .header::after,
+  #app.metal-shine-silver .top-bar::after,
+  #app.metal-shine-gold .top-bar::after,
   .p-header.is-metal-strip::after {
     animation: none;
     background: none;
