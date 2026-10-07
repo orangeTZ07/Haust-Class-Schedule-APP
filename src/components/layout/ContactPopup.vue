@@ -2,7 +2,7 @@
 import { showToast } from "vant";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTheme } from "@/composables/useTheme";
-import { X, MessageSquare, Gamepad2, JapaneseYen, FolderGit2, Copy } from '@lucide/vue';
+import { X, MessageSquare, Gamepad2, JapaneseYen, FolderGit2, SquareArrowOutUpRight, Copy } from '@lucide/vue';
 
 const GITHUB_REPO_URL = "https://github.com/orangeTZ07/Haust-Class-Schedule-APP";
 const GITHUB_REPO_SLUG = "orangeTZ07/Haust-Class-Schedule-APP";
@@ -26,10 +26,20 @@ const copyToClipboard = async (text: string, label: string) => {
   }
 };
 
-const openGitHubRepo = () => {
-  openUrl(GITHUB_REPO_URL).catch(() => {
-    window.open(GITHUB_REPO_URL, "_blank", "noopener");
-  });
+const openGitHubRepo = async () => {
+  try {
+    await openUrl(GITHUB_REPO_URL);
+    return;
+  } catch {
+    // 部分国产机 / 网页预览里 plugin-opener 会失败，再试系统窗口。
+  }
+  try {
+    const opened = window.open(GITHUB_REPO_URL, "_blank", "noopener");
+    if (opened) return;
+  } catch {
+    // ignore and toast below
+  }
+  showToast({ message: "打不开浏览器，请点复制", type: "fail" });
 };
 </script>
 
@@ -102,9 +112,14 @@ const openGitHubRepo = () => {
             <div class="item-label">GitHub 仓库</div>
             <div class="item-value">{{ GITHUB_REPO_SLUG }}</div>
           </div>
-          <button class="mini-copy-btn" aria-label="复制仓库地址" @click.stop="copyToClipboard(GITHUB_REPO_URL, '仓库地址')">
-            <Copy :size="14" />
-          </button>
+          <div class="item-actions">
+            <button class="mini-copy-btn" aria-label="打开仓库" @click.stop="openGitHubRepo">
+              <SquareArrowOutUpRight :size="14" />
+            </button>
+            <button class="mini-copy-btn" aria-label="复制仓库地址" @click.stop="copyToClipboard(GITHUB_REPO_URL, '仓库地址')">
+              <Copy :size="14" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -171,6 +186,13 @@ const openGitHubRepo = () => {
   opacity: 0.6;
   overflow-wrap: anywhere;
   line-height: 1.35;
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .mini-copy-btn {
