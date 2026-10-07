@@ -14,10 +14,16 @@ export type CoachTarget =
   | "empty-cell"
   | "course-block"
   | "appearance"
+  /// 课表左侧的节次时间（长按改这一节），在主屏上。
+  | "period-time"
+  /// 设置页「时间细节」，在设置页上。
   | "period-timing";
 
 export const APPEARANCE_STEP_ID = "appearance-settings-v1";
-export const PERIOD_TIMING_STEP_ID = "period-timing-settings-v1";
+export const PERIOD_TIME_STEP_ID = "adjust-period-time-v1";
+// v1 讲的是「每节课时长和课间间隔」。v2 把设置页改成逐节点选。
+// 现在设置页只留三个开始时间和每节时长，文案又变了，所以是 v3。
+export const PERIOD_TIMING_STEP_ID = "period-timing-settings-v3";
 /// Cue 「新功能介绍请前往此处」 lands here — not the sidebar 「设置」 row.
 export const SETTINGS_COACH_PATH = "/settings";
 
@@ -66,6 +72,14 @@ export const COACH_STEPS: CoachStep[] = [
     requiresCoursesOnCurrentWeek: true
   },
   {
+    id: PERIOD_TIME_STEP_ID,
+    title: "调整节次时间",
+    body: "长按课表左侧的节次时间，可以改这一节的上下课时间。同一时段里后面的节次会跟着平移，午休和晚饭时间不动。",
+    target: "period-time",
+    offHome: false,
+    requiresCoursesOnCurrentWeek: false
+  },
+  {
     id: "menu-reopen-guide-v1",
     title: "菜单",
     body: "点左上角菜单可以导入课表。这份说明也能从菜单里的「操作指南」随时再打开。",
@@ -91,8 +105,8 @@ export const COACH_STEPS: CoachStep[] = [
   },
   {
     id: PERIOD_TIMING_STEP_ID,
-    title: "课时与课间",
-    body: "在这里可以调每节课时长和课间间隔，提醒时间会跟着变。",
+    title: "上课时间",
+    body: "上午、下午、晚课几点开始，还有每节时长，都在这里改。单独改某一节，长按课表左侧的时间。",
     target: "period-timing",
     offHome: true,
     requiresCoursesOnCurrentWeek: false

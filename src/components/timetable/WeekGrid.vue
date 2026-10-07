@@ -13,6 +13,7 @@ const emit = defineEmits<{
   (e: "request-add", slot: { day: number; period: number }): void;
   (e: "request-delete", payload: { scheduleId: number }): void;
   (e: "request-edit", payload: { scheduleId: number }): void;
+  (e: "request-edit-period", payload: { period: number }): void;
 }>();
 
 const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -892,6 +893,64 @@ const startDrag = (
   window.addEventListener("pointercancel", clearLongPress);
 };
 
+// Long-pressing a row's time node opens that period's time editor. It is a separate gesture from the
+// course-block drag above: it lives on .time-col, never starts a drag, and is dropped the moment the
+// finger travels (a scroll), a second finger lands (a pinch), or the browser takes the pointer over.
+// A little longer than LONG_PRESS_MS on purpose -- this opens a sheet rather than picking something
+// up, so a lingering thumb should not trigger it.
+const TIME_PRESS_MS = 420;
+const TIME_PRESS_TOLERANCE = 10;
+
+const pressingPeriod = ref<number | null>(null);
+let timePressTimer: ReturnType<typeof setTimeout> | null = null;
+let timePressOrigin: { x: number; y: number; pointerId: number } | null = null;
+
+const clearTimePress = () => {
+  if (timePressTimer !== null) {
+    clearTimeout(timePressTimer);
+    timePressTimer = null;
+  }
+  timePressOrigin = null;
+  pressingPeriod.value = null;
+  window.removeEventListener("pointermove", onTimePressMove);
+  window.removeEventListener("pointerup", clearTimePress);
+  window.removeEventListener("pointercancel", clearTimePress);
+  window.removeEventListener("pointerdown", onTimePressOtherPointer, true);
+  bodyRef.value?.removeEventListener("scroll", clearTimePress);
+};
+
+function onTimePressMove(event: PointerEvent) {
+  const origin = timePressOrigin;
+  if (!origin || event.pointerId !== origin.pointerId) return;
+  if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > TIME_PRESS_TOLERANCE) clearTimePress();
+}
+
+function onTimePressOtherPointer(event: PointerEvent) {
+  if (timePressOrigin && event.pointerId !== timePressOrigin.pointerId) clearTimePress();
+}
+
+const startTimePress = (period: number, event: PointerEvent) => {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (dragState.value || pinchState.value) return;
+
+  clearTimePress();
+  timePressOrigin = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+  pressingPeriod.value = period;
+  timePressTimer = setTimeout(() => {
+    clearTimePress();
+    if (dragState.value || pinchState.value) return;
+    navigator.vibrate?.(10);
+    // The release that follows must not count as a tap on whatever sheet or cell is under it.
+    suppressCellClickUntil = Date.now() + 600;
+    emit("request-edit-period", { period });
+  }, TIME_PRESS_MS);
+  window.addEventListener("pointermove", onTimePressMove);
+  window.addEventListener("pointerup", clearTimePress);
+  window.addEventListener("pointercancel", clearTimePress);
+  window.addEventListener("pointerdown", onTimePressOtherPointer, true);
+  bodyRef.value?.addEventListener("scroll", clearTimePress, { passive: true });
+};
+
 const beginDrag = (
   block: MergedBlock,
   event: PointerEvent,
@@ -1017,6 +1076,7 @@ onUnmounted(() => {
   if (weekSwitchTimer !== null) window.clearTimeout(weekSwitchTimer);
   clearOrbitAnimationTimer();
   clearLongPress();
+  clearTimePress();
   endDragGesture();
   window.removeEventListener("resize", handleWindowResize);
   window.removeEventListener("click", handleGlobalClick, true);
@@ -1061,7 +1121,13 @@ onUnmounted(() => {
             { 'big-session-end': isBigSessionEnd(slot.period) }
           ]"
         >
-          <div class="time-col">
+          <div
+            class="time-col is-editable"
+            :class="{ 'is-pressing': pressingPeriod === slot.period }"
+            data-coach-period-time
+            @pointerdown="startTimePress(slot.period, $event)"
+            @contextmenu.prevent
+          >
             <div class="period-number">{{ slot.period }}</div>
             <div class="period-time">{{ slot.time }}</div>
           </div>
@@ -1342,6 +1408,20 @@ onUnmounted(() => {
 .period-row.big-session-end .cell,
 .period-row.big-session-end .time-col {
   border-bottom: 2px solid color-mix(in srgb, var(--theme-grid-line-color) 40%, transparent);
+}
+
+/* The time column is a long-press target; keep the OS from selecting its digits or popping a
+   callout while the finger is held. Section tints on this cell are transparent mixes, so the
+   pressed tint is one too -- it must not turn the cell opaque. */
+.time-col.is-editable {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: background-color var(--dur-base) var(--ease-smooth);
+}
+
+.week-grid .period-row .time-col.is-pressing {
+  background: color-mix(in srgb, var(--theme-accent) 16%, transparent);
 }
 
 .period-number {

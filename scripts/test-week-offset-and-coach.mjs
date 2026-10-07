@@ -62,12 +62,19 @@ console.log("=== 引导步骤 ===");
   check("第一次打开不加「新功能」", fresh.every((step) => step.prefixNew === false));
   check("没课先不出现双击加课", fresh.every((step) => step.id !== "double-tap-empty-add-v1"));
   check("没课也不出现删除", fresh.every((step) => step.id !== "delete-course-v1"));
-  check("第一次仍介绍菜单、导入、外观和课时", fresh.map((step) => step.id).join(",") === "menu-reopen-guide-v1,import-from-menu-v1,appearance-settings-v1,period-timing-settings-v1", fresh.map((step) => step.id));
+  check("第一次仍介绍调整节次时间、菜单、导入、外观和节次时间", fresh.map((step) => step.id).join(",") === "adjust-period-time-v1,menu-reopen-guide-v1,import-from-menu-v1,appearance-settings-v1,period-timing-settings-v3", fresh.map((step) => step.id));
 
   const withCourses = coach.autoCoachQueue({ seenIds: null, hasCoursesOnCurrentWeek: true });
   check("有课才把双击加课放进来", withCourses[0]?.id === "double-tap-empty-add-v1" && withCourses[0].prefixNew === false);
   check("删除紧跟在双击加课后面", withCourses[1]?.id === "delete-course-v1");
   check("删除步骤指课程块", withCourses[1]?.target === "course-block");
+  check("长按调时间紧跟删除，在菜单之前", withCourses[2]?.id === "adjust-period-time-v1" && withCourses[3]?.id === "menu-reopen-guide-v1");
+  check("长按调时间指课表左侧节次时间，在主屏，不用等有课", withCourses[2]?.target === "period-time" && withCourses[2]?.offHome === false && withCourses[2]?.requiresCoursesOnCurrentWeek === false);
+  check(
+    "长按调时间的锁定文案",
+    withCourses[2]?.title === "调整节次时间" &&
+      withCourses[2]?.body === "长按课表左侧的节次时间，可以改这一节的上下课时间。同一时段里后面的节次会跟着平移，午休和晚饭时间不动。"
+  );
   check(
     "删除文案讲手势和范围对话框",
     withCourses[1]?.body.includes("垃圾桶") && withCourses[1]?.body.includes("整学期") && withCourses[1]?.body.includes("仅当前周")
@@ -78,8 +85,21 @@ console.log("=== 引导步骤 ===");
     seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1"],
     hasCoursesOnCurrentWeek: true
   });
-  check("只补没看过的步骤", later.map((step) => step.id).join(",") === "double-tap-empty-add-v1,delete-course-v1,appearance-settings-v1,period-timing-settings-v1");
+  check("只补没看过的步骤", later.map((step) => step.id).join(",") === "double-tap-empty-add-v1,delete-course-v1,adjust-period-time-v1,appearance-settings-v1,period-timing-settings-v3");
   check("补看的步骤带「新功能」", later.every((step) => step.prefixNew === true));
+
+  // 看完旧版引导（旧课时步骤 id 为 v1）的人，只会补看新增的两步：长按调时间和改过文案的节次时间。
+  const finishedOldGuide = coach.autoCoachQueue({
+    seenIds: ["double-tap-empty-add-v1", "delete-course-v1", "menu-reopen-guide-v1", "import-from-menu-v1", "appearance-settings-v1", "period-timing-settings-v1"],
+    hasCoursesOnCurrentWeek: true
+  });
+  check("看完旧引导的人补看新两步", finishedOldGuide.map((step) => step.id).join(",") === "adjust-period-time-v1,period-timing-settings-v3" && finishedOldGuide.every((step) => step.prefixNew === true), finishedOldGuide.map((step) => step.id));
+  check("节次时间改了文案和指向，旧 id 不再复用", !coach.COACH_STEPS.some((step) => step.id === "period-timing-settings-v1" || step.id === "period-timing-settings-v2"));
+  const finishedListGuide = coach.autoCoachQueue({
+    seenIds: ["double-tap-empty-add-v1", "delete-course-v1", "adjust-period-time-v1", "menu-reopen-guide-v1", "import-from-menu-v1", "appearance-settings-v1", "period-timing-settings-v2"],
+    hasCoursesOnCurrentWeek: true
+  });
+  check("看过逐节列表那一版的人，补看简化后的上课时间", finishedListGuide.map((step) => step.id).join(",") === "period-timing-settings-v3" && finishedListGuide[0]?.prefixNew === true, finishedListGuide.map((step) => step.id));
 
   const done = coach.autoCoachQueue({
     seenIds: coach.COACH_STEPS.map((step) => step.id),
@@ -89,12 +109,14 @@ console.log("=== 引导步骤 ===");
 
   const manual = coach.manualCoachQueue();
   check("菜单重开是全部步骤且不加前缀", manual.length === coach.COACH_STEPS.length && manual.every((step) => step.prefixNew === false));
-  check("操作指南一共六步", manual.length === 6 && manual[1]?.id === "delete-course-v1" && manual[4]?.id === "appearance-settings-v1");
+  check("操作指南一共七步", manual.length === 7 && manual[1]?.id === "delete-course-v1" && manual[2]?.id === "adjust-period-time-v1" && manual[5]?.id === "appearance-settings-v1");
   check("导入不在主屏", manual.find((step) => step.id === "import-from-menu-v1")?.offHome === true);
   check("外观在导入之后", manual.map((step) => step.id).indexOf("appearance-settings-v1") === manual.map((step) => step.id).indexOf("import-from-menu-v1") + 1);
-  check("课时紧跟外观", manual.find((step) => step.id === "period-timing-settings-v1")?.target === "period-timing" && manual.map((step) => step.id).indexOf("period-timing-settings-v1") === manual.map((step) => step.id).indexOf("appearance-settings-v1") + 1);
+  check("节次时间紧跟外观", manual.find((step) => step.id === "period-timing-settings-v3")?.target === "period-timing" && manual.map((step) => step.id).indexOf("period-timing-settings-v3") === manual.map((step) => step.id).indexOf("appearance-settings-v1") + 1);
+  check("设置页的两步仍排在最后，首个设置步骤是外观", coach.firstSettingsCoachIndex(manual) === 5 && manual[6]?.id === "period-timing-settings-v3");
   check("外观文案不提主题名", manual.find((step) => step.id === "appearance-settings-v1")?.title === "外观" && manual.find((step) => step.id === "appearance-settings-v1")?.body === "在设置里可以换预设主题，也可以自己设背景图。");
-  check("课时文案是锁定句", manual.find((step) => step.id === "period-timing-settings-v1")?.title === "课时与课间" && manual.find((step) => step.id === "period-timing-settings-v1")?.body === "在这里可以调每节课时长和课间间隔，提醒时间会跟着变。");
+  check("上课时间文案是锁定句", manual.find((step) => step.id === "period-timing-settings-v3")?.title === "上课时间" && manual.find((step) => step.id === "period-timing-settings-v3")?.body === "上午、下午、晚课几点开始，还有每节时长，都在这里改。单独改某一节，长按课表左侧的时间。");
+  check("引导文案不再提已删除的「课间间隔」「每节课时长」", !manual.some((step) => step.body.includes("课间间隔") || step.body.includes("每节课时长")));
   check("没有抢先体验引导步", !manual.some((step) => step.id.includes("preview") || (step.body && step.body.includes("抢先体验"))));
   const home = readFileSync(join(here, "..", "src/views/HomeView.vue"), "utf8");
   check("跟进设置是 router.push 而不是停在侧栏", home.includes("SETTINGS_COACH_PATH") && home.includes("router.push(SETTINGS_COACH_PATH)"));
@@ -113,7 +135,10 @@ console.log("=== 引导步骤 ===");
   const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
   check("教务同步页底有爬虫致谢", eams.includes("eams-footer") && eams.includes("@LinJX1210") && eams.includes("连不上？"));
   const gridSettings = readFileSync(join(here, "..", "src/views/settings/GridSettings.vue"), "utf8");
-  check("课时锚点打在时长和课间上", (gridSettings.match(/data-coach="period-timing"/g) || []).length >= 2);
+  check("上课时间锚点打在时间细节整块上", (gridSettings.match(/data-coach="period-timing"/g) || []).length === 1 && gridSettings.includes('class="section" data-coach="period-timing"'));
+  const coachBubble = readFileSync(join(here, "..", "src/components/coach/FeatureCoach.vue"), "utf8");
+  const weekGridSource = readFileSync(join(here, "..", "src/components/timetable/WeekGrid.vue"), "utf8");
+  check("长按调时间步骤有锚点：气泡找得到课表左侧时间列", coachBubble.includes('step.target === "period-time"') && coachBubble.includes("[data-coach-period-time]") && weekGridSource.includes("data-coach-period-time"));
   const topBar = readFileSync(join(here, "..", "src/components/layout/TopBar.vue"), "utf8");
   check("齿轮在垃圾桶左边", topBar.indexOf("data-edit-target") < topBar.indexOf("data-trash-target") && topBar.includes("Settings"));
   const sidebar = readFileSync(join(here, "..", "src/components/layout/SideBar.vue"), "utf8");
@@ -150,18 +175,18 @@ console.log("=== 引导步骤 ===");
     hasCoursesOnCurrentWeek: true,
     deferEmptyCell: true
   });
-  check("推迟空格子后继续删除和后面的步骤", deferred.map((step) => step.id).join(",") === "delete-course-v1,menu-reopen-guide-v1,import-from-menu-v1,appearance-settings-v1,period-timing-settings-v1");
+  check("推迟空格子后继续删除和后面的步骤", deferred.map((step) => step.id).join(",") === "delete-course-v1,adjust-period-time-v1,menu-reopen-guide-v1,import-from-menu-v1,appearance-settings-v1,period-timing-settings-v3");
   check("推迟空格子不加「新功能」", deferred.every((step) => step.prefixNew === false));
   check(
     "关导入或回主页不会只剩空格子那一步空转",
     coach.autoCoachQueue({
-      seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "delete-course-v1", "appearance-settings-v1", "period-timing-settings-v1"],
+      seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "delete-course-v1", "adjust-period-time-v1", "appearance-settings-v1", "period-timing-settings-v3"],
       hasCoursesOnCurrentWeek: true,
       deferEmptyCell: coach.isEmptyCellDeferred(6, print)
     }).length === 0
   );
   const bothDeferred = coach.autoCoachQueue({
-    seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "appearance-settings-v1", "period-timing-settings-v1"],
+    seenIds: ["menu-reopen-guide-v1", "import-from-menu-v1", "adjust-period-time-v1", "appearance-settings-v1", "period-timing-settings-v3"],
     hasCoursesOnCurrentWeek: true,
     deferEmptyCell: true,
     deferCourseBlock: true

@@ -95,6 +95,22 @@ const courseBlockAnchor = (): Rect | null => {
   return asRect(blocks[index].getBoundingClientRect());
 };
 
+/// One row's time node, the one fully on screen nearest the middle of the grid. null until the
+/// grid has painted, which keeps the bubble waiting instead of landing nowhere.
+const periodTimeAnchor = (): Rect | null => {
+  const body = document.querySelector(".week-grid .body");
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>("[data-coach-period-time]"));
+  if (!body || nodes.length === 0) return null;
+  const view = asRect(body.getBoundingClientRect());
+  const rects = nodes.map(node => node.getBoundingClientRect());
+  const index = chooseAnchorIndex(rects.map(asRect), view);
+  if (index < 0) return null;
+  if (!onScreen(rects[index])) {
+    nodes[index].scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  return asRect(nodes[index].getBoundingClientRect());
+};
+
 const menuAnchor = (): Rect | null => {
   const el = document.querySelector<HTMLElement>("[data-coach='menu']");
   if (!el) return null;
@@ -147,6 +163,7 @@ const periodTimingAnchor = (): Rect | null => {
 const anchorFor = (step: CoachPresentation): Rect | null => {
   if (step.target === "empty-cell") return emptyCellAnchor();
   if (step.target === "course-block") return courseBlockAnchor();
+  if (step.target === "period-time") return periodTimeAnchor();
   if (step.target === "import" && props.phase === "spotlight") return visibleRect(queryAnchor("[data-coach='import']"));
   if (step.target === "appearance" && props.phase === "spotlight") return appearanceAnchor();
   if (step.target === "period-timing" && props.phase === "spotlight") return periodTimingAnchor();

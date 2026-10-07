@@ -38,16 +38,21 @@ export interface CourseImportItem {
   teacher?: string;
 }
 
+/// One period's clock range, in minutes past midnight. end is exclusive of nothing special: 08:45
+/// is 525, and the next period may start at 525 (no gap) but never before it.
+export interface PeriodRange {
+  start: number;
+  end: number;
+}
+
+/// The day's clock. `periods` is the single source of truth: periods[0] is period 1, and the three
+/// section counts say how it splits into 上午 / 下午 / 晚上 (their sum is always periods.length).
+/// Breaks are not stored; they are simply the gap between one period's end and the next one's start.
 export interface PeriodTimeConfig {
-  morningStart: string;
-  afternoonStart: string;
-  eveningStart: string;
-  periodDuration: number;
-  breakDuration: number;
-  longBreakDuration: number;
   morningPeriods: number;
   afternoonPeriods: number;
   eveningPeriods: number;
+  periods: PeriodRange[];
 }
 
 export interface Reminder {

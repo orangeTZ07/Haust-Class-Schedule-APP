@@ -33,6 +33,7 @@ import CourseForm, { type CourseFormSubmitPayload } from "@/components/course/Co
 import DeleteScopeDialog from "@/components/course/DeleteScopeDialog.vue";
 import EditModeBar from "@/components/edit/EditModeBar.vue";
 import FeatureCoach from "@/components/coach/FeatureCoach.vue";
+import PeriodTimeSheet from "@/components/timetable/PeriodTimeSheet.vue";
 import type { DeleteScopePayload } from "@/utils/scheduleDelete";
 
 const router = useRouter();
@@ -183,6 +184,15 @@ const onEditSubmit = async (payload: CourseFormSubmitPayload) => {
     commitEdit();
     showToast({ message: `已更新「${payload.name}」`, type: "success" });
   }
+};
+
+// Long-pressing a row's time node in the grid opens that period's time editor.
+const periodTimeVisible = ref(false);
+const periodTimePeriod = ref(1);
+
+const onRequestEditPeriod = (payload: { period: number }) => {
+  periodTimePeriod.value = payload.period;
+  periodTimeVisible.value = true;
 };
 
 const deleteSlot = ref<{ scheduleId: number; day: number; period: number; courseName: string } | null>(null);
@@ -669,6 +679,9 @@ const onEdgeTouchEnd = () => {
       @submit="onDeleteSubmit"
     />
 
+    <!-- 长按左侧节次时间：改这一节的起止，后面同时段的节次跟着平移 -->
+    <PeriodTimeSheet v-model:show="periodTimeVisible" :period="periodTimePeriod" />
+
     <!-- 内容层 -->
     <div
       class="content-layer"
@@ -692,6 +705,7 @@ const onEdgeTouchEnd = () => {
           @request-add="onRequestAdd"
           @request-delete="onRequestDelete"
           @request-edit="onRequestEdit"
+          @request-edit-period="onRequestEditPeriod"
         />
       </div>
 
