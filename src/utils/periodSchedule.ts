@@ -271,7 +271,7 @@ export const summarizeShift = (before: PeriodTimeConfig, after: PeriodTimeConfig
 const periodList = (periods: number[]): string =>
   periods.length === 1 ? `第 ${periods[0]} 节` : `第 ${periods[0]}–${periods[periods.length - 1]} 节`;
 
-/// 编辑面板里「后面会怎样」那几行字。
+/// 平移结果的短句说明（测试和摘要用）。
 export const shiftSummaryLines = (summary: ShiftSummary): string[] => {
   const lines: string[] = [];
   if (summary.gapBefore) {

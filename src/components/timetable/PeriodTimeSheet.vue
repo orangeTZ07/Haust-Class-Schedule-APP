@@ -11,9 +11,7 @@ import {
   periodRange,
   SECTION_NAMES,
   sectionOfPeriod,
-  shiftPeriods,
-  shiftSummaryLines,
-  summarizeShift
+  shiftPeriods
 } from "@/utils/periodSchedule";
 
 const props = defineProps<{
@@ -60,7 +58,6 @@ const sectionName = computed(() => {
 });
 const duration = computed(() => range.value.end - range.value.start);
 const dirty = computed(() => !periodConfigsEqual(base.value, draft.value));
-const summaryLines = computed(() => shiftSummaryLines(summarizeShift(base.value, draft.value, props.period)));
 
 const applyEdit = (target: "start" | "end", value: number) => {
   const result = shiftPeriods(draft.value, props.period, { field: target, value });
@@ -180,15 +177,7 @@ const save = () => {
         </button>
       </div>
 
-      <div class="effects" aria-live="polite">
-        <div class="effects-title">后面会怎样</div>
-        <ul v-if="summaryLines.length" class="effects-list">
-          <li v-for="line in summaryLines" :key="line">{{ line }}</li>
-        </ul>
-        <div v-else class="effects-empty">后面的节次不动。</div>
-        <div class="effects-notice" :class="{ show: notice }">{{ notice }}</div>
-      </div>
-      <p class="rule">改开始：这一节整体平移；改结束：只改这一节的长短。同一时段里后面的节次跟着结束时间平移，午休、晚饭时间不动。</p>
+      <div class="notice" :class="{ show: notice }" aria-live="polite">{{ notice }}</div>
 
       <div class="actions">
         <button type="button" class="app-btn" @click="close">取消</button>
@@ -284,7 +273,7 @@ const save = () => {
 .nudges {
   display: flex;
   gap: 8px;
-  margin: 2px 0 10px;
+  margin: 2px 0 8px;
 }
 
 .nudge {
@@ -304,52 +293,19 @@ const save = () => {
   background: color-mix(in srgb, var(--theme-accent) 18%, transparent);
 }
 
-/* 固定高度：改动多少，面板都不跟着忽高忽低。 */
-.effects {
-  min-height: 92px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theme-body-text) 5%, transparent);
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--theme-body-text);
-}
-
-.effects-title {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.5;
-  margin-bottom: 2px;
-}
-
-.effects-list {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.effects-empty {
-  opacity: 0.7;
-}
-
-.effects-notice {
-  margin-top: 4px;
+.notice {
   min-height: 18px;
+  margin: 0 2px 12px;
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1.55;
   color: var(--color-danger);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-smooth);
 }
 
-.effects-notice.show {
+.notice.show {
   opacity: 1;
-}
-
-.rule {
-  margin: 8px 2px 14px;
-  font-size: 11px;
-  line-height: 1.6;
-  opacity: 0.55;
-  color: var(--theme-body-text);
 }
 
 .actions {

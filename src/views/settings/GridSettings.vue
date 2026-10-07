@@ -431,9 +431,6 @@ const applyReminders = async () => {
 
     <div class="section" data-coach="period-timing">
       <div class="section-title">时间细节</div>
-      <div class="section-hint period-hint">
-        单独改某一节，长按课表左侧的时间。同一时段里后面的节次会跟着平移。超过 24:00 的调整不会生效。
-      </div>
       <div class="config-item">
         <span class="label">每节时长</span>
         <div class="input-group">
@@ -598,9 +595,6 @@ const applyReminders = async () => {
   margin: 0 4px !important;
 }
 
-.period-hint {
-  margin-bottom: 6px;
-}
 .date-input {
   border: 1px solid color-mix(in srgb, var(--theme-body-text) 15%, transparent);
   background: color-mix(in srgb, var(--theme-body-text) 6%, transparent);
