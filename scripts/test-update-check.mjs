@@ -355,9 +355,16 @@ console.log("=== 应用内安装 APK：成功、没权限、下载失败 ===");
   same("进度：一半是 50", apk.downloadPercent({ progressTotal: 50, total: 100 }), 50);
   same("直接 APK 链接", svc.isDirectApkUrl("https://github.com/x/y/releases/download/v1/app.apk"), true);
   check("Release 页不是直接 APK", svc.isDirectApkUrl("https://github.com/x/y/releases/tag/v1") === false);
+  same("tag 做成文件名", apk.apkFileName("v0.4.2-beta.1"), "update-v0.4.2-beta.1.apk");
+  same("文件名去掉斜杠", apk.apkFileName("v1/beta"), "update-v1-beta.apk");
+  check("下完且 total 对得上算完整", apk.isCompleteDownload({ progressTotal: 10, total: 10 }) === true);
+  check("total>0 但字节对不上算不完整", apk.isCompleteDownload({ progressTotal: 9, total: 10 }) === false);
+  check("没有 Content-Length 不算失败", apk.isCompleteDownload({ progressTotal: 10, total: 0 }) === true);
 
   const fakeDeps = (overrides = {}) => ({
-    download: async () => {},
+    download: async (_url, _path, onProgress) => {
+      onProgress?.({ progressTotal: 10, total: 10 });
+    },
     canInstall: async () => true,
     requestInstallPermission: async () => {},
     install: async () => {},
@@ -365,49 +372,213 @@ console.log("=== 应用内安装 APK：成功、没权限、下载失败 ===");
     join: async (base, name) => `${base}/${name}`,
     ...overrides
   });
+  const req = (extra = {}) => ({ apkUrl: "https://github.com/x/y/a.apk", tag: "v0.4.2-beta.1", ...extra });
 
-  same("下载并安装成功", (await apk.installApkInApp("https://github.com/x/y/a.apk", fakeDeps())).status, "launched");
+  same("下载并安装成功", (await apk.installApkInApp(req(), fakeDeps())).status, "launched");
 
   let asked = false;
-  same(
-    "没权限且用户没开则记下",
-    (
-      await apk.installApkInApp(
-        "https://github.com/x/y/a.apk",
-        fakeDeps({
-          canInstall: async () => false,
-          requestInstallPermission: async () => {
-            asked = true;
-          }
-        })
-      )
-    ).status,
-    "permission-denied"
+  const denied = await apk.installApkInApp(
+    req(),
+    fakeDeps({
+      canInstall: async () => false,
+      requestInstallPermission: async () => {
+        asked = true;
+      }
+    })
   );
+  same("没权限且用户没开则记下", denied.status, "permission-denied");
   check("没权限时会去要一次", asked);
+  check("没权限也带回已下好的路径", denied.path === "/cache/update-v0.4.2-beta.1.apk", denied);
 
   const failed = await apk.installApkInApp(
-    "https://github.com/x/y/a.apk",
+    req(),
     fakeDeps({
       download: async () => {
         throw new Error("disk full");
       }
     })
   );
-  check("下载失败带上原因", failed.status === "error" && failed.message.includes("disk full"), failed);
+  check("下载失败是 download-failed 并带上原因", failed.status === "download-failed" && failed.message.includes("disk full"), failed);
 
+  const incomplete = await apk.installApkInApp(
+    req(),
+    fakeDeps({
+      download: async (_url, _path, onProgress) => {
+        onProgress?.({ progressTotal: 9, total: 10 });
+      }
+    })
+  );
+  same("字节对不上 -> 下载不完整", [incomplete.status, incomplete.message], ["download-failed", apk.INCOMPLETE_DOWNLOAD_MESSAGE]);
+
+  let downloaded = 0;
   let installed = false;
-  const cancelled = await apk.installApkInApp(
-    "https://github.com/x/y/a.apk",
+  const reused = await apk.installApkInApp(
+    req({ cachedPath: "/cache/already.apk" }),
+    fakeDeps({
+      download: async () => {
+        downloaded += 1;
+      },
+      install: async (path) => {
+        installed = path === "/cache/already.apk";
+      }
+    })
+  );
+  check("已有缓存则跳过下载", reused.status === "launched" && downloaded === 0 && installed, { reused, downloaded, installed });
+
+  let installedAfterCancel = false;
+  const cancelledRun = await apk.installApkInApp(
+    req({ isCancelled: () => true }),
     fakeDeps({
       install: async () => {
-        installed = true;
+        installedAfterCancel = true;
       }
-    }),
-    undefined,
-    () => true
+    })
   );
-  check("取消后不安装", cancelled.status === "error" && cancelled.message === "已取消" && !installed);
+  check("取消后不安装", cancelledRun.status === "cancelled" && !installedAfterCancel, cancelledRun);
+
+  const installBoom = await apk.installApkInApp(
+    req(),
+    fakeDeps({
+      install: async () => {
+        throw new Error("No installer available");
+      }
+    })
+  );
+  check("唤起安装器失败是 install-failed", installBoom.status === "install-failed" && installBoom.message.includes("No installer"), installBoom);
+
+  let tries = 0;
+  const recovered = await apk.installApkInAppWithRetries(
+    req(),
+    fakeDeps({
+      download: async (_url, _path, onProgress) => {
+        tries += 1;
+        if (tries < 3) throw new Error("reset");
+        onProgress?.({ progressTotal: 10, total: 10 });
+      }
+    })
+  );
+  check("下载失败会连着再试，第三次成功", recovered.status === "launched" && tries === 3, { recovered, tries });
+
+  tries = 0;
+  const exhausted = await apk.installApkInAppWithRetries(
+    req(),
+    fakeDeps({
+      download: async () => {
+        tries += 1;
+        throw new Error("reset");
+      }
+    })
+  );
+  check("三次都失败才认 download-failed", exhausted.status === "download-failed" && tries === apk.DOWNLOAD_RETRY_LIMIT, { exhausted, tries });
+
+  same("权限拒绝 -> 留在弹窗，不开浏览器", apk.decideInstallFollowUp({ status: "permission-denied", path: "/x" }, 0), {
+    action: "stay",
+    message: apk.PERMISSION_DENIED_HINT,
+    button: "continue"
+  });
+  const firstInstallFail = apk.decideInstallFollowUp({ status: "install-failed", message: "boom", path: "/x" }, 1);
+  same("第一次安装失败 -> 留在弹窗可重试", [firstInstallFail.action, firstInstallFail.button], ["stay", "retry"]);
+  check("第一次安装失败不开浏览器", firstInstallFail.action !== "browser");
+  const secondInstallFail = apk.decideInstallFollowUp({ status: "install-failed", message: "boom", path: "/x" }, 2);
+  same("连续两次安装失败才用浏览器", secondInstallFail.action, "browser");
+  check("浏览器文案说明多次失败", secondInstallFail.message.includes("多次") && secondInstallFail.message.includes("浏览器"), secondInstallFail);
+  const afterDownloadFail = apk.decideInstallFollowUp({ status: "download-failed", message: "reset" }, 0);
+  same("下载重试用尽 -> 浏览器直链", afterDownloadFail.action, "browser");
+  check("下载失败文案带原因", afterDownloadFail.message.includes("reset") && afterDownloadFail.message.includes("浏览器"), afterDownloadFail);
+  same("安装已唤起 -> 什么都不做", apk.decideInstallFollowUp({ status: "launched" }, 0), { action: "none" });
+  same("已取消 -> 什么都不做", apk.decideInstallFollowUp({ status: "cancelled" }, 0), { action: "none" });
+}
+
+console.log("");
+console.log("=== 点立即更新：发版后 APK 晚到，按 tag 再拉一次 ===");
+{
+  const tag = "v0.4.2-beta.1";
+  const htmlUrl = `${REPO}/releases/tag/${tag}`;
+  const apkUrl = `${REPO}/releases/download/${tag}/course-mngr-${tag}-arm64.apk`;
+  const emptyRaw = { tag_name: tag, html_url: htmlUrl, body: "", assets: [] };
+  const iconOnlyRaw = {
+    ...emptyRaw,
+    assets: [{ name: "app-icon.png", browser_download_url: `${REPO}/releases/download/${tag}/app-icon.png` }]
+  };
+  const withApkRaw = {
+    ...emptyRaw,
+    assets: [
+      { name: "app-icon.png", browser_download_url: `${REPO}/releases/download/${tag}/app-icon.png` },
+      { name: `course-mngr-${tag}-arm64.apk`, browser_download_url: apkUrl }
+    ]
+  };
+  const cachedEmpty = svc.parseRelease(emptyRaw);
+  const cachedWithApk = svc.parseRelease(withApkRaw);
+  const tagApi = `https://api.github.com/repos/orangeTZ07/Haust-Class-Schedule-APP/releases/tags/${tag}`;
+
+  same("按 tag 拼接口", svc.releaseByTagApi(tag), tagApi);
+  same("打包中的提示文案", svc.APK_PACKING_MESSAGE, "安装包还在打包，请稍后再试");
+
+  let emptyHit;
+  const stillEmpty = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async (url) => {
+      emptyHit = url;
+      return jsonResponse(200, emptyRaw);
+    }
+  });
+  check("刷新打的是这个 tag，不是 latest / 列表", emptyHit === tagApi, emptyHit);
+  same("Android 刷新后仍无 APK -> wait，不给页面链接", stillEmpty.status, "wait");
+  same("空资源时提示还在打包", stillEmpty.message, svc.APK_PACKING_MESSAGE);
+  check("wait 没有 url 可打开浏览器", stillEmpty.url === undefined, stillEmpty);
+  check("snapshot 助手仍会回退到 Release 页（立即更新不能用这个去打开）", svc.pickInstallUrl(cachedEmpty, true) === htmlUrl);
+
+  let refreshedHit;
+  const nowReady = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async (url) => {
+      refreshedHit = url;
+      return jsonResponse(200, withApkRaw);
+    }
+  });
+  check("缓存是空的，也按 tag 刷新", refreshedHit === tagApi);
+  same("刷新后出现 APK -> 用直接下载链接", [nowReady.status, nowReady.url], ["download", apkUrl]);
+  check("这条链接是直接 APK，失败回浏览器时不会落到 Release 页", svc.isDirectApkUrl(nowReady.url) === true);
+  same("刷新结果写回 release，弹窗不必再查一次", nowReady.release.assets.map((a) => a.name).filter((n) => /\.apk$/i.test(n)), [
+    `course-mngr-${tag}-arm64.apk`
+  ]);
+
+  const iconOnly = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async () => jsonResponse(200, iconOnlyRaw)
+  });
+  same("只有图标没有 APK 也算还在打包", [iconOnly.status, iconOnly.message], ["wait", svc.APK_PACKING_MESSAGE]);
+
+  const desktop = await svc.resolveInstallAction(cachedEmpty, false, {
+    fetchImpl: async () => jsonResponse(200, emptyRaw)
+  });
+  same("非 Android 仍打开 Release 页（说明 / 桌面）", [desktop.status, desktop.url], ["open-page", htmlUrl]);
+
+  const byTag = await svc.fetchReleaseByTag(tag, {
+    fetchImpl: async (url) => {
+      check("fetchReleaseByTag 走 tags 接口", url === tagApi, url);
+      return jsonResponse(200, withApkRaw);
+    }
+  });
+  same("按 tag 能拿到 APK", svc.pickInstallUrl(byTag, true), apkUrl);
+
+  const tag404 = await throwsMessage(() =>
+    svc.fetchReleaseByTag(tag, { fetchImpl: async () => jsonResponse(404, { message: "Not Found" }) })
+  );
+  check("按 tag 404 -> 找不到这个版本", tag404 === "GitHub 上找不到这个版本", tag404);
+
+  const refreshFailed = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async () => jsonResponse(500, {})
+  });
+  check(
+    "刷新失败且没有 APK -> wait，带上 GitHub 错误，不打开页面",
+    refreshFailed.status === "wait" && refreshFailed.message.includes("HTTP 500") && refreshFailed.url === undefined,
+    refreshFailed
+  );
+
+  const staleButHasApk = await svc.resolveInstallAction(cachedWithApk, true, {
+    fetchImpl: async () => {
+      throw new TypeError("Failed to fetch");
+    }
+  });
+  same("刷新失败但缓存里已有 APK -> 仍用 APK 下载", [staleButHasApk.status, staleButHasApk.url], ["download", apkUrl]);
 }
 
 console.log("");

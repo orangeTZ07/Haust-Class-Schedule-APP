@@ -11,8 +11,10 @@ const {
   release,
   notes,
   actionError,
-  installing,
+  installBusy,
   downloadPercent,
+  installPhase,
+  primaryActionLabel,
   dismissDialog,
   skipThisVersion,
   startUpdate,
@@ -23,9 +25,14 @@ const title = computed(() =>
   release.value ? updateOfferTitle(release.value.tag) : "发现新版本"
 );
 
-// 点遮罩或按返回键关掉，等同于「稍后」。
+const downloading = computed(() => installPhase.value === "downloading");
+
+// 点遮罩或按返回键关掉，等同于「稍后」。下载进行中不关，避免半截文件和下一次写入撞车。
 const onUpdateShow = (value: boolean) => {
-  if (!value) dismissDialog();
+  if (!value) {
+    if (downloading.value) return;
+    dismissDialog();
+  }
 };
 </script>
 
@@ -33,6 +40,8 @@ const onUpdateShow = (value: boolean) => {
   <van-popup
     :show="dialogVisible"
     @update:show="onUpdateShow"
+    :close-on-click-overlay="!downloading"
+    :close-on-popstate="!downloading"
     round
     position="center"
     class="app-popup app-popup--center"
@@ -56,22 +65,28 @@ const onUpdateShow = (value: boolean) => {
 
       <button class="full-notes-link haptics" @click="openFullNotes">查看完整更新说明</button>
 
-      <div v-if="installing" class="update-progress">
+      <div v-if="installPhase === 'downloading'" class="update-progress">
         <div class="progress-label">
           {{ downloadPercent == null ? "正在下载安装包…" : `正在下载安装包 ${downloadPercent}%` }}
         </div>
         <van-progress :percentage="downloadPercent ?? 0" :show-pivot="false" />
       </div>
+      <div v-else-if="installPhase === 'waiting-permission'" class="progress-label waiting-label">
+        正在确认安装权限…
+      </div>
+      <div v-else-if="installPhase === 'launching-installer'" class="progress-label waiting-label">
+        正在打开系统安装…
+      </div>
 
       <div v-if="actionError" class="update-error">{{ actionError }}</div>
 
       <div class="update-actions">
-        <button class="app-btn app-btn--primary" :disabled="installing" @click="startUpdate">
-          {{ installing ? "下载中…" : "立即更新" }}
+        <button class="app-btn app-btn--primary" :disabled="installBusy" @click="startUpdate">
+          {{ primaryActionLabel }}
         </button>
         <div class="secondary-row">
           <button class="app-btn" @click="dismissDialog">稍后</button>
-          <button class="app-btn" :disabled="installing" @click="skipThisVersion">跳过这个版本</button>
+          <button class="app-btn" :disabled="installBusy" @click="skipThisVersion">跳过这个版本</button>
         </div>
       </div>
     </div>
@@ -145,6 +160,10 @@ const onUpdateShow = (value: boolean) => {
   font-size: 12px;
   line-height: 1.5;
   opacity: 0.75;
+}
+
+.waiting-label {
+  margin-top: 12px;
 }
 
 .update-error {
