@@ -12,6 +12,24 @@ export const FETCH_TIMEOUT_MS = 8000;
 /// 弹窗里最多列这么多条更新说明，多的折成「…等 N 项」。
 export const NOTES_LIMIT = 6;
 
+/// 切回前台时自动检查最多每 6 小时一次。冷启动不走这个间隔。
+export const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/// 上次检查失败（没记下成功时间）时，自动检查两次尝试之间至少隔这么久。
+export const AUTO_RETRY_GAP_MS = 10 * 60 * 1000;
+
+/// `force`：冷启动，忽略 6 小时成功节流，仍受重试间隔约束。
+export const shouldAttemptAutoCheck = (
+  now: number,
+  lastSuccessfulCheckAt: number,
+  lastAutoAttemptAt: number,
+  force = false
+): boolean => {
+  const sinceLastCheck = now - lastSuccessfulCheckAt;
+  const due = force || sinceLastCheck < 0 || sinceLastCheck >= AUTO_CHECK_INTERVAL_MS;
+  if (!due) return false;
+  return now - lastAutoAttemptAt >= AUTO_RETRY_GAP_MS;
+};
+
 // ---------------------------------------------------------------------------
 // 版本号
 // ---------------------------------------------------------------------------
@@ -436,3 +454,6 @@ export const pickInstallUrl = (release: ReleaseInfo, android: boolean): string =
   }
   return release.htmlUrl;
 };
+
+/// 只有真正的 APK 下载地址才走应用内安装；Release 页面只能打开浏览器。
+export const isDirectApkUrl = (url: string): boolean => /\.apk(?:[?#]|$)/i.test(url);

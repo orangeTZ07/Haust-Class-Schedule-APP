@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-can-install"
+description = "Enables the can_install command without any pre-configured scope."
+commands.allow = ["can_install"]
+
+[[permission]]
+identifier = "deny-can-install"
+description = "Denies the can_install command without any pre-configured scope."
+commands.deny = ["can_install"]

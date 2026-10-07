@@ -44,6 +44,10 @@ pub fn run() {
         // reads the Android status bar, navigation bar and cutout sizes and writes them into the
         // page as --native-safe-* CSS variables.
         .plugin(tauri_plugin_system_bars::init())
+        // 应用内下载 APK（plugin-upload）后用系统安装器安装。REQUEST_INSTALL_PACKAGES
+        // 由 android-installer 插件自己的清单合并进来。
+        .plugin(tauri_plugin_upload::init())
+        .plugin(tauri_plugin_android_installer::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

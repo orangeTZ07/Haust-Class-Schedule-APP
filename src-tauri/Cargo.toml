@@ -1,6 +1,6 @@
 [package]
 name = "course-mngr"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 
 [lib]
@@ -30,6 +30,9 @@ tauri-plugin-opener = "=2.5.5"
 tauri-plugin-http = { version = "=2.5.9", features = ["unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }
+tauri-plugin-android-installer = { path = "plugins/android-installer" }
+# 下载 APK 到缓存目录。2.5.x 需要 tauri ^2.12，和本仓库的 =2.11.0 对不上。
+tauri-plugin-upload = "=2.4.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

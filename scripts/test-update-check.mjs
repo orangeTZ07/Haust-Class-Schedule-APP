@@ -334,5 +334,82 @@ console.log("=== 预览版抢先体验：偏好与取候选 ===");
 }
 
 console.log("");
+console.log("=== 自动检查节流：冷启动 force，切回前台仍受 6 小时限制 ===");
+{
+  const interval = svc.AUTO_CHECK_INTERVAL_MS;
+  const gap = svc.AUTO_RETRY_GAP_MS;
+  const now = 1_000_000_000_000;
+  check("冷启动：刚成功查过也要查", svc.shouldAttemptAutoCheck(now, now - 1000, 0, true) === true);
+  check("切回前台：6 小时内不查", svc.shouldAttemptAutoCheck(now, now - 1000, 0, false) === false);
+  check("切回前台：满 6 小时要查", svc.shouldAttemptAutoCheck(now, now - interval, 0, false) === true);
+  check("系统时间往回调过也要查", svc.shouldAttemptAutoCheck(now, now + 60_000, 0, false) === true);
+  check("冷启动仍受重试间隔", svc.shouldAttemptAutoCheck(now, now - interval, now - 1000, true) === false);
+  check("重试间隔过了可以再试", svc.shouldAttemptAutoCheck(now, 0, now - gap, true) === true);
+}
+
+console.log("");
+console.log("=== 应用内安装 APK：成功、没权限、下载失败 ===");
+{
+  const apk = await loadTs(join(here, "..", "src", "services", "apkUpdate.ts"));
+  check("进度：不知道总长度时不定百分比", apk.downloadPercent({ progressTotal: 10, total: 0 }) === null);
+  same("进度：一半是 50", apk.downloadPercent({ progressTotal: 50, total: 100 }), 50);
+  same("直接 APK 链接", svc.isDirectApkUrl("https://github.com/x/y/releases/download/v1/app.apk"), true);
+  check("Release 页不是直接 APK", svc.isDirectApkUrl("https://github.com/x/y/releases/tag/v1") === false);
+
+  const fakeDeps = (overrides = {}) => ({
+    download: async () => {},
+    canInstall: async () => true,
+    requestInstallPermission: async () => {},
+    install: async () => {},
+    appCacheDir: async () => "/cache",
+    join: async (base, name) => `${base}/${name}`,
+    ...overrides
+  });
+
+  same("下载并安装成功", (await apk.installApkInApp("https://github.com/x/y/a.apk", fakeDeps())).status, "launched");
+
+  let asked = false;
+  same(
+    "没权限且用户没开则记下",
+    (
+      await apk.installApkInApp(
+        "https://github.com/x/y/a.apk",
+        fakeDeps({
+          canInstall: async () => false,
+          requestInstallPermission: async () => {
+            asked = true;
+          }
+        })
+      )
+    ).status,
+    "permission-denied"
+  );
+  check("没权限时会去要一次", asked);
+
+  const failed = await apk.installApkInApp(
+    "https://github.com/x/y/a.apk",
+    fakeDeps({
+      download: async () => {
+        throw new Error("disk full");
+      }
+    })
+  );
+  check("下载失败带上原因", failed.status === "error" && failed.message.includes("disk full"), failed);
+
+  let installed = false;
+  const cancelled = await apk.installApkInApp(
+    "https://github.com/x/y/a.apk",
+    fakeDeps({
+      install: async () => {
+        installed = true;
+      }
+    }),
+    undefined,
+    () => true
+  );
+  check("取消后不安装", cancelled.status === "error" && cancelled.message === "已取消" && !installed);
+}
+
+console.log("");
 console.log(failures === 0 ? "  ALL CHECKS PASSED" : "  " + failures + " CHECK(S) FAILED");
 process.exit(failures ? 1 : 0);

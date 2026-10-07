@@ -11,6 +11,8 @@ const {
   release,
   notes,
   actionError,
+  installing,
+  downloadPercent,
   dismissDialog,
   skipThisVersion,
   startUpdate,
@@ -54,13 +56,22 @@ const onUpdateShow = (value: boolean) => {
 
       <button class="full-notes-link haptics" @click="openFullNotes">查看完整更新说明</button>
 
+      <div v-if="installing" class="update-progress">
+        <div class="progress-label">
+          {{ downloadPercent == null ? "正在下载安装包…" : `正在下载安装包 ${downloadPercent}%` }}
+        </div>
+        <van-progress :percentage="downloadPercent ?? 0" :show-pivot="false" />
+      </div>
+
       <div v-if="actionError" class="update-error">{{ actionError }}</div>
 
       <div class="update-actions">
-        <button class="app-btn app-btn--primary" @click="startUpdate">立即更新</button>
+        <button class="app-btn app-btn--primary" :disabled="installing" @click="startUpdate">
+          {{ installing ? "下载中…" : "立即更新" }}
+        </button>
         <div class="secondary-row">
           <button class="app-btn" @click="dismissDialog">稍后</button>
-          <button class="app-btn" @click="skipThisVersion">跳过这个版本</button>
+          <button class="app-btn" :disabled="installing" @click="skipThisVersion">跳过这个版本</button>
         </div>
       </div>
     </div>
@@ -125,6 +136,17 @@ const onUpdateShow = (value: boolean) => {
   text-decoration: underline;
 }
 
+.update-progress {
+  margin-top: 12px;
+}
+
+.progress-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
 .update-error {
   margin-top: 8px;
   font-size: 12px;
@@ -145,5 +167,9 @@ const onUpdateShow = (value: boolean) => {
 .secondary-row .app-btn {
   flex: 1;
   font-size: 14px;
+}
+
+.app-btn:disabled {
+  opacity: 0.5;
 }
 </style>

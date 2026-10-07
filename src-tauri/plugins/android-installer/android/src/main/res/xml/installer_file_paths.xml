@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="installer_cache" path="." />
+    <files-path name="installer_files" path="." />
+    <external-cache-path name="installer_ext_cache" path="." />
+    <external-files-path name="installer_ext_files" path="." />
+</paths>

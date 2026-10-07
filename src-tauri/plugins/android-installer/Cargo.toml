@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-android-installer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+# Vendored from https://github.com/imalfect/tauri-plugin-android-installer 0.1.0
+# (crates.io depends on tauri ^2.11.3, which cannot unify with this app's =2.11.0 pin).
+links = "tauri-plugin-android-installer"
+
+[dependencies]
+tauri = { version = "=2.11.0", features = [] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "=2.6.0", features = [] }
