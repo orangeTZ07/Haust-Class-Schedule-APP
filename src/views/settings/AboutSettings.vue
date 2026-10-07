@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useUpdateCheck } from "@/composables/useUpdateCheck";
 import { displayVersion } from "@/services/updateService";
-
-const CREDIT_URL = "https://github.com/LinJX1210";
 
 const { currentVersion, checking, loadCurrentVersion, manualCheck } = useUpdateCheck();
 
@@ -33,11 +30,6 @@ const onCheck = async () => {
   }
 };
 
-const openCredit = () => {
-  openUrl(CREDIT_URL).catch(() => {
-    window.open(CREDIT_URL, "_blank", "noopener");
-  });
-};
 </script>
 
 <template>
@@ -49,11 +41,6 @@ const openCredit = () => {
         <van-button class="check-btn" size="small" :loading="checking" @click="onCheck">检查更新</van-button>
       </div>
       <div v-if="statusMessage" class="status-hint" :class="{ error: statusIsError }">{{ statusMessage }}</div>
-      <p class="credit">
-        教务课表爬虫原型由
-        <button type="button" class="credit-link" @click="openCredit">LinJX1210</button>
-        提供
-      </p>
     </div>
   </div>
 </template>
@@ -128,23 +115,4 @@ const openCredit = () => {
   opacity: 1;
 }
 
-.credit {
-  padding: 0 16px 14px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--theme-body-text);
-  opacity: 0.7;
-}
-
-.credit-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--theme-accent);
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
 </style>

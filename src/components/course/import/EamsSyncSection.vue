@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
 import { ChevronDown, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
@@ -37,6 +38,14 @@ const diagnoseText = ref("");
 /// Folded away by default: most people never need it, and it is the part that made the old panel
 /// look like a debugging screen.
 const showTrouble = ref(false);
+
+const CREDIT_URL = "https://github.com/LinJX1210";
+
+const openCredit = () => {
+  openUrl(CREDIT_URL).catch(() => {
+    window.open(CREDIT_URL, "_blank", "noopener");
+  });
+};
 
 /// 网络诊断矩阵。
 ///
@@ -223,6 +232,12 @@ const sync = async () => {
       </button>
 
       <p class="imp-hint small">默认同步为一个新课表，原来的课表不受影响。</p>
+
+      <p class="eams-credit">
+        教务处爬虫原型由
+        <button type="button" class="eams-credit-link" @click="openCredit">LinJX1210</button>
+        提供，本应用的教务同步基于此实现。
+      </p>
     </div>
 
     <div class="trouble">
@@ -262,6 +277,27 @@ const sync = async () => {
   font-size: 12px;
   text-align: center;
   opacity: 0.6;
+}
+
+.eams-credit {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--theme-body-text);
+  opacity: 0.65;
+}
+
+.eams-credit-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--theme-accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .atrust {
