@@ -2,6 +2,10 @@
 
 河南科技大学课程表应用，比河科大官方课程表好用
 
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+[![All Contributors](https://img.shields.io/badge/all_contributors-7-orange.svg?style=flat-square)](#contributors-)
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
+
 ## 态度（？）
 
 - `Just for fun but useful`
@@ -31,8 +35,34 @@
 - 真实项目协作经验
 - 为摆脱学校难用的课程表APP，制作并应用你独特设计的功能，让他人看到并使用
 
-## Contributors
+## Contributors ✨
 
-- [LinJX1210](https://github.com/LinJX1210) — 教务课表爬虫原型，应用里的教务同步基于此
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/orangeTZ07"><img src="https://avatars.githubusercontent.com/u/141539459?v=4?s=100" width="100px;" alt="orangeTZ07"/><br /><sub><b>orangeTZ07</b></sub></a><br /><a href="#maintenance-orangeTZ07" title="Maintenance">🚧</a> <a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=orangeTZ07" title="Code">💻</a> <a href="#design-orangeTZ07" title="Design">🎨</a> <a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=orangeTZ07" title="Documentation">📖</a> <a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/pulls?q=is%3Apr+reviewed-by%3AorangeTZ07" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/zhou18-book"><img src="https://avatars.githubusercontent.com/u/222402196?v=4?s=100" width="100px;" alt="zhou18-book"/><br /><sub><b>zhou18-book</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=zhou18-book" title="Code">💻</a> <a href="#ideas-zhou18-book" title="Ideas, Planning, & Feedback">🤔</a> <a href="#maintenance-zhou18-book" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/noisy-fly"><img src="https://avatars.githubusercontent.com/u/232693317?v=4?s=100" width="100px;" alt="noisy-fly"/><br /><sub><b>noisy-fly</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=noisy-fly" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/LinJX1210"><img src="https://avatars.githubusercontent.com/u/183972389?v=4?s=100" width="100px;" alt="LinJX1210"/><br /><sub><b>LinJX1210</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=LinJX1210" title="Code">💻</a> <a href="#ideas-LinJX1210" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/claude"><img src="https://avatars.githubusercontent.com/u/81847?v=4?s=100" width="100px;" alt="Claude"/><br /><sub><b>Claude</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=claude" title="Code">💻</a> <a href="#design-claude" title="Design">🎨</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/cursoragent"><img src="https://avatars.githubusercontent.com/u/199161495?v=4?s=100" width="100px;" alt="Cursor"/><br /><sub><b>Cursor</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=cursoragent" title="Code">💻</a> <a href="#maintenance-cursoragent" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/deepseek-ai"><img src="https://avatars.githubusercontent.com/u/148330874?v=4?s=100" width="100px;" alt="DeepSeek"/><br /><sub><b>DeepSeek</b></sub></a><br /><a href="https://github.com/orangeTZ07/Haust-Class-Schedule-APP/commits?author=deepseek-ai" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://allcontributors.org) specification. Contributions of any kind welcome!
+
+[LinJX1210](https://github.com/LinJX1210) 的想法贡献对应教务课表爬虫原型，应用里的教务同步基于此。
 
 
