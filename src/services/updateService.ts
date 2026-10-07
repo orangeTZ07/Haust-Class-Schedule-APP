@@ -6,6 +6,7 @@ import { describeError } from "../utils/describeError";
 
 export const UPDATE_REPO = "orangeTZ07/Haust-Class-Schedule-APP";
 export const LATEST_RELEASE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
+export const RELEASES_LIST_API = `https://api.github.com/repos/${UPDATE_REPO}/releases`;
 export const FETCH_TIMEOUT_MS = 8000;
 
 /// 弹窗里最多列这么多条更新说明，多的折成「…等 N 项」。
@@ -79,6 +80,60 @@ export const isNewerVersion = (candidate: string, current: string): boolean =>
 
 /// 给界面显示用：统一成「v0.3.0」，不管 tag 本来带不带 v。
 export const displayVersion = (raw: string): string => `v${raw.trim().replace(/^[vV]/, "")}`;
+
+export const isPrereleaseTag = (tag: string): boolean =>
+  (parseVersion(tag)?.prerelease.length ?? 0) > 0;
+
+/// 预览版更新不能看起来像正式版。
+export const updateOfferTitle = (tag: string): string => {
+  const shown = displayVersion(tag);
+  return isPrereleaseTag(tag) ? `发现预览版 ${shown}` : `发现新版本 ${shown}`;
+};
+
+/// #20 preference API. Toggle UI binds these; updater only reads.
+export const PREVIEW_EARLY_ACCESS_STORAGE_KEY = "course-mngr-update-preview-early-access";
+
+const previewStorage = () => localStorage;
+
+export const isPreviewEarlyAccessEnabled = (
+  storage?: { getItem(key: string): string | null }
+): boolean => {
+  try {
+    return (storage ?? previewStorage()).getItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+export const setPreviewEarlyAccessEnabled = (
+  enabled: boolean,
+  storage?: { setItem(key: string, value: string): void; removeItem(key: string): void }
+): void => {
+  try {
+    const store = storage ?? previewStorage();
+    if (enabled) store.setItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY, "1");
+    else store.removeItem(PREVIEW_EARLY_ACCESS_STORAGE_KEY);
+  } catch {
+    // 记不下来就只影响本次会话。
+  }
+};
+
+/// Same-number prerelease order is compareVersions: alpha < beta < rc < stable.
+export const pickNewestNewerRelease = (
+  releases: readonly ReleaseInfo[],
+  current: string
+): ReleaseInfo | null => {
+  let best: ReleaseInfo | null = null;
+  for (const item of releases) {
+    try {
+      if (!isNewerVersion(item.tag, current)) continue;
+    } catch {
+      continue;
+    }
+    if (!best || compareVersions(item.tag, best.tag) > 0) best = item;
+  }
+  return best;
+};
 
 // ---------------------------------------------------------------------------
 // 更新说明
@@ -266,23 +321,16 @@ export interface FetchReleaseOptions {
   timeoutMs?: number;
 }
 
-/// 取最新的正式 Release（接口本身不含 draft 和 prerelease）。
-///
-/// 用 WebView 自带的 fetch 而不是 tauri-plugin-http：GitHub API 回了 CORS 头，不需要绕同源策略，
-/// 也就不用把 api.github.com 加进 http 插件的白名单。
-/// 失败时抛的 Error 的 message 已经是能直接给用户看的中文。
-export const fetchLatestRelease = async (options: FetchReleaseOptions = {}): Promise<ReleaseInfo> => {
+const githubJson = async (url: string, options: FetchReleaseOptions = {}): Promise<unknown> => {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  // 计时器要一直盖到读完正文：连上了但正文迟迟不来，一样算超时。
   try {
     let response: Response;
     try {
-      response = await fetchImpl(LATEST_RELEASE_API, {
+      response = await fetchImpl(url, {
         headers: { Accept: "application/vnd.github+json" },
         signal: controller.signal
       });
@@ -290,20 +338,58 @@ export const fetchLatestRelease = async (options: FetchReleaseOptions = {}): Pro
       throw new Error(connectionFailureMessage(e, timeoutMs));
     }
 
-    if (!response.ok) throw new Error(httpFailureMessage(response));
+    if (!response.ok) throw new Error(httpFailureMessage(response, url));
 
-    let json: unknown;
     try {
-      json = await response.json();
+      return await response.json();
     } catch (e) {
       throw new Error(
         isAbortError(e) ? timeoutMessage(timeoutMs) : `GitHub 返回的内容读不懂：${describeError(e)}`
       );
     }
-    return parseRelease(json);
   } finally {
     clearTimeout(timer);
   }
+};
+
+/// 取最新的正式 Release（接口本身不含 draft 和 prerelease）。
+///
+/// 用 WebView 自带的 fetch 而不是 tauri-plugin-http：GitHub API 回了 CORS 头，不需要绕同源策略，
+/// 也就不用把 api.github.com 加进 http 插件的白名单。
+/// 失败时抛的 Error 的 message 已经是能直接给用户看的中文。
+export const fetchLatestRelease = async (options: FetchReleaseOptions = {}): Promise<ReleaseInfo> =>
+  parseRelease(await githubJson(LATEST_RELEASE_API, options));
+
+/// 含 prerelease、不含 draft。预览通道开了才走这里。
+export const fetchReleaseList = async (options: FetchReleaseOptions = {}): Promise<ReleaseInfo[]> => {
+  const json = await githubJson(RELEASES_LIST_API, options);
+  if (!Array.isArray(json)) {
+    throw new Error("GitHub 返回的内容里没有版本号，不像是一个 Release");
+  }
+  const releases: ReleaseInfo[] = [];
+  for (const item of json) {
+    const data = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    if (data.draft === true) continue;
+    try {
+      releases.push(parseRelease(item));
+    } catch {
+      // 列表里偶发坏条目，跳过这一条而不是整次检查失败。
+    }
+  }
+  return releases;
+};
+
+/// OFF：只看 /releases/latest，不会把已装预览滚回去。
+/// ON：列表里用 compareVersions 挑比当前更高的最高一条。
+export const fetchUpdateCandidate = async (
+  current: string,
+  options: FetchReleaseOptions = {}
+): Promise<ReleaseInfo | null> => {
+  if (!isPreviewEarlyAccessEnabled()) {
+    const latest = await fetchLatestRelease(options);
+    return isNewerVersion(latest.tag, current) ? latest : null;
+  }
+  return pickNewestNewerRelease(await fetchReleaseList(options), current);
 };
 
 const isAbortError = (e: unknown): boolean =>
@@ -315,8 +401,12 @@ const timeoutMessage = (timeoutMs: number): string =>
 const connectionFailureMessage = (e: unknown, timeoutMs: number): string =>
   isAbortError(e) ? timeoutMessage(timeoutMs) : `无法连接到 GitHub：${describeError(e)}`;
 
-const httpFailureMessage = (response: Response): string => {
-  if (response.status === 404) return "GitHub 上还没有发布过正式版本";
+const httpFailureMessage = (response: Response, url = LATEST_RELEASE_API): string => {
+  if (response.status === 404) {
+    return url.includes("/releases/latest")
+      ? "GitHub 上还没有发布过正式版本"
+      : "GitHub 上还没有发布过版本";
+  }
   // 没登录的请求每小时有次数上限，超了会回 403 或 429。
   if (response.status === 403 || response.status === 429) {
     return "GitHub 暂时限制了请求次数，请过一会儿再试";

@@ -8,7 +8,26 @@ export const COACH_SEEN_STEP_IDS_KEY = "course-mngr-coach-seen-step-ids";
 
 export const COACH_CUE_LABEL = "新功能介绍请前往此处";
 
-export type CoachTarget = "menu" | "import" | "empty-cell" | "course-block" | "settings";
+export type CoachTarget =
+  | "menu"
+  | "import"
+  | "empty-cell"
+  | "course-block"
+  | "appearance"
+  | "period-timing";
+
+export const APPEARANCE_STEP_ID = "appearance-settings-v1";
+export const PERIOD_TIMING_STEP_ID = "period-timing-settings-v1";
+/// Cue 「新功能介绍请前往此处」 lands here — not the sidebar 「设置」 row.
+export const SETTINGS_COACH_PATH = "/settings";
+
+export const isSettingsCoachTarget = (target: CoachTarget | undefined | null): boolean =>
+  target === "appearance" || target === "period-timing";
+
+export const firstSettingsCoachIndex = (steps: ReadonlyArray<{ target: CoachTarget }>): number => {
+  const index = steps.findIndex(step => isSettingsCoachTarget(step.target));
+  return index < 0 ? 0 : index;
+};
 
 export interface CoachStep {
   id: string;
@@ -63,18 +82,18 @@ export const COACH_STEPS: CoachStep[] = [
     requiresCoursesOnCurrentWeek: false
   },
   {
-    id: "theme-preset-v1",
-    title: "主题预设",
-    body: "换配色：点菜单里的「设置」，再进「外观样式」选一套主题。",
-    target: "settings",
+    id: APPEARANCE_STEP_ID,
+    title: "外观",
+    body: "在设置里可以换预设主题，也可以自己设背景图。",
+    target: "appearance",
     offHome: true,
     requiresCoursesOnCurrentWeek: false
   },
   {
-    id: "bg-image-v1",
-    title: "背景图片",
-    body: "课表背景图也在「设置 → 外观样式」里，选一张图还能裁切。",
-    target: "settings",
+    id: PERIOD_TIMING_STEP_ID,
+    title: "课时与课间",
+    body: "在这里可以调每节课时长和课间间隔，提醒时间会跟着变。",
+    target: "period-timing",
     offHome: true,
     requiresCoursesOnCurrentWeek: false
   }

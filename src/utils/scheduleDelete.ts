@@ -14,8 +14,8 @@ export interface DeleteScopePayload {
 }
 
 export const DELETE_SEMESTER_CONFIRM = {
-  title: "删除整学期？",
-  message: "本学期这门都会没。",
+  title: "删除本学期该课全部安排？",
+  message: "本学期该课全部删除，不可仅靠返回键恢复",
   confirmText: "删除"
 } as const;
 

@@ -1,28 +1,79 @@
 <script setup lang="ts">
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ArrowLeft, ChevronRight, Palette } from '@lucide/vue';
+import { ArrowLeft, ChevronRight, Menu, Palette } from "@lucide/vue";
 import GridSettings from "./settings/GridSettings.vue";
-import AboutSettings from "./settings/AboutSettings.vue";
+import UpdateSettings from "./settings/UpdateSettings.vue";
+import SideBar from "@/components/layout/SideBar.vue";
+import FeatureCoach from "@/components/coach/FeatureCoach.vue";
 import { presetList, useTheme } from "@/composables/useTheme";
+import { isSettingsCoachTarget } from "@/utils/featureCoach";
+import { useFeatureCoach } from "@/composables/useFeatureCoach";
 
+const SIDEBAR_WIDTH = 280;
 const router = useRouter();
 const { currentPresetId } = useTheme();
+const {
+  coachStep,
+  coachPhase,
+  coachIsLast,
+  startManualCoachFromSettings,
+  dismissCoach,
+  advanceCoach
+} = useFeatureCoach();
+
+const sidebarVisible = ref(false);
+const sidebarOffset = ref(0);
+
+const setSidebar = (open: boolean) => {
+  sidebarVisible.value = open;
+  sidebarOffset.value = open ? SIDEBAR_WIDTH : 0;
+};
 
 const goBack = () => {
   router.push("/");
 };
+
+const handleSidebarAction = (action: string) => {
+  if (action === "coach") startManualCoachFromSettings();
+  setSidebar(false);
+};
+
+onMounted(() => {
+  if (isSettingsCoachTarget(coachStep.value?.target)) coachPhase.value = "spotlight";
+});
 </script>
 
 <template>
   <div class="settings-view">
+    <FeatureCoach
+      :step="coachStep"
+      :phase="coachPhase"
+      :is-last="coachIsLast"
+      @next="advanceCoach(true)"
+      @skip="dismissCoach(true)"
+      @close="dismissCoach(true)"
+    />
+
+    <SideBar
+      :visible="sidebarVisible"
+      :offset="sidebarOffset"
+      :width="SIDEBAR_WIDTH"
+      @close="setSidebar(false)"
+      @action="handleSidebarAction"
+    />
+
     <div class="settings-header">
       <ArrowLeft :size="20" @click="goBack" class="back-btn" />
       <span class="title">设置</span>
+      <button type="button" class="menu-btn" aria-label="菜单" @click="setSidebar(!sidebarVisible)">
+        <Menu :size="20" />
+      </button>
     </div>
 
     <div class="content">
       <!-- 样式调整以前在侧栏里，现在归到设置下面，和别的设置放在一起找 -->
-      <div class="entry-card" data-coach="style" @click="router.push('/style')">
+      <div class="entry-card" data-coach="appearance" @click="router.push('/style')">
         <Palette :size="20" stroke-width="1.5" class="entry-icon" />
         <div class="entry-text">
           <div class="entry-title">外观样式</div>
@@ -35,7 +86,7 @@ const goBack = () => {
       </div>
 
       <GridSettings />
-      <AboutSettings />
+      <UpdateSettings />
     </div>
   </div>
 </template>
@@ -67,6 +118,22 @@ const goBack = () => {
   font-size: 18px;
   font-weight: 600;
   color: var(--theme-header-text);
+  flex: 1;
+}
+
+.menu-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  color: var(--theme-header-text);
+  background: transparent;
+  cursor: pointer;
 }
 
 /* The sections inside bring their own side padding; this only keeps them out of the cutout and

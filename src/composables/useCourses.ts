@@ -574,6 +574,118 @@ export function useCourses() {
     return updated;
   };
 
+  const updateCourseFields = async (
+    id: number,
+    fields: Pick<Course, "name" | "teacher" | "location">
+  ): Promise<Course | null> => {
+    const current = getCourseById(id);
+    if (!current) return null;
+    const updated: Course = {
+      ...current,
+      name: fields.name,
+      teacher: fields.teacher,
+      location: fields.location
+    };
+    await courseService.updateCourse(updated);
+    const index = courses.value.findIndex(course => course.id === id);
+    if (index !== -1) courses.value[index] = updated;
+    return updated;
+  };
+
+  const patchSchedule = async (updated: CourseSchedule): Promise<void> => {
+    await courseService.updateSchedule(updated);
+    const index = schedules.value.findIndex(item => item.id === updated.id);
+    if (index !== -1) schedules.value[index] = updated;
+  };
+
+  /// Gear-drop edit: one user save is one undo group. Week scope matches delete.
+  const updateOccurrenceInScope = async (
+    id: number,
+    payload: DeleteScopePayload & {
+      name: string;
+      teacher?: string;
+      location?: string;
+      span: number;
+    }
+  ): Promise<boolean> => {
+    const current = schedules.value.find(item => item.id === id);
+    if (!current) return false;
+    const course = getCourseById(current.courseId);
+    if (!course) return false;
+
+    const span = Math.max(1, payload.span);
+    const endPeriod = current.startPeriod + span - 1;
+    const name = payload.name.trim();
+    if (!name) return false;
+    const teacher = payload.teacher?.trim() || undefined;
+    const location = payload.location?.trim() || undefined;
+    const fieldsChanged =
+      course.name !== name ||
+      (course.teacher || "") !== (teacher || "") ||
+      (course.location || "") !== (location || "");
+    const spanChanged = current.endPeriod !== endPeriod;
+    const weeks = weeksForDeleteScope(payload, currentWeek.value);
+
+    if (weeks === "all") {
+      if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
+      if (!spanChanged && !fieldsChanged) return false;
+      if (spanChanged) {
+        const ids = idsForSemesterDelete(schedules.value, current);
+        for (const scheduleId of ids) {
+          const row = schedules.value.find(item => item.id === scheduleId);
+          if (!row || row.isCancelled) continue;
+          const nextEnd = row.startPeriod + span - 1;
+          if (row.endPeriod === nextEnd) continue;
+          await patchSchedule({ ...row, endPeriod: nextEnd });
+        }
+      }
+      return true;
+    }
+
+    let overlayCourseId = current.courseId;
+    if (fieldsChanged) {
+      const created = await addCourse(name, teacher, location, course.color);
+      overlayCourseId = created.id;
+    }
+
+    let changed = false;
+    const snapshot = [...schedules.value];
+    for (const week of weeks) {
+      const weekly = weeklyRowToDelete(snapshot, current, week);
+      if (weekly) {
+        await patchSchedule({
+          ...weekly,
+          courseId: overlayCourseId,
+          endPeriod: weekly.startPeriod + span - 1
+        });
+        changed = true;
+        continue;
+      }
+      if (needsWeeklyCancel(schedules.value, current, week)) {
+        const draft = cancelDraftForWeek(current, week);
+        await addSchedule(draft.courseId, draft.dayOfWeek, draft.startPeriod, draft.endPeriod, {
+          startWeek: draft.week,
+          endWeek: draft.week,
+          weekType: "all",
+          scope: "weekly",
+          isCancelled: true
+        });
+        changed = true;
+      }
+      if (isScheduleActiveInWeek(current, week) || weekly) {
+        await addSchedule(overlayCourseId, current.dayOfWeek, current.startPeriod, endPeriod, {
+          startWeek: week,
+          endWeek: week,
+          weekType: "all",
+          scope: "weekly",
+          isCancelled: false
+        });
+        changed = true;
+      }
+    }
+    return changed;
+  };
+
   const removeSchedule = async (id: number): Promise<boolean> => {
     return removeScheduleInScope(id, { weekScope: "current" });
   };
@@ -1055,6 +1167,7 @@ export function useCourses() {
     addCourse,
     addSchedule,
     moveSchedule,
+    updateOccurrenceInScope,
     removeSchedule,
     removeScheduleInScope,
     removeCourse,

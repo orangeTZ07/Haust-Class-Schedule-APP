@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import { X, BookOpen } from "@lucide/vue";
+import { X, BookOpen, Settings } from "@lucide/vue";
 import { useTheme } from "@/composables/useTheme";
+import { confirmAction } from "@/utils/confirm";
+import { DELETE_SEMESTER_CONFIRM } from "@/utils/scheduleDelete";
 
 // Was a stub with a "TODO: 课程表单" comment and no references anywhere, which left the
 // app with no way to enter a course at all -- an empty timetable could only ever be filled
@@ -22,15 +24,25 @@ export interface CourseFormSubmitPayload {
 
 const props = withDefaults(defineProps<{
   show: boolean;
+  mode?: "add" | "edit";
   day: number;
   period: number;
   currentWeek?: number;
   totalWeeks?: number;
   maxPeriod?: number;
+  initialName?: string;
+  initialTeacher?: string;
+  initialLocation?: string;
+  initialSpan?: number;
 }>(), {
+  mode: "add",
   currentWeek: 1,
   totalWeeks: 20,
-  maxPeriod: 10
+  maxPeriod: 10,
+  initialName: "",
+  initialTeacher: "",
+  initialLocation: "",
+  initialSpan: 1
 });
 
 const emit = defineEmits<{
@@ -60,11 +72,12 @@ const weekTypeOptions: { value: "all" | "odd" | "even"; label: string }[] = [
 // next one and a course silently lands on the wrong slot.
 watch(() => props.show, (visible) => {
   if (!visible) return;
-  name.value = "";
-  teacher.value = "";
-  location.value = "";
-  span.value = 1;
-  weekScope.value = "all";
+  const editing = props.mode === "edit";
+  name.value = editing ? props.initialName : "";
+  teacher.value = editing ? props.initialTeacher : "";
+  location.value = editing ? props.initialLocation : "";
+  span.value = editing ? Math.max(1, props.initialSpan) : 1;
+  weekScope.value = editing ? "current" : "all";
   customStartWeek.value = 1;
   customEndWeek.value = props.totalWeeks;
   customWeekType.value = "all";
@@ -77,7 +90,7 @@ const spanOptions = computed(() =>
 );
 const slotLabel = computed(() => `第 ${props.currentWeek} 周 · ${DAY_NAMES[props.day - 1] ?? ""} 第 ${props.period} 节`);
 
-const submit = () => {
+const submit = async () => {
   const trimmed = name.value.trim();
   if (!trimmed) {
     error.value = "请输入课程名称";
@@ -86,6 +99,15 @@ const submit = () => {
   if (weekScope.value === "custom" && customStartWeek.value > customEndWeek.value) {
     error.value = "起始周不能大于结束周";
     return;
+  }
+  if (props.mode === "edit" && weekScope.value === "all") {
+    const ok = await confirmAction({
+      title: DELETE_SEMESTER_CONFIRM.title,
+      message: DELETE_SEMESTER_CONFIRM.message,
+      confirmText: DELETE_SEMESTER_CONFIRM.confirmText,
+      danger: true
+    });
+    if (!ok) return;
   }
   emit("submit", {
     name: trimmed,
@@ -116,8 +138,9 @@ const submit = () => {
       </button>
 
       <h2 class="app-popup-title">
-        <BookOpen :size="18" />
-        添加课程
+        <Settings v-if="mode === 'edit'" :size="18" />
+        <BookOpen v-else :size="18" />
+        {{ mode === "edit" ? "课程设置" : "添加课程" }}
       </h2>
       <div class="app-popup-sub">{{ slotLabel }}</div>
 
@@ -167,7 +190,7 @@ const submit = () => {
             :class="{ active: weekScope === 'all' }"
             @click="weekScope = 'all'"
           >
-            所有周
+            {{ mode === "edit" ? "整学期" : "所有周" }}
           </button>
           <button
             type="button"
@@ -175,7 +198,7 @@ const submit = () => {
             :class="{ active: weekScope === 'current' }"
             @click="weekScope = 'current'"
           >
-            仅当前周（第 {{ currentWeek }} 周）
+            {{ mode === "edit" ? "仅本周" : `仅当前周（第 ${currentWeek} 周）` }}
           </button>
           <button
             type="button"

@@ -102,25 +102,54 @@ const menuAnchor = (): Rect | null => {
   return onScreen(rect) ? asRect(rect) : null;
 };
 
-const importAnchor = (): Rect | null => {
-  const el = document.querySelector<HTMLElement>("[data-coach='import']");
+const queryAnchor = (selector: string): HTMLElement | null =>
+  document.querySelector<HTMLElement>(selector);
+
+const visibleRect = (el: HTMLElement | null): Rect | null => {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
   return onScreen(rect) ? asRect(rect) : null;
 };
 
-const settingsAnchor = (): Rect | null => {
-  const el = document.querySelector<HTMLElement>("[data-coach='settings']");
+const revealAnchor = (el: HTMLElement | null): Rect | null => {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
-  return onScreen(rect) ? asRect(rect) : null;
+  if (!onScreen(rect)) {
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+  return visibleRect(el);
+};
+
+const unionAnchors = (nodes: HTMLElement[]): Rect | null => {
+  if (nodes.length === 0) return null;
+  for (const node of nodes) {
+    if (!onScreen(node.getBoundingClientRect())) {
+      node.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }
+  const rects = nodes.map(node => node.getBoundingClientRect()).filter(onScreen);
+  if (rects.length === 0) return null;
+  const left = Math.min(...rects.map(rect => rect.left));
+  const top = Math.min(...rects.map(rect => rect.top));
+  const right = Math.max(...rects.map(rect => rect.right));
+  const bottom = Math.max(...rects.map(rect => rect.bottom));
+  return { left, top, width: right - left, height: bottom - top };
+};
+
+const appearanceAnchor = (): Rect | null => revealAnchor(queryAnchor("[data-coach='appearance']"));
+
+const periodTimingAnchor = (): Rect | null => {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>("[data-coach='period-timing']"));
+  if (nodes.length === 0) return null;
+  return unionAnchors(nodes);
 };
 
 const anchorFor = (step: CoachPresentation): Rect | null => {
   if (step.target === "empty-cell") return emptyCellAnchor();
   if (step.target === "course-block") return courseBlockAnchor();
-  if (step.target === "import" && props.phase === "spotlight") return importAnchor();
-  if (step.target === "settings" && props.phase === "spotlight") return settingsAnchor();
+  if (step.target === "import" && props.phase === "spotlight") return visibleRect(queryAnchor("[data-coach='import']"));
+  if (step.target === "appearance" && props.phase === "spotlight") return appearanceAnchor();
+  if (step.target === "period-timing" && props.phase === "spotlight") return periodTimingAnchor();
   // Off-home steps start at the menu button. Keep that anchor while the drawer is still sliding.
   return menuAnchor();
 };

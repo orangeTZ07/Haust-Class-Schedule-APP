@@ -66,6 +66,9 @@ same("isNewerVersion 新版为真", svc.isNewerVersion("v0.3.0", "0.2.0"), true)
 same("isNewerVersion 同版本为假", svc.isNewerVersion("v0.2.0", "0.2.0"), false);
 same("isNewerVersion 比当前旧为假（回滚发布不提示）", svc.isNewerVersion("v0.1.1", "0.2.0"), false);
 same("displayVersion 统一加 v", [svc.displayVersion("0.3.0"), svc.displayVersion("v0.3.0")], ["v0.3.0", "v0.3.0"]);
+same("同号预发布 alpha < beta < rc < 正式", [cmp("0.4.1-alpha.1", "0.4.1-beta.1"), cmp("0.4.1-beta.1", "0.4.1-rc.1"), cmp("0.4.1-rc.1", "0.4.1")], [-1, -1, -1]);
+same("预览弹窗标题带预览", svc.updateOfferTitle("0.4.1-alpha.1"), "发现预览版 v0.4.1-alpha.1");
+same("正式弹窗标题带新版本", svc.updateOfferTitle("v0.4.1"), "发现新版本 v0.4.1");
 
 // ---------- 更新说明解析 ----------
 console.log("");
@@ -262,6 +265,72 @@ check("返回的不是 Release -> 说没有版本号", ((await fetchFailure(asyn
   check("成功后清掉计时器", timersAfter === timersBefore, { timersBefore, timersAfter });
   await fetchFailure(async () => jsonResponse(404, {}), 60_000);
   check("失败后也清掉计时器", process.getActiveResourcesInfo().filter((name) => name === "Timeout").length === timersBefore);
+}
+
+console.log("");
+console.log("=== 预览版抢先体验：偏好与取候选 ===");
+{
+  const mem = () => {
+    const bag = new Map();
+    return {
+      getItem: (key) => (bag.has(key) ? bag.get(key) : null),
+      setItem: (key, value) => bag.set(key, String(value)),
+      removeItem: (key) => bag.delete(key)
+    };
+  };
+  const store = mem();
+  check("默认关闭", svc.isPreviewEarlyAccessEnabled(store) === false);
+  same("存储键名", svc.PREVIEW_EARLY_ACCESS_STORAGE_KEY, "course-mngr-update-preview-early-access");
+  svc.setPreviewEarlyAccessEnabled(true, store);
+  check("打开后读到开", svc.isPreviewEarlyAccessEnabled(store) === true && store.getItem(svc.PREVIEW_EARLY_ACCESS_STORAGE_KEY) === "1");
+  svc.setPreviewEarlyAccessEnabled(false, store);
+  check("关掉后键拿掉", svc.isPreviewEarlyAccessEnabled(store) === false && store.getItem(svc.PREVIEW_EARLY_ACCESS_STORAGE_KEY) === null);
+
+  const asRelease = (tag, extra = {}) => ({ tag, body: "", htmlUrl: `${REPO}/releases/tag/${tag}`, assets: [], ...extra });
+  const picked = svc.pickNewestNewerRelease(
+    [asRelease("v0.4.1-alpha.1"), asRelease("v0.4.0"), asRelease("v0.4.1-rc.1"), asRelease("v0.3.9")],
+    "0.4.0"
+  );
+  same("开通道时挑最高的更新（rc 高于 alpha）", picked?.tag, "v0.4.1-rc.1");
+  check("没有更高的就空", svc.pickNewestNewerRelease([asRelease("v0.3.9"), asRelease("v0.4.0")], "0.4.0") === null);
+  check("已装预览时正式同号更高", svc.pickNewestNewerRelease([asRelease("v0.4.1")], "0.4.1-alpha.1")?.tag === "v0.4.1");
+
+  const ls = mem();
+  globalThis.localStorage = ls;
+
+  const latestRaw = { ...raw, tag_name: "v0.4.0", html_url: `${REPO}/releases/tag/v0.4.0` };
+  const listRaw = [
+    { ...raw, tag_name: "v0.4.1-alpha.1", prerelease: true, html_url: `${REPO}/releases/tag/v0.4.1-alpha.1` },
+    { ...raw, tag_name: "v0.4.0", prerelease: false, html_url: `${REPO}/releases/tag/v0.4.0` },
+    { ...raw, tag_name: "v0.4.1-rc.1", prerelease: true, draft: false, html_url: `${REPO}/releases/tag/v0.4.1-rc.1` },
+    { ...raw, tag_name: "v0.3.9", draft: true, html_url: `${REPO}/releases/tag/v0.3.9` }
+  ];
+
+  let hit;
+  const offFound = await svc.fetchUpdateCandidate("0.3.9", {
+    fetchImpl: async (url) => {
+      hit = url;
+      return jsonResponse(200, latestRaw);
+    }
+  });
+  check("关通道只打 latest", hit === "https://api.github.com/repos/orangeTZ07/Haust-Class-Schedule-APP/releases/latest");
+  same("关通道拿到正式最新", offFound?.tag, "v0.4.0");
+
+  const noRollback = await svc.fetchUpdateCandidate("0.4.1-alpha.1", {
+    fetchImpl: async () => jsonResponse(200, latestRaw)
+  });
+  check("关通道不会把已装预览滚回正式旧版", noRollback === null);
+
+  svc.setPreviewEarlyAccessEnabled(true, ls);
+  let listHit;
+  const onFound = await svc.fetchUpdateCandidate("0.4.0", {
+    fetchImpl: async (url) => {
+      listHit = url;
+      return jsonResponse(200, listRaw);
+    }
+  });
+  check("开通道打 releases 列表", listHit === "https://api.github.com/repos/orangeTZ07/Haust-Class-Schedule-APP/releases");
+  same("开通道挑最高预览", onFound?.tag, "v0.4.1-rc.1");
 }
 
 console.log("");

@@ -346,14 +346,14 @@ const applyReminders = async () => {
 
     <div class="section">
       <div class="section-title">时间细节</div>
-      <div class="config-item">
+      <div class="config-item" data-coach="period-timing">
         <span class="label">每节时长</span>
         <div class="input-group">
           <van-stepper v-model="periodConfig.periodDuration" :min="30" :max="120" :step="5" integer theme="round" button-size="22" />
           <span class="unit">min</span>
         </div>
       </div>
-      <div class="config-item">
+      <div class="config-item" data-coach="period-timing">
         <span class="label">小课间</span>
         <div class="input-group">
           <van-stepper v-model="periodConfig.breakDuration" :min="0" :max="30" :step="5" integer theme="round" button-size="22" />
