@@ -2,7 +2,7 @@
 import { showToast } from "vant";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTheme } from "@/composables/useTheme";
-import { X, MessageSquare, Gamepad2, JapaneseYen, Github, Copy } from '@lucide/vue';
+import { X, MessageSquare, Gamepad2, JapaneseYen, FolderGit2, Copy } from '@lucide/vue';
 
 const GITHUB_REPO_URL = "https://github.com/orangeTZ07/Haust-Class-Schedule-APP";
 const GITHUB_REPO_SLUG = "orangeTZ07/Haust-Class-Schedule-APP";
@@ -96,7 +96,7 @@ const openGitHubRepo = () => {
         <!-- GitHub 仓库 -->
         <div class="contact-item" @click="openGitHubRepo">
           <div class="item-icon-box">
-            <Github :size="20" class="item-icon" />
+            <FolderGit2 :size="20" class="item-icon" />
           </div>
           <div class="item-info">
             <div class="item-label">GitHub 仓库</div>
@@ -169,9 +169,8 @@ const openGitHubRepo = () => {
 .item-value {
   font-size: 12px;
   opacity: 0.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .mini-copy-btn {
