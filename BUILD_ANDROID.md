@@ -48,4 +48,4 @@ JAVA_HOME=/opt/android-studio/jbr PATH=/opt/android-studio/jbr/bin:$PATH npx tau
 - **TypeScript 错误**: 构建前会自动运行 `npm run build` (vite build)，如果代码中有 TS 错误会导致构建失败。
 - **证书签名**: 默认生成的 APK 是未签名的 (`unsigned`)，如需发布到应用市场，需进行签名配置。
 - **Release 安装后闪退**: 先确认 `beforeBuildCommand` 已执行 `scripts/patch-android-release-build.mjs`。若 `src-tauri/gen/android/app/build.gradle.kts` 中 release 的 `isMinifyEnabled` 又变回 `true`，重新运行构建命令让脚本修正。
-- **versionCode 和预发布**: Tauri 默认只按 `major.minor.patch` 生成 Android `versionCode`，预发布后缀不算进去。所以 `0.4.2-alpha.1` 和 `0.4.2-beta.1` 会是同一个 `versionCode`（当前是 4002）。发下一个预览/正式版前，在 `src-tauri/tauri.conf.json` 的 `bundle.android.versionCode` 写成比上一包更大的整数，否则部分机型的系统安装器可能拒绝覆盖。已发出去的包没法改。
+- **versionCode 和预发布**: Tauri 默认只按 `major.minor.patch` 生成 Android `versionCode`，预发布后缀不算进去。所以 `0.4.2-alpha.1` 和 `0.4.2-beta.1` 会是同一个 `versionCode`（4002）。正式版 `0.4.2` 在 `src-tauri/tauri.conf.json` 的 `bundle.android.versionCode` 写成 4003，才能覆盖安装预览包。发下一个预览/正式版前，把这个整数再加大，否则部分机型的系统安装器可能拒绝覆盖。已发出去的包没法改。
