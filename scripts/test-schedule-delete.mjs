@@ -38,7 +38,10 @@ console.log("=== 删除周次 ===");
     "自定义只要单周",
     JSON.stringify(del.weeksForDeleteScope({ weekScope: "custom", startWeek: 1, endWeek: 5, weekType: "odd" }, 1)) === "[1,3,5]"
   );
-  check("二次确认文案点明整学期没了", del.DELETE_SEMESTER_CONFIRM.message.includes("本学期这门都会没"));
+  check(
+    "二次确认文案点明不可仅靠返回键恢复",
+    del.DELETE_SEMESTER_CONFIRM.message.includes("不可仅靠返回键恢复")
+  );
 }
 
 console.log("=== 同一格 ===");
