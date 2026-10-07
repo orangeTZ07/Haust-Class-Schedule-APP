@@ -8,8 +8,7 @@ import { installApkInApp } from "@/services/apkUpdate";
 import {
   fetchUpdateCandidate,
   isAndroidUserAgent,
-  isDirectApkUrl,
-  pickInstallUrl,
+  resolveInstallAction,
   shouldAttemptAutoCheck,
   summarizeReleaseBody,
   type ReleaseInfo
@@ -39,6 +38,7 @@ const installing = ref(false);
 const downloadPercent = ref<number | null>(null);
 let lastAutoAttemptAt = 0;
 let updateGeneration = 0;
+let startUpdateBusy = false;
 
 // localStorage 在无痕窗口或被清理时可能抛错；检查更新不该因此坏掉。
 const readStorage = (key: string): string | null => {
@@ -168,55 +168,70 @@ const openInBrowser = async (url: string) => {
 };
 
 const startUpdate = async () => {
-  if (!release.value || installing.value) return;
+  if (!release.value || installing.value || startUpdateBusy) return;
   const android = isAndroidUserAgent(navigator.userAgent);
-  const url = pickInstallUrl(release.value, android);
   actionError.value = "";
   const generation = (updateGeneration += 1);
+  startUpdateBusy = true;
 
-  if (android && isDirectApkUrl(url)) {
-    installing.value = true;
-    downloadPercent.value = 0;
-    try {
-      const outcome = await installApkInApp(
-        url,
-        {
-          download: (apkUrl, path, onProgress) =>
-            download(
-              apkUrl,
-              path,
-              onProgress,
-              new Map([["Accept", "application/octet-stream"]])
-            ),
-          canInstall,
-          requestInstallPermission,
-          install: installApk,
-          appCacheDir,
-          join
-        },
-        (percent) => {
-          if (generation === updateGeneration) downloadPercent.value = percent;
-        },
-        () => generation !== updateGeneration
-      );
-      if (generation !== updateGeneration) return;
-      if (outcome.status === "launched") return;
-      if (outcome.status === "permission-denied") {
-        actionError.value = "需要允许安装未知应用才能在应用内更新，已改为用浏览器下载";
-      } else if (outcome.message === "已取消") {
-        return;
-      } else {
-        actionError.value = `应用内安装失败：${outcome.message}，已改为用浏览器下载`;
-      }
-    } finally {
-      if (generation === updateGeneration) {
-        installing.value = false;
-        downloadPercent.value = null;
+  try {
+    // 弹窗里可能是发版刚建、APK 还没传上的那份；按 tag 再拉一次，好接到刚传上的安装包。
+    const decision = await resolveInstallAction(release.value, android);
+    if (generation !== updateGeneration) return;
+    release.value = decision.release;
+
+    if (decision.status === "wait") {
+      actionError.value = decision.message;
+      return;
+    }
+
+    const url = decision.url;
+    if (decision.status === "download") {
+      installing.value = true;
+      downloadPercent.value = 0;
+      try {
+        const outcome = await installApkInApp(
+          url,
+          {
+            download: (apkUrl, path, onProgress) =>
+              download(
+                apkUrl,
+                path,
+                onProgress,
+                new Map([["Accept", "application/octet-stream"]])
+              ),
+            canInstall,
+            requestInstallPermission,
+            install: installApk,
+            appCacheDir,
+            join
+          },
+          (percent) => {
+            if (generation === updateGeneration) downloadPercent.value = percent;
+          },
+          () => generation !== updateGeneration
+        );
+        if (generation !== updateGeneration) return;
+        if (outcome.status === "launched") return;
+        if (outcome.status === "permission-denied") {
+          actionError.value = "需要允许安装未知应用才能在应用内更新，已改为用浏览器下载";
+        } else if (outcome.message === "已取消") {
+          return;
+        } else {
+          actionError.value = `应用内安装失败：${outcome.message}，已改为用浏览器下载`;
+        }
+      } finally {
+        if (generation === updateGeneration) {
+          installing.value = false;
+          downloadPercent.value = null;
+        }
       }
     }
-  }
 
-  await openInBrowser(url);
+    await openInBrowser(url);
+  } finally {
+    startUpdateBusy = false;
+  }
 };
 
 const openFullNotes = async () => {

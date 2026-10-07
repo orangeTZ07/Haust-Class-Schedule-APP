@@ -7,7 +7,12 @@ import { describeError } from "../utils/describeError";
 export const UPDATE_REPO = "orangeTZ07/Haust-Class-Schedule-APP";
 export const LATEST_RELEASE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
 export const RELEASES_LIST_API = `https://api.github.com/repos/${UPDATE_REPO}/releases`;
+export const releaseByTagApi = (tag: string): string =>
+  `https://api.github.com/repos/${UPDATE_REPO}/releases/tags/${encodeURIComponent(tag)}`;
 export const FETCH_TIMEOUT_MS = 8000;
+
+/// Android 点「立即更新」时，刷新后仍没有 .apk 就提示这个，不要打开空的 Release 页。
+export const APK_PACKING_MESSAGE = "安装包还在打包，请稍后再试";
 
 /// 弹窗里最多列这么多条更新说明，多的折成「…等 N 项」。
 export const NOTES_LIMIT = 6;
@@ -378,6 +383,12 @@ const githubJson = async (url: string, options: FetchReleaseOptions = {}): Promi
 export const fetchLatestRelease = async (options: FetchReleaseOptions = {}): Promise<ReleaseInfo> =>
   parseRelease(await githubJson(LATEST_RELEASE_API, options));
 
+/// 按 tag 再拉一次。发版工作流会先建 Release，过几分钟才把 APK 传上；弹窗里那份可能还是空的。
+export const fetchReleaseByTag = async (
+  tag: string,
+  options: FetchReleaseOptions = {}
+): Promise<ReleaseInfo> => parseRelease(await githubJson(releaseByTagApi(tag), options));
+
 /// 含 prerelease、不含 draft。预览通道开了才走这里。
 export const fetchReleaseList = async (options: FetchReleaseOptions = {}): Promise<ReleaseInfo[]> => {
   const json = await githubJson(RELEASES_LIST_API, options);
@@ -421,9 +432,9 @@ const connectionFailureMessage = (e: unknown, timeoutMs: number): string =>
 
 const httpFailureMessage = (response: Response, url = LATEST_RELEASE_API): string => {
   if (response.status === 404) {
-    return url.includes("/releases/latest")
-      ? "GitHub 上还没有发布过正式版本"
-      : "GitHub 上还没有发布过版本";
+    if (url.includes("/releases/latest")) return "GitHub 上还没有发布过正式版本";
+    if (url.includes("/releases/tags/")) return "GitHub 上找不到这个版本";
+    return "GitHub 上还没有发布过版本";
   }
   // 没登录的请求每小时有次数上限，超了会回 403 或 429。
   if (response.status === 403 || response.status === 429) {
@@ -447,6 +458,7 @@ const pickApk = (assets: ReleaseAsset[]): ReleaseAsset | undefined => {
 };
 
 /// Android 且 Release 里有 .apk：直接下载链接。其余情况（iOS、桌面，或 Release 里没传 APK）：Release 页面。
+/// 「立即更新」在 Android 上不要拿没 APK 时的页面链接去打开浏览器，见 resolveInstallAction。
 export const pickInstallUrl = (release: ReleaseInfo, android: boolean): string => {
   if (android) {
     const apk = pickApk(release.assets);
@@ -457,3 +469,32 @@ export const pickInstallUrl = (release: ReleaseInfo, android: boolean): string =
 
 /// 只有真正的 APK 下载地址才走应用内安装；Release 页面只能打开浏览器。
 export const isDirectApkUrl = (url: string): boolean => /\.apk(?:[?#]|$)/i.test(url);
+
+export type InstallAction =
+  | { status: "download"; url: string; release: ReleaseInfo }
+  | { status: "open-page"; url: string; release: ReleaseInfo }
+  | { status: "wait"; message: string; release: ReleaseInfo };
+
+/// 点「立即更新」时用：先按 tag 再拉一次，好接到刚传上的 APK。
+/// Android 刷新后仍没有 .apk：返回 wait，不要打开空的 Release 页。
+export const resolveInstallAction = async (
+  cached: ReleaseInfo,
+  android: boolean,
+  options: FetchReleaseOptions = {}
+): Promise<InstallAction> => {
+  let release = cached;
+  try {
+    release = await fetchReleaseByTag(cached.tag, options);
+  } catch (e) {
+    if (android && !pickApk(cached.assets)) {
+      return { status: "wait", message: describeError(e), release: cached };
+    }
+  }
+
+  if (android) {
+    const apk = pickApk(release.assets);
+    if (apk) return { status: "download", url: apk.url, release };
+    return { status: "wait", message: APK_PACKING_MESSAGE, release };
+  }
+  return { status: "open-page", url: release.htmlUrl, release };
+};

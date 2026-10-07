@@ -411,5 +411,97 @@ console.log("=== 应用内安装 APK：成功、没权限、下载失败 ===");
 }
 
 console.log("");
+console.log("=== 点立即更新：发版后 APK 晚到，按 tag 再拉一次 ===");
+{
+  const tag = "v0.4.2-beta.1";
+  const htmlUrl = `${REPO}/releases/tag/${tag}`;
+  const apkUrl = `${REPO}/releases/download/${tag}/course-mngr-${tag}-arm64.apk`;
+  const emptyRaw = { tag_name: tag, html_url: htmlUrl, body: "", assets: [] };
+  const iconOnlyRaw = {
+    ...emptyRaw,
+    assets: [{ name: "app-icon.png", browser_download_url: `${REPO}/releases/download/${tag}/app-icon.png` }]
+  };
+  const withApkRaw = {
+    ...emptyRaw,
+    assets: [
+      { name: "app-icon.png", browser_download_url: `${REPO}/releases/download/${tag}/app-icon.png` },
+      { name: `course-mngr-${tag}-arm64.apk`, browser_download_url: apkUrl }
+    ]
+  };
+  const cachedEmpty = svc.parseRelease(emptyRaw);
+  const cachedWithApk = svc.parseRelease(withApkRaw);
+  const tagApi = `https://api.github.com/repos/orangeTZ07/Haust-Class-Schedule-APP/releases/tags/${tag}`;
+
+  same("按 tag 拼接口", svc.releaseByTagApi(tag), tagApi);
+  same("打包中的提示文案", svc.APK_PACKING_MESSAGE, "安装包还在打包，请稍后再试");
+
+  let emptyHit;
+  const stillEmpty = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async (url) => {
+      emptyHit = url;
+      return jsonResponse(200, emptyRaw);
+    }
+  });
+  check("刷新打的是这个 tag，不是 latest / 列表", emptyHit === tagApi, emptyHit);
+  same("Android 刷新后仍无 APK -> wait，不给页面链接", stillEmpty.status, "wait");
+  same("空资源时提示还在打包", stillEmpty.message, svc.APK_PACKING_MESSAGE);
+  check("wait 没有 url 可打开浏览器", stillEmpty.url === undefined, stillEmpty);
+  check("snapshot 助手仍会回退到 Release 页（立即更新不能用这个去打开）", svc.pickInstallUrl(cachedEmpty, true) === htmlUrl);
+
+  let refreshedHit;
+  const nowReady = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async (url) => {
+      refreshedHit = url;
+      return jsonResponse(200, withApkRaw);
+    }
+  });
+  check("缓存是空的，也按 tag 刷新", refreshedHit === tagApi);
+  same("刷新后出现 APK -> 用直接下载链接", [nowReady.status, nowReady.url], ["download", apkUrl]);
+  check("这条链接是直接 APK，失败回浏览器时不会落到 Release 页", svc.isDirectApkUrl(nowReady.url) === true);
+  same("刷新结果写回 release，弹窗不必再查一次", nowReady.release.assets.map((a) => a.name).filter((n) => /\.apk$/i.test(n)), [
+    `course-mngr-${tag}-arm64.apk`
+  ]);
+
+  const iconOnly = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async () => jsonResponse(200, iconOnlyRaw)
+  });
+  same("只有图标没有 APK 也算还在打包", [iconOnly.status, iconOnly.message], ["wait", svc.APK_PACKING_MESSAGE]);
+
+  const desktop = await svc.resolveInstallAction(cachedEmpty, false, {
+    fetchImpl: async () => jsonResponse(200, emptyRaw)
+  });
+  same("非 Android 仍打开 Release 页（说明 / 桌面）", [desktop.status, desktop.url], ["open-page", htmlUrl]);
+
+  const byTag = await svc.fetchReleaseByTag(tag, {
+    fetchImpl: async (url) => {
+      check("fetchReleaseByTag 走 tags 接口", url === tagApi, url);
+      return jsonResponse(200, withApkRaw);
+    }
+  });
+  same("按 tag 能拿到 APK", svc.pickInstallUrl(byTag, true), apkUrl);
+
+  const tag404 = await throwsMessage(() =>
+    svc.fetchReleaseByTag(tag, { fetchImpl: async () => jsonResponse(404, { message: "Not Found" }) })
+  );
+  check("按 tag 404 -> 找不到这个版本", tag404 === "GitHub 上找不到这个版本", tag404);
+
+  const refreshFailed = await svc.resolveInstallAction(cachedEmpty, true, {
+    fetchImpl: async () => jsonResponse(500, {})
+  });
+  check(
+    "刷新失败且没有 APK -> wait，带上 GitHub 错误，不打开页面",
+    refreshFailed.status === "wait" && refreshFailed.message.includes("HTTP 500") && refreshFailed.url === undefined,
+    refreshFailed
+  );
+
+  const staleButHasApk = await svc.resolveInstallAction(cachedWithApk, true, {
+    fetchImpl: async () => {
+      throw new TypeError("Failed to fetch");
+    }
+  });
+  same("刷新失败但缓存里已有 APK -> 仍用 APK 下载", [staleButHasApk.status, staleButHasApk.url], ["download", apkUrl]);
+}
+
+console.log("");
 console.log(failures === 0 ? "  ALL CHECKS PASSED" : "  " + failures + " CHECK(S) FAILED");
 process.exit(failures ? 1 : 0);
