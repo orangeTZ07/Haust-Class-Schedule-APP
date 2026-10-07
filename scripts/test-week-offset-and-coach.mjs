@@ -195,6 +195,16 @@ console.log("=== 引导步骤 ===");
       !shineCss.includes(".course-block") &&
       shineCss.includes("prefers-reduced-motion")
   );
+  check(
+    "扫光按卡片圆角裁切，不用铺满的矩形层",
+    shineCss.includes("overflow: hidden") &&
+      shineCss.includes("clip-path: inset(0") &&
+      shineCss.includes("border-radius: inherit") &&
+      shineCss.includes("mask-image") &&
+      shineCss.includes("transform: translateX(-120%)") &&
+      !shineCss.includes("inset: 0") &&
+      !shineCss.includes("background-position")
+  );
   coach.resetEmptyCellDeferral();
   coach.resetCourseBlockDeferral();
 

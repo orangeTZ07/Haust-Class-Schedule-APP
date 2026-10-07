@@ -202,7 +202,10 @@ body {
 }
 
 /* Metal presets only (白银 / 黑金): one shared sheen template on header chrome, preset strips,
-   and metal accent borders. Never coach bubbles, highlight rings, or course cells. */
+   and metal accent borders. Never coach bubbles, highlight rings, or course cells.
+   The highlight is a moving band clipped to the surface, not a full-size overlay: inset:0 plus
+   a sized background painted a visible rectangle behind the sweep, and backdrop-filter on the
+   bars defeats overflow clipping unless clip-path is set too. */
 #app.metal-shine-gold {
   --metal-sheen: 0.35;
   --metal-sheen-duration: 3s;
@@ -221,6 +224,26 @@ body {
   isolation: isolate;
   position: relative;
   overflow: hidden;
+  border-radius: inherit;
+}
+
+#app.metal-shine-silver .week-grid > .header,
+#app.metal-shine-gold .week-grid > .header,
+#app.metal-shine-silver .top-bar,
+#app.metal-shine-gold .top-bar {
+  clip-path: inset(0);
+}
+
+/* 8px matches .preset-preview { border-radius: 8px }; round the strip's top so the sweep
+   follows the chip, not a rectangle sitting on the card. */
+.p-header.is-metal-strip {
+  border-radius: 8px 8px 0 0;
+  clip-path: inset(0 round 8px 8px 0 0);
+}
+
+.preset-preview:has(> .p-header.is-metal-strip) {
+  overflow: hidden;
+  clip-path: inset(0 round 8px);
 }
 
 .metal-sheen-surface::after,
@@ -231,7 +254,10 @@ body {
 .p-header.is-metal-strip::after {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 28%;
   pointer-events: none;
   border-radius: inherit;
   background-image: linear-gradient(
@@ -240,9 +266,10 @@ body {
     rgb(255 255 255 / var(--metal-sheen, 0.28)) 50%,
     transparent 100%
   );
-  background-size: 18% 100%;
-  background-repeat: no-repeat;
-  background-position: -30% 0;
+  /* Fade the band's own box so a rectangular layer never shows behind the highlight. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  transform: translateX(-120%);
   animation: metal-sweep var(--metal-sheen-duration, 3s) ease-in-out infinite;
   animation-delay: var(--metal-sheen-delay, 0s);
   z-index: 1;
@@ -290,11 +317,12 @@ body {
 }
 
 @keyframes metal-sweep {
-  0%, 14% { background-position: -30% 0; }
-  86%, 100% { background-position: 130% 0; }
+  0%, 14% { transform: translateX(-120%); }
+  86%, 100% { transform: translateX(460%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .metal-sheen-surface::after,
   #app.metal-shine-silver .week-grid > .header::after,
   #app.metal-shine-gold .week-grid > .header::after,
   #app.metal-shine-silver .top-bar::after,
@@ -302,5 +330,8 @@ body {
   .p-header.is-metal-strip::after {
     animation: none;
     background: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+    content: none;
   }
 }
