@@ -316,7 +316,7 @@ console.log("=== 接线（读源码）===");
   check("大课间 / 小课间和逐节列表已删除", !settings.includes("breakDuration") && !settings.includes("longBreakDuration") && !settings.includes("periodDuration") && !settings.includes("小课间") && !settings.includes("大课间") && !settings.includes("openPeriodSheet") && !settings.includes("PeriodTimeSheet"));
   check("时间细节只留每节时长和三个开始时间", settings.includes("每节时长") && settings.includes("上午开始") && settings.includes("下午开始") && settings.includes("晚课开始"));
   check("恢复默认走新默认，不再写死旧值", settings.includes("resetPeriodConfig()") && !settings.includes('"14:00"'));
-  check("设置时间细节不再写长按说明", !settings.includes("单独改某一节") && !settings.includes("长按课表左侧"));
+  check("设置里有长按用法，并写明超过 24:00 不会生效", settings.includes("单独改某一节，长按课表左侧的时间。同一时段里后面的节次会跟着平移。超过 24:00 的调整不会生效。"));
   const sheet = readFileSync(join(here, "..", "src/components/timetable/PeriodTimeSheet.vue"), "utf8");
   check("编辑面板没有「后面会怎样」和规则说明", !sheet.includes("后面会怎样") && !sheet.includes("改开始：这一节整体平移") && !sheet.includes("effects-title") && !sheet.includes("class=\"rule\""));
   check("编辑面板仍保留越界提示", sheet.includes("notice") && sheet.includes("clampMessage"));
