@@ -31,6 +31,7 @@ import {
   sectionOfPeriod,
   type PeriodSection
 } from "@/utils/periodSchedule";
+import { parseIsoDate, weekDayDate } from "@/utils/semesterWeek";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -90,15 +91,6 @@ try {
 } catch {
   // Storage unavailable; there is nothing stored to clean up either.
 }
-
-/// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
-/// because the bare date string is read as UTC midnight and would land a day early in every
-/// timezone behind UTC -- which would show the wrong date to exactly the users who set it.
-const parseIsoDate = (iso: string): Date | null => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-};
 
 const getScheduleScope = (schedule: CourseSchedule) => schedule.scope ?? "semester";
 
@@ -333,15 +325,13 @@ export function useCourses() {
   /// "MM-DD" for each of the seven columns of the week on screen, Monday first, or nulls when
   /// the semester start is unusable. Computed from the week number rather than stored, so the
   /// dates follow the week selector instead of having to be kept in sync with it.
+  ///
+  /// 日期本身走 semesterWeek.weekDayDate：和「这节课上过没有」的判定（classOver.ts，经 WeekGrid）
+  /// 是同一份换算，否则会出现表头写着上周、课却没变灰这种自相矛盾。
   const weekDateLabels = computed<(string | null)[]>(() => {
-    const start = parseIsoDate(semesterStartDate.value);
     return Array.from({ length: 7 }, (_, index) => {
-      if (!start) return null;
-      const date = new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + (currentWeek.value - 1) * 7 + index
-      );
+      const date = weekDayDate(semesterStartDate.value, currentWeek.value, index + 1);
+      if (!date) return null;
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${month}-${day}`;
