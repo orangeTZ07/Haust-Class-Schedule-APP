@@ -20,14 +20,29 @@ tauri-plugin-sql = { version = "=2.4.0", features = ["sqlite"] }
 tauri-plugin-notification = "=2.3.3"
 tauri-plugin-dialog = "=2.7.1"
 tauri-plugin-opener = "=2.5.5"
-# unsafe-headers：允许前端设置 User-Agent 这类"禁止的请求头"。
-#
-# 为什么非开不可：学校那台服务器对浏览器放行（200），对 Rust 客户端返回 **403 且正文为空** ——
-# 空正文的 403 是网关/防火墙按指纹拒绝的典型特征，而不是应用自己发的。而按 fetch 规范，
-# User-Agent 属于禁止的请求头，插件会**静默丢弃**，所以在代码里写是没用的，必须打开这个特性。
-#
 # 与 package.json 里 @tauri-apps/plugin-http ~2.5.9 同 major.minor；升级时两边一起改。
+#
+# 注意：这一条**不能**放在这个通用的 [dependencies] 里。cargo 的特性是**并集**，不是替换 ——
+# 同一个 crate 在这里和 target 段里各写一次，两边的特性会被合并，关掉的那个照样生效。
+# 所以它改成下面两个平台段各自声明一次（Android/iOS 保留 cookies，桌面关掉）。
+#
+# tauri-plugin-http = { version = "=2.5.9", features = ["unsafe-headers"] }   ← 不要放这里
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-http = { version = "=2.5.9", features = ["unsafe-headers"] }
+
+# 桌面端：关掉 cookies。
+#
+# 原因（读的是插件源码）：tauri-plugin-http 2.5.9 的 setup() 里唯一的失败点就是
+#     let cache_dir = app.path().app_cache_dir()?;
+#     std::fs::create_dir_all(&cache_dir)?;      // ← Windows 桌面上报 os error 5（拒绝访问）
+# 它失败会让整个插件初始化失败，app 直接 panic：
+#     PluginInitialization("http", "拒绝访问。 (os error 5)")
+# 关掉 cookies 就把那段代码整个编译掉，setup 里不再有任何会失败的操作。
+#
+# 代价：桌面端没有 cookie 罐。桌面端只用于在电脑上看 UI，且校外连不上教务系统，所以无所谓。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-http = { version = "=2.5.9", default-features = false, features = ["rustls-tls", "http2", "charset", "macos-system-configuration", "unsafe-headers"] }
 tauri-plugin-reminder = { path = "plugins/reminder" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }
 serde = { version = "1", features = ["derive"] }

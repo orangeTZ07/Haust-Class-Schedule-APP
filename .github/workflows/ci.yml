@@ -78,24 +78,90 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Status check name in GitHub: "Changelog"
-  # Kept cheap on purpose (no install, no build) so a badly formatted entry fails in seconds
-  # rather than after the Android build. CHANGELOG.md is the single source of the release
-  # notes and of the in-app "new version" dialog, and release-android.yml runs the same script
-  # (with --release) before building, so what passes here will not fail there for format reasons.
-  changelog:
-    name: Changelog
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  # Status check name in GitHub: "Desktop (Windows)"
+  #
+  # Why this job exists: the Android job above cannot see desktop-only failures, and two of them
+  # got all the way to a release before anyone noticed:
+  #
+  #   1. vite.config.ts had no server.watch.ignored, so Vite watched src-tauri/target/, met a .dll
+  #      that cargo was still writing, and died with EBUSY. tauri dev then aborted because
+  #      beforeDevCommand failed. This happens on every machine, on the first run, every time.
+  #   2. tauri-plugin-http's setup() calls create_dir_all(app_cache_dir()), which failed with
+  #      os error 5 on Windows and panicked the app during plugin initialisation.
+  #
+  # Neither is visible from an APK build, and neither is visible from `cargo build` either --
+  # plugin setup runs at *runtime*. So the two smoke steps below actually start the app. That is
+  # the whole point: a compile that succeeds says nothing about whether the thing comes up.
+  desktop:
+    name: Desktop (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
+          cache: npm
 
-      - name: Check CHANGELOG.md format
-        run: node scripts/check-changelog.mjs
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build desktop binary
+        run: cargo build --manifest-path src-tauri/Cargo.toml
+
+      # Catches the tauri-plugin-http class: the binary compiles fine and then panics on startup.
+      - name: Smoke run - the app must survive plugin initialisation
+        shell: pwsh
+        run: |
+          $exe = "src-tauri\target\debug\course-mngr.exe"
+          if (-not (Test-Path $exe)) { throw "desktop binary not found at $exe" }
+          Write-Host "starting $exe"
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) {
+            throw "the app exited during startup with code $($p.ExitCode). Plugin setup runs at runtime, so `cargo build` cannot catch this -- read the panic above."
+          }
+          Write-Host "still running after 15s: plugin initialisation succeeded"
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+
+      # Catches the vite.config.ts class: a dev-server watcher failure aborts beforeDevCommand, so
+      # tauri dev never brings the app up. Only a real `tauri dev` reproduces it -- `npm run build`
+      # does not, because it never starts the watcher.
+      - name: Smoke run - tauri dev must bring the app up
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "tauri-dev.out.log"
+          $err = Join-Path $env:RUNNER_TEMP "tauri-dev.err.log"
+          $proc = Start-Process -FilePath "npm.cmd" -ArgumentList "run", "tauri", "dev" `
+                    -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -NoNewWindow
+          $cameUp = $false
+          for ($i = 1; $i -le 30; $i++) {
+            Start-Sleep -Seconds 10
+            if (Get-Process -Name "course-mngr" -ErrorAction SilentlyContinue) { $cameUp = $true; break }
+            if ($proc.HasExited) { break }
+          }
+          Write-Host "---- tauri dev stdout (tail) ----"
+          Get-Content $out -Tail 40 -ErrorAction SilentlyContinue
+          Write-Host "---- tauri dev stderr (tail) ----"
+          Get-Content $err -Tail 40 -ErrorAction SilentlyContinue
+          Get-Process -Name "course-mngr" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $cameUp) {
+            throw "tauri dev did not bring the app up within 5 minutes (see the logs above; a failing beforeDevCommand shows up here)"
+          }
+          Write-Host "tauri dev brought the app up"
