@@ -220,6 +220,13 @@ const periodText = computed(() => {
   }
   return `${props.schedule.startPeriod}-${props.schedule.endPeriod}节`;
 });
+
+/// 这一格显示的地点：**课段自己的优先**。
+///
+/// 同一门课换教室是常态（实测：数据库原理 11 条活动散在 10 个教室），教室只挂在课程上时，
+/// 所有课段只能共用一个 —— 那正是"周五显示成周三的教室"的来源。课段没有自己的地点
+/// （老数据、手填课、覆盖层）时才回落到课程的地点。
+const locationText = computed(() => props.schedule.location || props.course.location || "");
 </script>
 
 <template>
@@ -236,9 +243,9 @@ const periodText = computed(() => {
   >
     <div class="course-accent" :style="{ backgroundColor: course.color }"></div>
     <div class="course-name">{{ course.name }}</div>
-    <div class="course-info" v-if="course.location">
+    <div class="course-info" v-if="locationText">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
-      <span class="loc-text">{{ course.location }}</span>
+      <span class="loc-text">{{ locationText }}</span>
     </div>
     <div v-if="(conflictCount || 0) > 1" class="conflict-count-badge">
       {{ conflictCount }}

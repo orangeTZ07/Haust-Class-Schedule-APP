@@ -228,7 +228,8 @@ function createEngine() {
           `${minutesBefore} 分钟后`,
           `${clock(startMinutes)} 开始`,
           `第 ${schedule.startPeriod}-${schedule.endPeriod} 节`,
-          course?.location || ""
+          // 这一次课的教室优先：提醒说的是"这一节"，而同一门课换教室是常态。
+          schedule.location || course?.location || ""
         ].filter(Boolean).join(" · ");
 
         planned.set(schedule.id, { id: schedule.id, triggerAt, title, body });

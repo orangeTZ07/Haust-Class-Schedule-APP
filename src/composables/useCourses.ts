@@ -482,7 +482,7 @@ export function useCourses() {
     dayOfWeek: number,
     startPeriod: number,
     endPeriod: number,
-    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion">> = {}
+    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion" | "location">> = {}
   ): Promise<CourseSchedule> => {
     const scheduleData = {
       courseId,
@@ -497,7 +497,9 @@ export function useCourses() {
       // Only when the caller actually has them. Defaulting these would stamp hand-entered
       // segments as if a parser wrote them.
       ...(options.source ? { source: options.source } : {}),
-      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {})
+      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {}),
+      // 课段自己的地点。只有教务那种"每一行都带教室"的来源会传；手填课时留空，显示时用课程的地点。
+      ...(options.location ? { location: options.location } : {})
     };
     
     const id = await courseService.addSchedule(scheduleData);
@@ -525,7 +527,10 @@ export function useCourses() {
         endWeek: currentWeek.value,
         weekType: "all",
         scope: "weekly",
-        isCancelled: false
+        isCancelled: false,
+        // 拖动只改时间，不改教室：原来那节课的教室要跟着走到新位置上。不然新位置的卡片会
+        // 回落到课程的地点，而"课程的地点"只是出现最多的那一个。
+        location: current.location
       });
     }
 
@@ -594,10 +599,21 @@ export function useCourses() {
       (course.teacher || "") !== (teacher || "") ||
       (course.location || "") !== (location || "");
     const spanChanged = current.endPeriod !== endPeriod;
+    const locationChanged = (course.location || "") !== (location || "");
     const weeks = weeksForDeleteScope(payload, currentWeek.value);
 
     if (weeks === "all") {
       if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
+      // "整学期"改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
+      // 卡片是"课段优先"的，不清就等于这次编辑没有生效（点保存、格子还是老地点）。
+      // 清掉之后回落到课程的地点，与用户的意图一致；范围与下面的节次调整同一组课段。
+      if (locationChanged) {
+        for (const scheduleId of idsForSemesterDelete(schedules.value, current)) {
+          const row = schedules.value.find(item => item.id === scheduleId);
+          if (!row || row.isCancelled || !row.location) continue;
+          await patchSchedule({ ...row, location: undefined });
+        }
+      }
       if (!spanChanged && !fieldsChanged) return false;
       if (spanChanged) {
         const ids = idsForSemesterDelete(schedules.value, current);
@@ -761,7 +777,10 @@ export function useCourses() {
       endWeek: options.endWeek,
       weekType: options.weekType,
       scope: options.scope,
-      isCancelled: options.isCancelled
+      isCancelled: options.isCancelled,
+      // CSV / AI 那条路每一行都是一门新课，所以课程上就有地点；这里再写一遍不影响显示，
+      // 但能让"整表写回"（撤销/重做）原样恢复，不必依赖课程那一列。
+      location: item.location || undefined
     });
   };
 
@@ -813,7 +832,9 @@ export function useCourses() {
         String(schedule.startPeriod),
         String(schedule.endPeriod),
         escapeCsvValue(course.name),
-        escapeCsvValue(course.location || "")
+        // 课段自己的地点优先。以前这里写的是 course.location —— 那是"这门课的地点"，
+        // 于是导出来的 CSV 看起来每门课只有一个教室，换教室的细节在这一步又丢了一次。
+        escapeCsvValue(schedule.location || course.location || "")
       ];
 
       if (!includeWeekColumns) {
@@ -997,7 +1018,9 @@ export function useCourses() {
           scope: schedule.scope,
           isCancelled: schedule.isCancelled,
           source: schedule.source,
-          parserVersion: schedule.parserVersion
+          parserVersion: schedule.parserVersion,
+          // 备份里带课段地点就原样恢复；旧备份没有这一项，显示时回落到课程的地点。
+          location: schedule.location
         });
         scheduleCount++;
       }
