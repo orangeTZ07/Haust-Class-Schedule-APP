@@ -36,12 +36,17 @@ const props = withDefaults(defineProps<{
   dividers?: number;
   /// Playing the delete animation: shrink away and ignore input until the row is gone.
   deleting?: boolean;
+  /// The class is already over (its end time is in the past). Distinct from `schedule.isCancelled`,
+  /// which means the class was called off: a cancelled class never happens, a past one did.
+  /// They get different styling so the two are not confused at a glance.
+  isPast?: boolean;
 }>(), {
   allowDrag: true,
   allowExpand: true,
   showConflictTag: true,
   dividers: 0,
-  deleting: false
+  deleting: false,
+  isPast: false
 });
 
 const emit = defineEmits<{
@@ -235,7 +240,7 @@ const locationText = computed(() => props.schedule.location || props.course.loca
     class="course-block" 
     :data-schedule-id="schedule.id"
     data-coach-course="true"
-    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting }"
+    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting, 'is-past': isPast }"
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
@@ -491,6 +496,43 @@ const locationText = computed(() => props.schedule.location || props.course.loca
 
 .is-expanded .loc-icon {
   font-size: 10px;
+}
+
+/* ── 已经上过的课 ────────────────────────────────────────────────────────────
+   去色 + 降透明度 + 课程名划掉。比参考图明显一些，因为要在手机的户外屏幕上还看得出来。
+   刻意与"停课"（schedule.isCancelled）区分：停课是这节课根本没发生，不做删除线；
+   上过是发生过了，划掉。两者一眼要能分开。 */
+.course-block.is-past {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.course-block.is-past .course-name,
+.course-block.is-past .course-info,
+.course-block.is-past .course-period {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.course-block.is-past .course-accent {
+  opacity: 0.3;
+}
+
+/* 鼠标悬停、或点开卡片时恢复成正常强度 —— 淡化是为了看清课表的"形状"，
+   不是为了藏起信息。已上过的课仍然要能读、能改。 */
+.course-block.is-past:hover,
+.course-block.is-past.is-expanded {
+  filter: none;
+  opacity: 1;
+}
+
+.course-block.is-past:hover .course-name,
+.course-block.is-past.is-expanded .course-name,
+.course-block.is-past:hover .course-info,
+.course-block.is-past.is-expanded .course-info,
+.course-block.is-past:hover .course-period,
+.course-block.is-past.is-expanded .course-period {
+  text-decoration: none;
 }
 
 .course-period {
