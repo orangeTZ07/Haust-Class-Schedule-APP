@@ -21,6 +21,7 @@ import {
   weeksForDeleteScope,
   type DeleteScopePayload
 } from "@/utils/scheduleDelete";
+import { baseHiddenByWeekly } from "@/utils/weekOverride";
 import {
   createDefaultPeriodConfig,
   formatPeriodRange,
@@ -108,12 +109,6 @@ const isScheduleActiveInWeek = (schedule: CourseSchedule, week: number) => {
   }
 
   return true;
-};
-
-const schedulesOverlap = (first: CourseSchedule, second: CourseSchedule) => {
-  return first.dayOfWeek === second.dayOfWeek &&
-    first.startPeriod <= second.endPeriod &&
-    second.startPeriod <= first.endPeriod;
 };
 
 // Persistence Logic
@@ -346,8 +341,9 @@ export function useCourses() {
     return schedules.value.filter(schedule => getScheduleScope(schedule) === "semester");
   });
 
-  /// The schedules that actually apply in a given week, with weekly overrides suppressing the
-  /// semester entries they replace. effectiveSchedules is this for the displayed week, but the
+  /// The schedules that actually apply in a given week. A weekly row hides the semester entry of
+  /// the same course when their times overlap; a different course that only shares the slot stays,
+  /// so the grid can show the conflict. effectiveSchedules is this for the displayed week, but the
   /// reminder scheduler needs arbitrary weeks: a seven-day window starting today does not line up
   /// with whichever week happens to be on screen.
   const getSchedulesForWeek = (week: number): CourseSchedule[] => {
@@ -356,9 +352,10 @@ export function useCourses() {
       return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, week);
     });
 
+    // 覆盖层只替换同一门课自己的学期安排。时间重叠但不是同一门课，是冲突，两节都留下。
     const suppressedBaseIds = new Set(
       baseSchedules
-        .filter(baseSchedule => weeklySchedules.some(weeklySchedule => schedulesOverlap(baseSchedule, weeklySchedule)))
+        .filter(baseSchedule => baseHiddenByWeekly(baseSchedule, weeklySchedules))
         .map(schedule => schedule.id)
     );
 

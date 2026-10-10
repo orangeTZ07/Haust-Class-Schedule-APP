@@ -108,14 +108,18 @@ const style = computed(() => {
   const baseHeight = props.floatingFrame?.height ?? (props.span || 1) * 50 - 4;
   const hasConflict = (props.conflictCount || 0) > 1;
   const conflictIndex = props.conflictIndex || 0;
-  const shouldOffsetConflict = hasConflict && props.conflictCount === 2;
+  // 两节叠在同一格时并排，各占一半，课名才不会被盖成一节。
+  // 被拖的那张保持原宽：left 一变，卡片就离开手指按下的位置。
+  const pairConflict = hasConflict && props.conflictCount === 2 && !props.isDragging && !props.floatingFrame;
   const courseColor = props.course.color || 'var(--theme-card-border-color)';
   const normalLeft = props.floatingFrame
     ? `${props.floatingFrame.left}px`
-    : shouldOffsetConflict ? `${2 + conflictIndex * 8}px` : '2px';
+    : pairConflict
+      ? (conflictIndex === 0 ? '1px' : 'calc(50% - 1px)')
+      : '2px';
   const normalWidth = props.floatingFrame
     ? `${props.floatingFrame.width}px`
-    : shouldOffsetConflict ? 'calc(100% - 12px)' : 'calc(100% - 4px)';
+    : pairConflict ? 'calc(50% - 1px)' : 'calc(100% - 4px)';
   const normalShadow = hasConflict
     ? '0 4px 14px rgba(238, 10, 36, 0.16)'
     : themeConfig.value.flatStyle ? 'none' : '0 2px 4px rgba(0, 0, 0, 0.02)';
@@ -240,7 +244,15 @@ const locationText = computed(() => props.schedule.location || props.course.loca
     class="course-block" 
     :data-schedule-id="schedule.id"
     data-coach-course="true"
-    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting, 'is-past': isPast }"
+    :class="{
+      'is-expanded': isExpanded,
+      'is-dragging': isDragging,
+      'is-conflicting': (conflictCount || 0) > 1,
+      'is-conflict-pair': (conflictCount || 0) === 2 && !isDragging && !floatingFrame,
+      'is-conflict-rear': (conflictCount || 0) === 2 && (conflictIndex || 0) === 0 && !isDragging && !floatingFrame,
+      'is-deleting': deleting,
+      'is-past': isPast
+    }"
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
@@ -332,8 +344,25 @@ const locationText = computed(() => props.schedule.location || props.course.loca
   border-radius: 999px;
   opacity: 0.72;}
 
-.course-block.is-conflicting {
+.course-block.is-conflicting:not(.is-conflict-pair) {
   padding-right: 20px;
+}
+
+/* 半格宽放不下一整行课名，改成逐字往下排，地点和节次让给课名。角标只留在前面那张。 */
+.course-block.is-conflict-pair {
+  padding: 4px 2px 4px 6px;
+}
+
+.course-block.is-conflict-pair .course-name {
+  -webkit-line-clamp: 8;
+  padding-right: 0;
+  margin-bottom: 0;
+}
+
+.course-block.is-conflict-pair .course-info,
+.course-block.is-conflict-pair .course-period,
+.course-block.is-conflict-pair.is-conflict-rear .conflict-count-badge {
+  display: none;
 }
 
 .course-block.is-conflicting .course-accent {
@@ -516,6 +545,16 @@ const locationText = computed(() => props.schedule.location || props.course.loca
 
 .course-block.is-past .course-accent {
   opacity: 0.3;
+}
+
+/* 变灰会把红色描边也滤成灰色，叠在一起时就看不出冲突。冲突优先：划线还留着，红框和半透明按原样。 */
+.course-block.is-past.is-conflicting {
+  filter: none;
+  opacity: 1;
+}
+
+.course-block.is-past.is-conflicting .course-accent {
+  opacity: 0.85;
 }
 
 /* 鼠标悬停、或点开卡片时恢复成正常强度 —— 淡化是为了看清课表的"形状"，

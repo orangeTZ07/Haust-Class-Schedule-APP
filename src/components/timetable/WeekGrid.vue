@@ -4,6 +4,7 @@ import { useCourses } from "@/composables/useCourses";
 import { useToday } from "@/composables/useToday";
 import { isClassOver } from "@/utils/classOver";
 import { weekDayDate } from "@/utils/semesterWeek";
+import { conflictPlacements, type DragSlot } from "@/utils/dragConflict";
 import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
@@ -280,7 +281,45 @@ const activeConflictGroup = computed(() => {
   return conflictGroups.value.find(group => group.id === displayedConflictGroupId.value) || null;
 });
 
+/// 拖动已经离开原位之后，冲突按落点算。浮开的轨道卡片有自己的布局，不跟这套预览走。
+const dragConflictSlot = computed((): DragSlot | null => {
+  const drag = dragState.value;
+  if (!drag?.hasMoved || drag.source === "floating") return null;
+
+  const target = dropTarget.value;
+  if (!target?.valid) return { id: drag.scheduleId, at: null };
+
+  return {
+    id: drag.scheduleId,
+    at: {
+      day: target.day,
+      start: target.period,
+      end: target.period + drag.span - 1
+    }
+  };
+});
+
+const previewConflict = computed(() => {
+  const slot = dragConflictSlot.value;
+  if (!slot) return null;
+
+  return conflictPlacements(
+    allBlocks.value.map(block => ({
+      id: block.schedule.id,
+      day: block.schedule.dayOfWeek,
+      start: block.startPeriod,
+      end: block.endPeriod
+    })),
+    slot
+  );
+});
+
 const getConflictMeta = (scheduleId: number) => {
+  const preview = previewConflict.value;
+  if (preview) {
+    return preview.get(scheduleId) ?? { count: 1, index: 0 };
+  }
+
   const group = conflictGroupByScheduleId.value.get(scheduleId);
   if (!group) {
     return { count: 1, index: 0 };
@@ -1041,6 +1080,9 @@ const dropPreviewFrame = computed<DropPreviewFrame | null>(() => {
   const currentDrag = dragState.value;
   const body = bodyRef.value;
   if (!target || !currentDrag?.hasMoved || !body) return null;
+
+  // 落点已经和别的课叠上时，红框和错开就是预览，不再盖一层落点虚框。
+  if ((previewConflict.value?.get(currentDrag.scheduleId)?.count ?? 1) > 1) return null;
 
   const cell = body.querySelector<HTMLElement>(`.cell[data-day="${target.day}"][data-period="${target.period}"]`);
   if (!cell) return null;
