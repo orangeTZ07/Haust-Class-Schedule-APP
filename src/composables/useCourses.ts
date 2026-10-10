@@ -21,6 +21,7 @@ import {
   weeksForDeleteScope,
   type DeleteScopePayload
 } from "@/utils/scheduleDelete";
+import { baseHiddenByWeekly } from "@/utils/weekOverride";
 import {
   createDefaultPeriodConfig,
   formatPeriodRange,
@@ -31,6 +32,7 @@ import {
   sectionOfPeriod,
   type PeriodSection
 } from "@/utils/periodSchedule";
+import { parseIsoDate, weekDayDate } from "@/utils/semesterWeek";
 import * as courseService from "@/services/courseService";
 
 const COLORS = [
@@ -91,15 +93,6 @@ try {
   // Storage unavailable; there is nothing stored to clean up either.
 }
 
-/// Parses "YYYY-MM-DD" as local midnight. Built from the parts rather than Date.parse
-/// because the bare date string is read as UTC midnight and would land a day early in every
-/// timezone behind UTC -- which would show the wrong date to exactly the users who set it.
-const parseIsoDate = (iso: string): Date | null => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-};
-
 const getScheduleScope = (schedule: CourseSchedule) => schedule.scope ?? "semester";
 
 const isScheduleActiveInWeek = (schedule: CourseSchedule, week: number) => {
@@ -116,12 +109,6 @@ const isScheduleActiveInWeek = (schedule: CourseSchedule, week: number) => {
   }
 
   return true;
-};
-
-const schedulesOverlap = (first: CourseSchedule, second: CourseSchedule) => {
-  return first.dayOfWeek === second.dayOfWeek &&
-    first.startPeriod <= second.endPeriod &&
-    second.startPeriod <= first.endPeriod;
 };
 
 // Persistence Logic
@@ -333,15 +320,13 @@ export function useCourses() {
   /// "MM-DD" for each of the seven columns of the week on screen, Monday first, or nulls when
   /// the semester start is unusable. Computed from the week number rather than stored, so the
   /// dates follow the week selector instead of having to be kept in sync with it.
+  ///
+  /// 日期本身走 semesterWeek.weekDayDate：和「这节课上过没有」的判定（classOver.ts，经 WeekGrid）
+  /// 是同一份换算，否则会出现表头写着上周、课却没变灰这种自相矛盾。
   const weekDateLabels = computed<(string | null)[]>(() => {
-    const start = parseIsoDate(semesterStartDate.value);
     return Array.from({ length: 7 }, (_, index) => {
-      if (!start) return null;
-      const date = new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + (currentWeek.value - 1) * 7 + index
-      );
+      const date = weekDayDate(semesterStartDate.value, currentWeek.value, index + 1);
+      if (!date) return null;
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${month}-${day}`;
@@ -356,8 +341,9 @@ export function useCourses() {
     return schedules.value.filter(schedule => getScheduleScope(schedule) === "semester");
   });
 
-  /// The schedules that actually apply in a given week, with weekly overrides suppressing the
-  /// semester entries they replace. effectiveSchedules is this for the displayed week, but the
+  /// The schedules that actually apply in a given week. A weekly row hides the semester entry of
+  /// the same course when their times overlap; a different course that only shares the slot stays,
+  /// so the grid can show the conflict. effectiveSchedules is this for the displayed week, but the
   /// reminder scheduler needs arbitrary weeks: a seven-day window starting today does not line up
   /// with whichever week happens to be on screen.
   const getSchedulesForWeek = (week: number): CourseSchedule[] => {
@@ -366,9 +352,10 @@ export function useCourses() {
       return getScheduleScope(schedule) === "weekly" && isScheduleActiveInWeek(schedule, week);
     });
 
+    // 覆盖层只替换同一门课自己的学期安排。时间重叠但不是同一门课，是冲突，两节都留下。
     const suppressedBaseIds = new Set(
       baseSchedules
-        .filter(baseSchedule => weeklySchedules.some(weeklySchedule => schedulesOverlap(baseSchedule, weeklySchedule)))
+        .filter(baseSchedule => baseHiddenByWeekly(baseSchedule, weeklySchedules))
         .map(schedule => schedule.id)
     );
 
@@ -482,7 +469,7 @@ export function useCourses() {
     dayOfWeek: number,
     startPeriod: number,
     endPeriod: number,
-    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion">> = {}
+    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion" | "location">> = {}
   ): Promise<CourseSchedule> => {
     const scheduleData = {
       courseId,
@@ -497,7 +484,9 @@ export function useCourses() {
       // Only when the caller actually has them. Defaulting these would stamp hand-entered
       // segments as if a parser wrote them.
       ...(options.source ? { source: options.source } : {}),
-      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {})
+      ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {}),
+      // 课段自己的地点。只有教务那种"每一行都带教室"的来源会传；手填课时留空，显示时用课程的地点。
+      ...(options.location ? { location: options.location } : {})
     };
     
     const id = await courseService.addSchedule(scheduleData);
@@ -525,7 +514,10 @@ export function useCourses() {
         endWeek: currentWeek.value,
         weekType: "all",
         scope: "weekly",
-        isCancelled: false
+        isCancelled: false,
+        // 拖动只改时间，不改教室：原来那节课的教室要跟着走到新位置上。不然新位置的卡片会
+        // 回落到课程的地点，而"课程的地点"只是出现最多的那一个。
+        location: current.location
       });
     }
 
@@ -594,10 +586,21 @@ export function useCourses() {
       (course.teacher || "") !== (teacher || "") ||
       (course.location || "") !== (location || "");
     const spanChanged = current.endPeriod !== endPeriod;
+    const locationChanged = (course.location || "") !== (location || "");
     const weeks = weeksForDeleteScope(payload, currentWeek.value);
 
     if (weeks === "all") {
       if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
+      // "整学期"改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
+      // 卡片是"课段优先"的，不清就等于这次编辑没有生效（点保存、格子还是老地点）。
+      // 清掉之后回落到课程的地点，与用户的意图一致；范围与下面的节次调整同一组课段。
+      if (locationChanged) {
+        for (const scheduleId of idsForSemesterDelete(schedules.value, current)) {
+          const row = schedules.value.find(item => item.id === scheduleId);
+          if (!row || row.isCancelled || !row.location) continue;
+          await patchSchedule({ ...row, location: undefined });
+        }
+      }
       if (!spanChanged && !fieldsChanged) return false;
       if (spanChanged) {
         const ids = idsForSemesterDelete(schedules.value, current);
@@ -761,7 +764,10 @@ export function useCourses() {
       endWeek: options.endWeek,
       weekType: options.weekType,
       scope: options.scope,
-      isCancelled: options.isCancelled
+      isCancelled: options.isCancelled,
+      // CSV / AI 那条路每一行都是一门新课，所以课程上就有地点；这里再写一遍不影响显示，
+      // 但能让"整表写回"（撤销/重做）原样恢复，不必依赖课程那一列。
+      location: item.location || undefined
     });
   };
 
@@ -813,7 +819,9 @@ export function useCourses() {
         String(schedule.startPeriod),
         String(schedule.endPeriod),
         escapeCsvValue(course.name),
-        escapeCsvValue(course.location || "")
+        // 课段自己的地点优先。以前这里写的是 course.location —— 那是"这门课的地点"，
+        // 于是导出来的 CSV 看起来每门课只有一个教室，换教室的细节在这一步又丢了一次。
+        escapeCsvValue(schedule.location || course.location || "")
       ];
 
       if (!includeWeekColumns) {
@@ -997,7 +1005,9 @@ export function useCourses() {
           scope: schedule.scope,
           isCancelled: schedule.isCancelled,
           source: schedule.source,
-          parserVersion: schedule.parserVersion
+          parserVersion: schedule.parserVersion,
+          // 备份里带课段地点就原样恢复；旧备份没有这一项，显示时回落到课程的地点。
+          location: schedule.location
         });
         scheduleCount++;
       }

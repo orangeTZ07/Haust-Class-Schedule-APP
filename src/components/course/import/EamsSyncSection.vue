@@ -150,11 +150,25 @@ const sync = async () => {
 
     // A warning is something the user has to act on or at least read, so the sheet stays open to
     // show it. Without one the toast says all there is to say and the sheet gets out of the way.
+    //
+    // 解析器的 notes 也走这条路：它算出来过「这门课在 10 个教室上过课」「教师取了最多的谁」，
+    // 但从没显示过 —— 于是"地点被投票选过"这件事用户完全无从得知（线上就是这么错的）。现在前
+    // 几条直接显示：地点已按每节课各自的教室保存，这里说的是课程列表上显示的是哪一个。
+    const NOTES_SHOWN = 3;
+    const notes = result.report.notes;
+    const noteLines = notes.length === 0
+      ? []
+      : [
+          ...notes.slice(0, NOTES_SHOWN),
+          notes.length > NOTES_SHOWN ? `…还有 ${notes.length - NOTES_SHOWN} 条同类提示。` : ""
+        ].filter(Boolean);
+
     const warnings = [
       result.report.maxPeriod > 10
         ? `注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
         : "",
-      skippedNotice(imported.skipped)
+      skippedNotice(imported.skipped),
+      ...noteLines
     ].filter(Boolean);
     if (warnings.length === 0) {
       // Cleared as well, or the next time the sheet opens it would greet the user with a stale

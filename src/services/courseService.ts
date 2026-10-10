@@ -98,6 +98,12 @@ async function initDb(db: Database) {
   if (!scheduleColumns.some(column => column.name === "parser_version")) {
     await db.execute("ALTER TABLE schedules ADD COLUMN parser_version INTEGER");
   }
+  // 课段自己的地点。加这一列之前，地点只能挂在课程上，于是教务导入时同一门课的多个教室被
+  // 「取出现次数最多的那个」压成一个 —— 数据库原理 11 条活动散在 10 个教室，最后全表都显示
+  // 同一个教室。老行留 null，显示时回落到 courses.location，所以升级后旧数据外观不变。
+  if (!scheduleColumns.some(column => column.name === "location")) {
+    await db.execute("ALTER TABLE schedules ADD COLUMN location TEXT");
+  }
 
   // One row per action group (the timetable after one user gesture), capped per course table.
   await db.execute(`
@@ -137,6 +143,7 @@ function normalizeSchedule(row: any): CourseSchedule {
     weekType: row.week_type ?? row.weekType,
     scope: (row.scope ?? "semester") as CourseSchedule["scope"],
     isCancelled: Boolean(row.is_cancelled ?? row.isCancelled ?? false),
+    location: typeof row.location === "string" && row.location ? row.location : undefined,
     source: typeof row.source === "string" && row.source ? row.source : undefined,
     parserVersion: typeof (row.parser_version ?? row.parserVersion) === "number"
       ? (row.parser_version ?? row.parserVersion)
@@ -349,8 +356,8 @@ export async function addSchedule(schedule: Omit<CourseSchedule, "id">): Promise
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     const result = await db.execute(
-      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled, schedule.source ?? null, schedule.parserVersion ?? null]
+      "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version, location) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+      [schedule.courseId, schedule.dayOfWeek, schedule.startPeriod, schedule.endPeriod, schedule.startWeek, schedule.endWeek, schedule.weekType, scope, isCancelled, schedule.source ?? null, schedule.parserVersion ?? null, schedule.location ?? null]
     );
     return result.lastInsertId ?? 0;
   } else {
@@ -368,7 +375,7 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
   const isCancelled = schedule.isCancelled ? 1 : 0;
   if (db) {
     await db.execute(
-      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9, source = $10, parser_version = $11 WHERE id = $12",
+      "UPDATE schedules SET course_id = $1, day_of_week = $2, start_period = $3, end_period = $4, start_week = $5, end_week = $6, week_type = $7, scope = $8, is_cancelled = $9, source = $10, parser_version = $11, location = $12 WHERE id = $13",
       [
         schedule.courseId,
         schedule.dayOfWeek,
@@ -381,6 +388,7 @@ export async function updateSchedule(schedule: CourseSchedule): Promise<void> {
         isCancelled,
         schedule.source ?? null,
         schedule.parserVersion ?? null,
+        schedule.location ?? null,
         schedule.id
       ]
     );
@@ -478,7 +486,7 @@ export async function replaceActiveTableContents(nextCourses: Course[], nextSche
       const scope = schedule.scope ?? "semester";
       const isCancelled = schedule.isCancelled ? 1 : 0;
       await db.execute(
-        "INSERT INTO schedules (id, course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        "INSERT INTO schedules (id, course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, location) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         [
           schedule.id,
           schedule.courseId,
@@ -489,7 +497,9 @@ export async function replaceActiveTableContents(nextCourses: Course[], nextSche
           schedule.endWeek,
           schedule.weekType,
           scope,
-          isCancelled
+          isCancelled,
+          // 撤销/重做走这条路把整表写回，漏掉这一列就等于「按一次撤销，所有课段的地点都没了」。
+          schedule.location ?? null
         ]
       );
     }

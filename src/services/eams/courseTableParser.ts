@@ -50,9 +50,11 @@ export interface BackupSchedule {
   endWeek: number;
   weekType: "all" | "odd" | "even";
   scope: "semester";
+  /// 这一条课段自己的教室（来自它那一行）。同一门课换教室时，各条课段各带各的。
+  location?: string;
   /// 教务导入才有。旧备份和手填课没有这两项，不能靠它们反推来源。
   source?: "eams";
-  /// 写出这份周次时的解析规则。2 = 下标即周次、跳过下标 0。
+  /// 写出这份周次时的解析规则。2 = 下标即周次、跳过下标 0；3 = 教室写到课段上。
   parserVersion?: number;
 }
 
@@ -91,9 +93,10 @@ export interface ParsedCoursePage {
 /// 应用里 addSchedule 的默认学期跨度，周次缺失时按整学期兜底。
 const DEFAULT_END_WEEK = 20;
 
-/// 周次位串的解释版本。存进每条课段，以后规则再变才能只改来自这一版的数据。
+/// 解析器的写入版本。存进每条课段，以后规则再变才能只改来自这一版的数据。
 /// 2：下标即周次，跳过下标 0。没有 1 —— 1 就是已经写进用户课表、无法区分来源的那次 i+1 错位。
-export const EAMS_PARSER_VERSION = 2;
+/// 3：每一行的教室写进它自己那条课段（2 只会把一门课的教室压成一个）。
+export const EAMS_PARSER_VERSION = 3;
 
 const WEEKDAY_INDEX_RE = /index\s*=\s*(\d+)\s*\*\s*unitCount/;
 const TEACHERS_RE = /var\s+teachers\s*=\s*(\[[\s\S]*?\])\s*;?/;
@@ -297,8 +300,14 @@ const asPeriod = (value: unknown): number | null => {
 /// **只按课名分组**，教室和教师都不进分组键，两个理由都来自真实数据：
 ///   1. 教室：数据库原理有 11 条活动、散在 10 个教室，按教室分组会让它变成 11 门同名课。
 ///   2. 教师：同一门课的不同活动本来就可能挂不同教师，那门课挂了 6 位，按教师会变成 6 门。
-/// 应用的数据模型里 location 和 teacher 都挂在 Course 上、日程上没有，所以两项各取出现次数
-/// 最多的那个，并在报告里说明分歧 —— 丢掉换教室的细节，也远好过把一门课变成十几门。
+///
+/// 分组仍然只按课名，但**地点不再被压成一个**：每一行的教室写进它自己那条课段
+/// （CourseSchedule.location），课程上留的是出现次数最多的那个，只用于课程列表显示、
+/// 以及给老数据 / 手填课的课段兜底。所以「数据库原理 周三 4-206、周五 公教1-505」两格
+/// 现在各显示各的 —— 这一条以前是丢掉的。
+///
+/// 教师仍然是「取出现次数最多的那个」（teacher 只在课程上，没有课段级教师），这一项的分歧
+/// 照旧写进报告：它仍然是丢信息，只是比把一门课拆成六门好。
 export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: ConvertReport } => {
   const problems: string[] = [];
   const notes: string[] = [];
@@ -307,7 +316,7 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
     throw new Error("输入必须是数组");
   }
 
-  interface Group { name: string; teachers: Map<string, number>; rooms: Map<string, number>; rows: Array<{ day: number; start: number; end: number; weeks: unknown }> }
+  interface Group { name: string; teachers: Map<string, number>; rooms: Map<string, number>; rows: Array<{ day: number; start: number; end: number; weeks: unknown; room: string }> }
   const groups = new Map<string, Group>();
   let skippedNoDay = 0;
   let skippedBadPeriod = 0;
@@ -347,7 +356,8 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
     const group = groups.get(name)!;
     if (teacher) group.teachers.set(teacher, (group.teachers.get(teacher) ?? 0) + 1);
     if (room) group.rooms.set(room, (group.rooms.get(room) ?? 0) + 1);
-    group.rows.push({ day, start, end, weeks: row.weeks });
+    // room 跟着这一行走：投票用的 group.rooms 只统计次数，教室本身要写进课段。
+    group.rows.push({ day, start, end, weeks: row.weeks, room });
   });
 
   const courses: BackupCourse[] = [];
@@ -367,7 +377,7 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
     const primaryTeacher = rankedTeachers.length ? rankedTeachers[0][0] : "";
 
     if (rankedRooms.length > 1) {
-      notes.push(`「${group.name}」在 ${rankedRooms.length} 个教室上过课（${rankedRooms.map(([r, n]) => `${r}×${n}`).join("、")}），地点取了最多的「${primaryRoom}」。`);
+      notes.push(`「${group.name}」在 ${rankedRooms.length} 个教室上过课（${rankedRooms.map(([r, n]) => `${r}×${n}`).join("、")}）：每节课按各自的教室显示，课程列表里显示出现最多的「${primaryRoom}」。`);
     }
     if (rankedTeachers.length > 1) {
       notes.push(`「${group.name}」有 ${rankedTeachers.length} 位教师（${rankedTeachers.map(([t, n]) => `${t}×${n}`).join("、")}），教师取了最多的「${primaryTeacher}」。`);
@@ -396,6 +406,9 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
           endWeek: span.endWeek,
           weekType: span.weekType,
           scope: "semester",
+          // 这一行自己的教室。上面那个 primaryRoom 只是课程的"门面"，不写下来就等于把
+          // 换教室的细节丢了 —— 那正是这一列存在的理由。
+          location: row.room || undefined,
           source: "eams",
           parserVersion: EAMS_PARSER_VERSION
         });

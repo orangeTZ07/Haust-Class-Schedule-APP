@@ -2,11 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useCourses } from "@/composables/useCourses";
 import { useToday } from "@/composables/useToday";
+import { isClassOver } from "@/utils/classOver";
+import { weekDayDate } from "@/utils/semesterWeek";
+import { conflictPlacements, type DragSlot } from "@/utils/dragConflict";
 import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, weekDateLabels, moveSchedule, commitEdit } = useCourses();
-const { todayDayNumber: calendarDayNumber, actualWeek } = useToday();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, semesterStartDate, weekDateLabels, moveSchedule, commitEdit } = useCourses();
+const { now, todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
   (e: "drag-trash-state-change", state: { visible: boolean; active: boolean; gearActive: boolean }): void;
@@ -188,6 +191,36 @@ const schedulesOverlap = (
     second.startPeriod <= first.endPeriod;
 };
 
+/// 已经上过的课：结束钟点已经过去，课表把它变灰划掉（CourseBlock 的 is-past）。
+///
+/// 按每一块**自己那一天的日期**算，而不是按「显示的是不是本周」：翻到上一周，整周都是上过的；
+/// 翻到下一周，一节都不是；本周只灰掉今天已经过去的那几节。日期换算走 semesterWeek.weekDayDate，
+/// 和表头显示的日期是同一份 —— 否则会出现表头写着上周、课却没变灰这种自相矛盾。
+///
+/// 时钟用 useToday 的那一只（每分钟在前台重读一次），不在这里另取 new Date()：那样「今天」和
+/// 「上过没有」会各走各的。跨节的课由 isClassOver 按最后一节算。
+///
+/// 停课（schedule.isCancelled）的课在 effectiveSchedules 里就已经被滤掉了，这里碰不到它们。
+const pastScheduleIds = computed(() => {
+  const ids = new Set<number>();
+  const moment = now.value;
+
+  for (const block of allBlocks.value) {
+    const day = weekDayDate(semesterStartDate.value, currentWeek.value, block.schedule.dayOfWeek);
+    const over = isClassOver({
+      day,
+      endPeriod: block.schedule.endPeriod,
+      periodConfig: periodConfig.value,
+      now: moment
+    });
+    if (over) ids.add(block.schedule.id);
+  }
+
+  return ids;
+});
+
+const isPastBlock = (scheduleId: number) => pastScheduleIds.value.has(scheduleId);
+
 const conflictGroups = computed(() => {
   const groups: ConflictGroup[] = [];
   const visited = new Set<number>();
@@ -248,7 +281,45 @@ const activeConflictGroup = computed(() => {
   return conflictGroups.value.find(group => group.id === displayedConflictGroupId.value) || null;
 });
 
+/// 拖动已经离开原位之后，冲突按落点算。浮开的轨道卡片有自己的布局，不跟这套预览走。
+const dragConflictSlot = computed((): DragSlot | null => {
+  const drag = dragState.value;
+  if (!drag?.hasMoved || drag.source === "floating") return null;
+
+  const target = dropTarget.value;
+  if (!target?.valid) return { id: drag.scheduleId, at: null };
+
+  return {
+    id: drag.scheduleId,
+    at: {
+      day: target.day,
+      start: target.period,
+      end: target.period + drag.span - 1
+    }
+  };
+});
+
+const previewConflict = computed(() => {
+  const slot = dragConflictSlot.value;
+  if (!slot) return null;
+
+  return conflictPlacements(
+    allBlocks.value.map(block => ({
+      id: block.schedule.id,
+      day: block.schedule.dayOfWeek,
+      start: block.startPeriod,
+      end: block.endPeriod
+    })),
+    slot
+  );
+});
+
 const getConflictMeta = (scheduleId: number) => {
+  const preview = previewConflict.value;
+  if (preview) {
+    return preview.get(scheduleId) ?? { count: 1, index: 0 };
+  }
+
   const group = conflictGroupByScheduleId.value.get(scheduleId);
   if (!group) {
     return { count: 1, index: 0 };
@@ -1010,6 +1081,9 @@ const dropPreviewFrame = computed<DropPreviewFrame | null>(() => {
   const body = bodyRef.value;
   if (!target || !currentDrag?.hasMoved || !body) return null;
 
+  // 落点已经和别的课叠上时，红框和错开就是预览，不再盖一层落点虚框。
+  if ((previewConflict.value?.get(currentDrag.scheduleId)?.count ?? 1) > 1) return null;
+
   const cell = body.querySelector<HTMLElement>(`.cell[data-day="${target.day}"][data-period="${target.period}"]`);
   if (!cell) return null;
 
@@ -1148,6 +1222,7 @@ onUnmounted(() => {
                 :span="block.span"
                 :dividers="countDividersWithin(block.schedule.startPeriod, block.span)"
                 :deleting="deletingId === block.schedule.id"
+                :is-past="isPastBlock(block.schedule.id)"
                 :is-dragging="isBlockDragging(block.schedule.id)"
                 :drag-offset="getBlockDragOffset(block.schedule.id)"
                 :conflict-count="getConflictMeta(block.schedule.id).count"
@@ -1234,6 +1309,7 @@ onUnmounted(() => {
           :drag-offset="getBlockDragOffset(block.schedule.id)"
           :conflict-count="activeConflictGroup.blocks.length"
           :show-conflict-tag="false"
+          :is-past="isPastBlock(block.schedule.id)"
           :allow-drag="!isBlockDragging(block.schedule.id)"
           @drag-start="startDrag(block, $event, 'floating')"
         />

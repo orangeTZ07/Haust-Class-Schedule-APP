@@ -52,8 +52,30 @@ const stamped = parser.rowsToBackup([{
   room: "A101"
 }]);
 check("教务备份盖上来源", stamped.backup.schedules.every((s) => s.source === "eams"));
-check("教务备份盖上 parserVersion 2", stamped.backup.schedules.every((s) => s.parserVersion === 2), stamped.backup.schedules[0]);
+check("教务备份盖上当前 parserVersion", stamped.backup.schedules.every((s) => s.parserVersion === parser.EAMS_PARSER_VERSION), stamped.backup.schedules[0]);
 check("第 1-3 周不再被写成第 2-4 周", stamped.backup.schedules[0].startWeek === 1 && stamped.backup.schedules[0].endWeek === 3);
+check("单行也把教室写到课段上", stamped.backup.schedules[0].location === "A101", stamped.backup.schedules[0]);
+check("空教室不写 location（留给课程那一列兜底）", parser.rowsToBackup([{
+  course_name: "体育（3）篮球",
+  day_of_week: 2,
+  start_unit: 7,
+  end_unit: 8,
+  weeks: [1, 2],
+  teacher: "冯",
+  room: ""
+}]).backup.schedules[0].location === undefined);
+
+// 同一门课、两个教室：以前课程上只能留"出现最多的那个"，所有课段一起显示它（线上就是这么错的）。
+const twoRooms = parser.rowsToBackup([
+  { course_name: "数据库原理", day_of_week: 3, start_unit: 1, end_unit: 2, weeks: [7, 8], teacher: "范", room: "工科4-206" },
+  { course_name: "数据库原理", day_of_week: 2, start_unit: 3, end_unit: 4, weeks: [7, 8], teacher: "范", room: "工科4-206" },
+  { course_name: "数据库原理", day_of_week: 5, start_unit: 5, end_unit: 6, weeks: [7, 8], teacher: "范", room: "公教1-505" }
+]);
+const schedOn = (day) => twoRooms.backup.schedules.find((s) => s.dayOfWeek === day);
+check("周三那条带自己那一行的教室", schedOn(3)?.location === "工科4-206", schedOn(3));
+check("周五那条带自己那一行的教室（不再跟着周三）", schedOn(5)?.location === "公教1-505", schedOn(5));
+check("课程上仍留出现次数最多的那个（给课程列表用）", twoRooms.backup.courses[0].location === "工科4-206", twoRooms.backup.courses[0]);
+check("一门课仍然只有一条课程记录（没有按教室拆开）", twoRooms.backup.courses.length === 1);
 
 // ---------- B. 真实响应 ----------
 const realPath = process.argv[2] || "D:/Deepseek/Harness/haust-spider/dump_jwgl.haust.edu.cn_coursetable.html";
@@ -127,6 +149,21 @@ if (!existsSync(realPath)) {
   check("每条日程都能对应到课程", backup.schedules.every((s) => backup.courses.some((c) => c.id === s.courseId)));
   check("weekType 只在 all/odd/even 内", backup.schedules.every((s) => ["all", "odd", "even"].includes(s.weekType)));
   check("真实课表的课段带来源与 parserVersion", backup.schedules.every((s) => s.source === "eams" && s.parserVersion === parser.EAMS_PARSER_VERSION));
+
+  // 教室不再被打包：真实响应里 数据库原理 的 11 条活动散在 10 个教室。逐条写进课段后，
+  // 课段上的教室集合应当**等于**原始行的教室集合 —— 这一条以前只会剩下一个。
+  const courseNameOf = (schedule) => backup.courses.find((course) => course.id === schedule.courseId)?.name;
+  const scheduleRooms = (name) => new Set(backup.schedules.filter((s) => courseNameOf(s) === name).map((s) => s.location).filter(Boolean));
+  const rowRooms = (name) => new Set(rows.filter((r) => r.course_name === name && r.room).map((r) => r.room));
+
+  for (const name of ["数据库原理", "前端开发技术"]) {
+    const fromSchedules = scheduleRooms(name);
+    const fromRows = rowRooms(name);
+    check(`「${name}」原始行里的每个教室都还在课段上`, fromSchedules.size === fromRows.size && [...fromRows].every((room) => fromSchedules.has(room)),
+      { fromSchedules: [...fromSchedules], fromRows: [...fromRows] });
+    check(`「${name}」不再是"每门课一个教室"`, fromSchedules.size > 1, fromSchedules.size);
+    check(`「${name}」课程上仍只留一个地点`, new Set(backup.courses.filter((c) => c.name === name).map((c) => c.location)).size === 1);
+  }
 }
 
 // ---------- C. 公开的真实 TaskActivity（仓库里这份没有个人信息以外的河科大课表）----------
@@ -206,7 +243,7 @@ console.log("=== D. 第 6 周三格归位，第 5 周仍空 ===");
   check("第 6 周这三格都有课", three.every((item) => covers(item, 6)), three);
   check("第 5 周这三格都是空的", three.every((item) => !covers(item, 5)), three);
   check("形势与政策第 7 周仍有课", covers(policy, 7), policy);
-  check("带来源与 parserVersion", three.every((item) => item?.source === "eams" && item?.parserVersion === 2));
+  check("带来源与 parserVersion", three.every((item) => item?.source === "eams" && item?.parserVersion === parser.EAMS_PARSER_VERSION));
 
   const spanning = parser.weeksFromBits("0" + "1".repeat(16) + "0".repeat(36));
   check(
@@ -214,6 +251,33 @@ console.log("=== D. 第 6 周三格归位，第 5 周仍空 ===");
     spanning[0] === 1 && spanning.includes(5) && spanning.includes(6),
     spanning
   );
+}
+
+// ---------- D. 接线（读源码）：地点从数据库到卡片到导出，哪一环漏了都白改 ----------
+console.log("");
+console.log("=== D. 接线（读源码）===");
+{
+  const svc = readFileSync(join(here, "..", "src", "services", "courseService.ts"), "utf8");
+  check("schedules 加 location 列（PRAGMA 守卫的迁移）",
+    svc.includes("ALTER TABLE schedules ADD COLUMN location TEXT") && svc.includes('column.name === "location"'));
+  check("从库里读回来时映射 location", svc.includes("location: typeof row.location === \"string\""));
+  check("新增课段把 location 写进库", /INSERT INTO schedules \(course_id[\s\S]{0,160}location\)/.test(svc));
+  check("更新课段把 location 写进库", /UPDATE schedules SET[\s\S]{0,320}location = \$12/.test(svc));
+  check("撤销/重做整表写回也带 location（少这一列 = 按一次撤销就抹掉所有地点）",
+    /INSERT INTO schedules \(id, course_id[\s\S]{0,160}location\)/.test(svc));
+
+  const block = readFileSync(join(here, "..", "src", "components", "timetable", "CourseBlock.vue"), "utf8");
+  check("卡片显示时课段地点优先", block.includes("props.schedule.location || props.course.location"));
+
+  const courses = readFileSync(join(here, "..", "src", "composables", "useCourses.ts"), "utf8");
+  check("CSV 导出写课段的地点", courses.includes('schedule.location || course.location || ""'));
+  check("备份导入恢复课段地点", courses.includes("location: schedule.location"));
+  check("整学期改地点时清掉课段自带的地点（卡片课段优先，不清就等于编辑没生效）",
+    courses.includes("{ ...row, location: undefined }"));
+  check("拖动改时间时把原课段的地点带走", courses.includes("location: current.location"));
+
+  const eams = readFileSync(join(here, "..", "src", "components", "course", "import", "EamsSyncSection.vue"), "utf8");
+  check("导入报告里的 notes 真的显示出来了", eams.includes("result.report.notes") && /notes\.slice\(0, NOTES_SHOWN\)/.test(eams));
 }
 
 console.log("");

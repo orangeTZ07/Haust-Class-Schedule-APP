@@ -36,12 +36,17 @@ const props = withDefaults(defineProps<{
   dividers?: number;
   /// Playing the delete animation: shrink away and ignore input until the row is gone.
   deleting?: boolean;
+  /// The class is already over (its end time is in the past). Distinct from `schedule.isCancelled`,
+  /// which means the class was called off: a cancelled class never happens, a past one did.
+  /// They get different styling so the two are not confused at a glance.
+  isPast?: boolean;
 }>(), {
   allowDrag: true,
   allowExpand: true,
   showConflictTag: true,
   dividers: 0,
-  deleting: false
+  deleting: false,
+  isPast: false
 });
 
 const emit = defineEmits<{
@@ -103,14 +108,18 @@ const style = computed(() => {
   const baseHeight = props.floatingFrame?.height ?? (props.span || 1) * 50 - 4;
   const hasConflict = (props.conflictCount || 0) > 1;
   const conflictIndex = props.conflictIndex || 0;
-  const shouldOffsetConflict = hasConflict && props.conflictCount === 2;
+  // 两节叠在同一格时并排，各占一半，课名才不会被盖成一节。
+  // 被拖的那张保持原宽：left 一变，卡片就离开手指按下的位置。
+  const pairConflict = hasConflict && props.conflictCount === 2 && !props.isDragging && !props.floatingFrame;
   const courseColor = props.course.color || 'var(--theme-card-border-color)';
   const normalLeft = props.floatingFrame
     ? `${props.floatingFrame.left}px`
-    : shouldOffsetConflict ? `${2 + conflictIndex * 8}px` : '2px';
+    : pairConflict
+      ? (conflictIndex === 0 ? '1px' : 'calc(50% - 1px)')
+      : '2px';
   const normalWidth = props.floatingFrame
     ? `${props.floatingFrame.width}px`
-    : shouldOffsetConflict ? 'calc(100% - 12px)' : 'calc(100% - 4px)';
+    : pairConflict ? 'calc(50% - 1px)' : 'calc(100% - 4px)';
   const normalShadow = hasConflict
     ? '0 4px 14px rgba(238, 10, 36, 0.16)'
     : themeConfig.value.flatStyle ? 'none' : '0 2px 4px rgba(0, 0, 0, 0.02)';
@@ -220,6 +229,13 @@ const periodText = computed(() => {
   }
   return `${props.schedule.startPeriod}-${props.schedule.endPeriod}节`;
 });
+
+/// 这一格显示的地点：**课段自己的优先**。
+///
+/// 同一门课换教室是常态（实测：数据库原理 11 条活动散在 10 个教室），教室只挂在课程上时，
+/// 所有课段只能共用一个 —— 那正是"周五显示成周三的教室"的来源。课段没有自己的地点
+/// （老数据、手填课、覆盖层）时才回落到课程的地点。
+const locationText = computed(() => props.schedule.location || props.course.location || "");
 </script>
 
 <template>
@@ -228,7 +244,15 @@ const periodText = computed(() => {
     class="course-block" 
     :data-schedule-id="schedule.id"
     data-coach-course="true"
-    :class="{ 'is-expanded': isExpanded, 'is-dragging': isDragging, 'is-conflicting': (conflictCount || 0) > 1, 'is-deleting': deleting }"
+    :class="{
+      'is-expanded': isExpanded,
+      'is-dragging': isDragging,
+      'is-conflicting': (conflictCount || 0) > 1,
+      'is-conflict-pair': (conflictCount || 0) === 2 && !isDragging && !floatingFrame,
+      'is-conflict-rear': (conflictCount || 0) === 2 && (conflictIndex || 0) === 0 && !isDragging && !floatingFrame,
+      'is-deleting': deleting,
+      'is-past': isPast
+    }"
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
@@ -236,9 +260,9 @@ const periodText = computed(() => {
   >
     <div class="course-accent" :style="{ backgroundColor: course.color }"></div>
     <div class="course-name">{{ course.name }}</div>
-    <div class="course-info" v-if="course.location">
+    <div class="course-info" v-if="locationText">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
-      <span class="loc-text">{{ course.location }}</span>
+      <span class="loc-text">{{ locationText }}</span>
     </div>
     <div v-if="(conflictCount || 0) > 1" class="conflict-count-badge">
       {{ conflictCount }}
@@ -320,8 +344,25 @@ const periodText = computed(() => {
   border-radius: 999px;
   opacity: 0.72;}
 
-.course-block.is-conflicting {
+.course-block.is-conflicting:not(.is-conflict-pair) {
   padding-right: 20px;
+}
+
+/* 半格宽放不下一整行课名，改成逐字往下排，地点和节次让给课名。角标只留在前面那张。 */
+.course-block.is-conflict-pair {
+  padding: 4px 2px 4px 6px;
+}
+
+.course-block.is-conflict-pair .course-name {
+  -webkit-line-clamp: 8;
+  padding-right: 0;
+  margin-bottom: 0;
+}
+
+.course-block.is-conflict-pair .course-info,
+.course-block.is-conflict-pair .course-period,
+.course-block.is-conflict-pair.is-conflict-rear .conflict-count-badge {
+  display: none;
 }
 
 .course-block.is-conflicting .course-accent {
@@ -484,6 +525,53 @@ const periodText = computed(() => {
 
 .is-expanded .loc-icon {
   font-size: 10px;
+}
+
+/* ── 已经上过的课 ────────────────────────────────────────────────────────────
+   去色 + 降透明度 + 课程名划掉。比参考图明显一些，因为要在手机的户外屏幕上还看得出来。
+   刻意与"停课"（schedule.isCancelled）区分：停课是这节课根本没发生，不做删除线；
+   上过是发生过了，划掉。两者一眼要能分开。 */
+.course-block.is-past {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.course-block.is-past .course-name,
+.course-block.is-past .course-info,
+.course-block.is-past .course-period {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.course-block.is-past .course-accent {
+  opacity: 0.3;
+}
+
+/* 变灰会把红色描边也滤成灰色，叠在一起时就看不出冲突。冲突优先：划线还留着，红框和半透明按原样。 */
+.course-block.is-past.is-conflicting {
+  filter: none;
+  opacity: 1;
+}
+
+.course-block.is-past.is-conflicting .course-accent {
+  opacity: 0.85;
+}
+
+/* 鼠标悬停、或点开卡片时恢复成正常强度 —— 淡化是为了看清课表的"形状"，
+   不是为了藏起信息。已上过的课仍然要能读、能改。 */
+.course-block.is-past:hover,
+.course-block.is-past.is-expanded {
+  filter: none;
+  opacity: 1;
+}
+
+.course-block.is-past:hover .course-name,
+.course-block.is-past.is-expanded .course-name,
+.course-block.is-past:hover .course-info,
+.course-block.is-past.is-expanded .course-info,
+.course-block.is-past:hover .course-period,
+.course-block.is-past.is-expanded .course-period {
+  text-decoration: none;
 }
 
 .course-period {
