@@ -277,7 +277,10 @@ console.log("=== D. 接线（读源码）===");
   check("拖动改时间时把原课段的地点带走", courses.includes("location: current.location"));
 
   const eams = readFileSync(join(here, "..", "src", "components", "course", "import", "EamsSyncSection.vue"), "utf8");
-  check("导入报告里的 notes 真的显示出来了", eams.includes("result.report.notes") && /notes\.slice\(0, NOTES_SHOWN\)/.test(eams));
+  check(
+    "导入报告里的 notes 仍然显示，但默认收起（不再是一屏文字墙）",
+    eams.includes("notes.value = result.report.notes") && /const showNotes = ref\(false\)/.test(eams) && eams.includes("注意事项")
+  );
 }
 
 console.log("");
