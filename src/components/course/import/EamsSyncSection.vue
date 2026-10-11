@@ -103,7 +103,7 @@ const sync = async () => {
 
   if (!username.value.trim() || !password.value) {
     messageKind.value = "err";
-    message.value = "请先填学号和密码。";
+    message.value = "请先填「我i科大」的学号和密码。";
     return;
   }
 
@@ -206,7 +206,7 @@ const sync = async () => {
       </div>
 
       <p class="imp-hint">
-        用学校统一身份认证的账号密码登录，直接把课表取回来。密码只在这次同步时用一次，
+        用「我i科大」（学校统一身份认证）的学号与登录密码登录，直接把课表取回来。密码只在这次同步时用一次，
         <strong>不会保存到手机上</strong>。
       </p>
 
@@ -234,7 +234,7 @@ const sync = async () => {
           class="imp-input"
           type="password"
           autocomplete="off"
-          placeholder="请输入密码"
+          placeholder="请输入我i科大的登录密码"
           @keyup.enter="sync"
         />
       </label>
