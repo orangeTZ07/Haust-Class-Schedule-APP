@@ -106,7 +106,9 @@ const close = () => emit("update:show", false);
 .import-sheet {
   /* A fixed height, so the sheet does not jump when a shorter tab is selected. */
   height: 88%;
-  max-height: 88%;
+  /* 键盘弹起时高度也要跟着让出去：bottom 已经上移，高度不减的话头部（连关闭按钮）会被顶出屏幕。
+     键盘一收，--kb-inset 回到 0，这里就又等于 88%。 */
+  max-height: min(88%, calc(100% - var(--kb-inset, 0px)));
   overflow: hidden;
 }
 

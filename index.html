@@ -2,7 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content：让软键盘也缩小"布局视口"，底部面板就能自己让位，
+         而不是被键盘盖住（WebView 108+ 认这个值）。这是第一道保险；不认它的 WebView 里由
+         --kb-inset（composables/useKeyboardInset.ts）顶上，两者不会叠加：布局视口真的缩了，
+         算出来的键盘高度就是 0。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Haust课程表</title>
   </head>
   <body>
