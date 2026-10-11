@@ -467,6 +467,7 @@ const applyReminders = async () => {
       v-model:show="showPicker"
       position="bottom"
       round
+      teleport="body"
       class="app-popup app-popup--sheet"
       :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"
     >

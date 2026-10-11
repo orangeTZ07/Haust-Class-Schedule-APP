@@ -33,6 +33,11 @@ const password = ref("");
 const busy = ref(false);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
+/// 解析器那份"注意事项"（哪些课换过教室、教师取了谁）。默认收起：一条就够长（数据库原理列了
+/// 11 个教室），三条直接是一屏多的文字墙 —— 而它出现在表单上面，会把学号 / 密码 / 开始同步顶到
+/// 好几屏以外。收起不等于瞒着：给出条数，想核对的人点开就看得到。
+const notes = ref<string[]>([]);
+const showNotes = ref(false);
 const diagnosing = ref(false);
 const diagnoseText = ref("");
 /// Folded away by default: most people never need it, and it is the part that made the old panel
@@ -150,27 +155,19 @@ const sync = async () => {
 
     // A warning is something the user has to act on or at least read, so the sheet stays open to
     // show it. Without one the toast says all there is to say and the sheet gets out of the way.
-    //
-    // 解析器的 notes 也走这条路：它算出来过「这门课在 10 个教室上过课」「教师取了最多的谁」，
-    // 但从没显示过 —— 于是"地点被投票选过"这件事用户完全无从得知（线上就是这么错的）。现在前
-    // 几条直接显示：地点已按每节课各自的教室保存，这里说的是课程列表上显示的是哪一个。
-    const NOTES_SHOWN = 3;
-    const notes = result.report.notes;
-    const noteLines = notes.length === 0
-      ? []
-      : [
-          ...notes.slice(0, NOTES_SHOWN),
-          notes.length > NOTES_SHOWN ? `…还有 ${notes.length - NOTES_SHOWN} 条同类提示。` : ""
-        ].filter(Boolean);
-
     const warnings = [
       result.report.maxPeriod > 10
         ? `注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
         : "",
-      skippedNotice(imported.skipped),
-      ...noteLines
+      skippedNotice(imported.skipped)
     ].filter(Boolean);
-    if (warnings.length === 0) {
+
+    // 解析器的 notes 单独收着（见上面两个 ref）—— 它说的正是"地点被投票选过"这件事：地点现在按
+    // 每节课各自的教室保存，这里说明的是课程列表上显示哪一个。
+    notes.value = result.report.notes;
+    showNotes.value = false;
+
+    if (warnings.length === 0 && notes.value.length === 0) {
       // Cleared as well, or the next time the sheet opens it would greet the user with a stale
       // "同步完成".
       message.value = "";
@@ -199,6 +196,25 @@ const sync = async () => {
   <div class="eams-section">
     <!-- 结果放在最上面：不用滚动就能看到 -->
     <ImportNotice v-if="message" :kind="messageKind">{{ message }}</ImportNotice>
+
+    <!-- 注意事项默认收起：展开是一屏多的文字（数据库原理一条就列 11 个教室），会把下面的表单
+         顶到几屏以外 —— 同步完还想再点一次「开始同步」，得先滑过整段说明。 -->
+    <div v-if="notes.length" class="imp-notes">
+      <button
+        type="button"
+        class="imp-notes-toggle"
+        :aria-expanded="showNotes"
+        @click="showNotes = !showNotes"
+      >
+        <Info :size="15" />
+        <span>注意事项 {{ notes.length }} 条</span>
+        <ChevronDown :size="15" class="chevron" :class="{ open: showNotes }" />
+      </button>
+
+      <ul v-if="showNotes" class="imp-notes-list">
+        <li v-for="(note, index) in notes" :key="index">{{ note }}</li>
+      </ul>
+    </div>
 
     <div class="imp-card">
       <div class="imp-card-head">
@@ -336,6 +352,35 @@ const sync = async () => {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--color-warning);
+}
+
+.imp-notes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  background: transparent;
+  color: var(--theme-body-text);
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.imp-notes-list {
+  margin: 0;
+  padding: 12px 14px 12px 30px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-body-text) 4%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+  list-style: disc;
+  color: var(--theme-body-text);
+  opacity: 0.8;
+}
+
+.imp-notes-list li + li {
+  margin-top: 6px;
 }
 
 .trouble-toggle {

@@ -48,6 +48,7 @@ const close = () => emit("update:show", false);
     :show="props.show"
     position="bottom"
     round
+    teleport="body"
     class="app-popup app-popup--sheet import-sheet"
     :style="cssVariables"
     :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"

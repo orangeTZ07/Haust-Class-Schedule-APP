@@ -116,6 +116,7 @@ const save = () => {
     :show="show"
     position="bottom"
     round
+    teleport="body"
     class="app-popup app-popup--sheet period-sheet"
     :style="cssVariables"
     :close-on-click-overlay="false"
