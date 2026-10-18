@@ -46,7 +46,7 @@ const showTrouble = ref(false);
 
 const CREDIT_URL = "https://github.com/LinJX1210";
 /// 学校 aTrust 的服务器地址。应用里没有另存的下载页，打开这个地址就是进 aTrust。
-const VPN_HOST = "vpn.hasut.edu.cn";
+const VPN_HOST = "vpn.haust.edu.cn";
 const ATRUST_URL = `https://${VPN_HOST}/`;
 
 const openCredit = () => {

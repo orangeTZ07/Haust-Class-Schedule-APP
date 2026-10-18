@@ -24,10 +24,10 @@
       "description": "把指定网址交给系统浏览器：GitHub Release，以及教务同步里的 aTrust 入口。不用 opener:default（它放行所有 http/https 网址）。",
       "allow": [
         { "url": "https://github.com/*" },
-        { "url": "https://vpn.hasut.edu.cn" },
-        { "url": "https://vpn.hasut.edu.cn/" },
-        { "url": "https://vpn.hasut.edu.cn/*" },
-        { "url": "https://vpn.hasut.edu.cn/**" }
+        { "url": "https://vpn.haust.edu.cn" },
+        { "url": "https://vpn.haust.edu.cn/" },
+        { "url": "https://vpn.haust.edu.cn/*" },
+        { "url": "https://vpn.haust.edu.cn/**" }
       ]
     },
     {
