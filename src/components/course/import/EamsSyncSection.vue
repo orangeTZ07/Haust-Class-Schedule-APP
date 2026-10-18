@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
-import { ChevronDown, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
+import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
 import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
@@ -33,6 +33,11 @@ const password = ref("");
 const busy = ref(false);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
+/// 解析器那份"注意事项"（哪些课换过教室、教师取了谁）。默认收起：一条就够长（数据库原理列了
+/// 11 个教室），三条直接是一屏多的文字墙 —— 而它出现在表单上面，会把学号 / 密码 / 开始同步顶到
+/// 好几屏以外。收起不等于瞒着：给出条数，想核对的人点开就看得到。
+const notes = ref<string[]>([]);
+const showNotes = ref(false);
 const diagnosing = ref(false);
 const diagnoseText = ref("");
 /// Folded away by default: most people never need it, and it is the part that made the old panel
@@ -40,11 +45,61 @@ const diagnoseText = ref("");
 const showTrouble = ref(false);
 
 const CREDIT_URL = "https://github.com/LinJX1210";
+/// 学校 aTrust 的服务器地址。应用里没有另存的下载页，打开这个地址就是进 aTrust。
+const VPN_HOST = "vpn.haust.edu.cn";
+const ATRUST_URL = `https://${VPN_HOST}/`;
 
 const openCredit = () => {
   openUrl(CREDIT_URL).catch(() => {
     window.open(CREDIT_URL, "_blank", "noopener");
   });
+};
+
+const openAtrust = () => {
+  openUrl(ATRUST_URL).catch(() => {
+    const opened = window.open(ATRUST_URL, "_blank", "noopener");
+    if (!opened) showToast({ message: "打不开 aTrust，请点复制后到应用里粘贴", type: "fail" });
+  });
+};
+
+/// Clipboard API 在部分 WebView 里会拒绝，选区复制是同一套按钮的退路。
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 落到下面的选区复制。
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+};
+
+const copyVpnHost = async () => {
+  const ok = await copyText(VPN_HOST);
+  showToast(
+    ok
+      ? { message: `已复制 ${VPN_HOST}`, type: "success" }
+      : { message: "复制失败", type: "fail" }
+  );
 };
 
 /// 网络诊断矩阵。
@@ -103,7 +158,7 @@ const sync = async () => {
 
   if (!username.value.trim() || !password.value) {
     messageKind.value = "err";
-    message.value = "请先填学号和密码。";
+    message.value = "请先填「我i科大」的学号和密码。";
     return;
   }
 
@@ -150,27 +205,19 @@ const sync = async () => {
 
     // A warning is something the user has to act on or at least read, so the sheet stays open to
     // show it. Without one the toast says all there is to say and the sheet gets out of the way.
-    //
-    // 解析器的 notes 也走这条路：它算出来过「这门课在 10 个教室上过课」「教师取了最多的谁」，
-    // 但从没显示过 —— 于是"地点被投票选过"这件事用户完全无从得知（线上就是这么错的）。现在前
-    // 几条直接显示：地点已按每节课各自的教室保存，这里说的是课程列表上显示的是哪一个。
-    const NOTES_SHOWN = 3;
-    const notes = result.report.notes;
-    const noteLines = notes.length === 0
-      ? []
-      : [
-          ...notes.slice(0, NOTES_SHOWN),
-          notes.length > NOTES_SHOWN ? `…还有 ${notes.length - NOTES_SHOWN} 条同类提示。` : ""
-        ].filter(Boolean);
-
     const warnings = [
       result.report.maxPeriod > 10
         ? `注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
         : "",
-      skippedNotice(imported.skipped),
-      ...noteLines
+      skippedNotice(imported.skipped)
     ].filter(Boolean);
-    if (warnings.length === 0) {
+
+    // 解析器的 notes 单独收着（见上面两个 ref）—— 它说的正是"地点被投票选过"这件事：地点现在按
+    // 每节课各自的教室保存，这里说明的是课程列表上显示哪一个。
+    notes.value = result.report.notes;
+    showNotes.value = false;
+
+    if (warnings.length === 0 && notes.value.length === 0) {
       // Cleared as well, or the next time the sheet opens it would greet the user with a stale
       // "同步完成".
       message.value = "";
@@ -200,19 +247,46 @@ const sync = async () => {
     <!-- 结果放在最上面：不用滚动就能看到 -->
     <ImportNotice v-if="message" :kind="messageKind">{{ message }}</ImportNotice>
 
+    <!-- 注意事项默认收起：展开是一屏多的文字（数据库原理一条就列 11 个教室），会把下面的表单
+         顶到几屏以外 —— 同步完还想再点一次「开始同步」，得先滑过整段说明。 -->
+    <div v-if="notes.length" class="imp-notes">
+      <button
+        type="button"
+        class="imp-notes-toggle"
+        :aria-expanded="showNotes"
+        @click="showNotes = !showNotes"
+      >
+        <Info :size="15" />
+        <span>注意事项 {{ notes.length }} 条</span>
+        <ChevronDown :size="15" class="chevron" :class="{ open: showNotes }" />
+      </button>
+
+      <ul v-if="showNotes" class="imp-notes-list">
+        <li v-for="(note, index) in notes" :key="index">{{ note }}</li>
+      </ul>
+    </div>
+
     <div class="imp-card">
       <div class="imp-card-head">
         <span class="imp-card-title">从教务系统同步</span>
       </div>
 
       <p class="imp-hint">
-        用学校统一身份认证的账号密码登录，直接把课表取回来。密码只在这次同步时用一次，
+        用「我i科大」（学校统一身份认证）的学号与登录密码登录，直接把课表取回来。密码只在这次同步时用一次，
         <strong>不会保存到手机上</strong>。
       </p>
 
       <div class="atrust">
         <Info :size="15" class="atrust-icon" />
-        <span>需要手机能连上教务系统：先打开 aTrust 并连接，或连校园网。</span>
+        <p class="atrust-text">
+          需要手机能连上教务系统：先打开 aTrust 并连接，或连校园网。
+          <button type="button" class="atrust-jump" @click="openAtrust">打开 aTrust</button>
+          <button type="button" class="atrust-copy" :aria-label="`复制 ${VPN_HOST}`" @click="copyVpnHost">
+            <span class="atrust-host">{{ VPN_HOST }}</span>
+            <Copy :size="13" aria-hidden="true" />
+            <span>复制</span>
+          </button>
+        </p>
       </div>
 
       <label>
@@ -234,7 +308,7 @@ const sync = async () => {
           class="imp-input"
           type="password"
           autocomplete="off"
-          placeholder="请输入密码"
+          placeholder="请输入我i科大的登录密码"
           @keyup.enter="sync"
         />
       </label>
@@ -336,6 +410,71 @@ const sync = async () => {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--color-warning);
+}
+
+.atrust-text {
+  margin: 0;
+  min-width: 0;
+}
+
+.atrust-jump,
+.atrust-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 2px 6px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 48%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-bg-color) 78%, transparent);
+  color: var(--theme-body-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.atrust-jump {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.atrust-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.imp-notes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  background: transparent;
+  color: var(--theme-body-text);
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.imp-notes-list {
+  margin: 0;
+  padding: 12px 14px 12px 30px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-body-text) 4%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+  list-style: disc;
+  color: var(--theme-body-text);
+  opacity: 0.8;
+}
+
+.imp-notes-list li + li {
+  margin-top: 6px;
 }
 
 .trouble-toggle {

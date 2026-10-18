@@ -37,6 +37,10 @@
   --van-popup-round-radius: 24px;
   border-bottom: none;
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.14);
+  /* 键盘弹起时整体上移，高度由各面板自己让（--kb-inset 由 composables/useKeyboardInset.ts
+     写，没有键盘时是 0，与现在完全一致）。少了这一步，面板下半截——包括末尾那颗按钮——
+     会留在键盘后面，而面板内部的滚动区因为"布局高度"没变，也再没有余量把它滑出来。 */
+  bottom: var(--kb-inset, 0px);
 }
 
 .app-popup-card {
