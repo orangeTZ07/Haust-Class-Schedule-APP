@@ -175,8 +175,25 @@ console.log("=== 接线（读源码）===");
   for (const name of named) {
     check(`模板里真的有 .${name}`, template.includes(`class="${name}"`), name);
   }
-  check("变灰：grayscale", /\.course-block\.is-past\s*\{[^}]*grayscale\(1\)/.test(block));
+  check("变灰：grayscale", /\.course-block\.is-past\s*,[\s\S]{0,500}grayscale\(1\)/.test(block));
   check("划掉：line-through 加在课程名上", /\.course-block\.is-past\s+\.course-name[\s\S]{0,200}line-through/.test(block));
+  // 点按在手机上会粘住 :hover，点开卡片是放大。这两处以前会把灰色和删除线拿掉。
+  const staysGray = [
+    ".course-block.is-past:hover:not(.is-conflicting)",
+    ".course-block.is-past:active:not(.is-conflicting)",
+    ".course-block.is-past:focus:not(.is-conflicting)",
+    ".course-block.is-past:focus-visible:not(.is-conflicting)",
+    ".course-block.is-past.is-expanded:not(.is-conflicting)",
+    ".course-block.is-past.is-dragging:not(.is-conflicting)"
+  ];
+  check("点按、悬停、聚焦、放大、拖动都继续变灰", staysGray.every((selector) => block.includes(selector)));
+  check(
+    "放大时的规则仍然是 grayscale，不是把滤镜清掉",
+    /\.course-block\.is-past\.is-expanded:not\(\.is-conflicting\)[\s\S]{0,160}grayscale\(1\)/.test(block)
+  );
+  check("不再在交互时取消删除线", !/text-decoration:\s*none/.test(block));
+  check("只有冲突课才拿掉灰色滤镜", (block.match(/filter:\s*none/g) || []).length === 1);
+  check("点开时的内联样式也带着 grayscale", block.includes("props.isPast && !hasConflict ? 'grayscale(1)'"));
 }
 
 console.log("");

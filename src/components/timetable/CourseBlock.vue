@@ -131,6 +131,8 @@ const style = computed(() => {
   const normalBorderColor = hasConflict
     ? 'color-mix(in srgb, #ee0a24 65%, var(--theme-card-border-color))'
     : `color-mix(in srgb, ${courseColor} 58%, var(--theme-card-border-color))`;
+  // 写进内联样式：悬停、按下、点开放大都改不掉。冲突课不过滤，红框在摊开之后还要认得出来。
+  const mutedFilter = props.isPast && !hasConflict ? 'grayscale(1)' : undefined;
   
   if (isExpanded.value) {
     const expandedHeight = Math.max(baseHeight * 1.5, 140);
@@ -159,6 +161,7 @@ const style = computed(() => {
         backgroundColor: themeConfig.value.mode === 'dark'
           ? 'color-mix(in srgb, var(--theme-bg-color) 85%, #ffffff 15%)'
           : 'color-mix(in srgb, var(--theme-bg-color) 85%, #000000 10%)',
+        filter: mutedFilter,
       };
     }
 
@@ -196,6 +199,7 @@ const style = computed(() => {
       backgroundColor: themeConfig.value.mode === 'dark' 
         ? 'color-mix(in srgb, var(--theme-bg-color) 85%, #ffffff 15%)'
         : 'color-mix(in srgb, var(--theme-bg-color) 85%, #000000 10%)',
+      filter: mutedFilter,
     };
   }
 
@@ -220,6 +224,7 @@ const style = computed(() => {
     boxShadow: normalShadow,
     borderColor: normalBorderColor,
     backgroundColor: normalBackground,
+    filter: mutedFilter,
   };
 });
 
@@ -530,8 +535,16 @@ const locationText = computed(() => props.schedule.location || props.course.loca
 /* ── 已经上过的课 ────────────────────────────────────────────────────────────
    去色 + 降透明度 + 课程名划掉。比参考图明显一些，因为要在手机的户外屏幕上还看得出来。
    刻意与"停课"（schedule.isCancelled）区分：停课是这节课根本没发生，不做删除线；
-   上过是发生过了，划掉。两者一眼要能分开。 */
-.course-block.is-past {
+   上过是发生过了，划掉。两者一眼要能分开。
+   灰色是这节课的状态，不是悬停效果：点按（手机上会把 :hover 粘住）、聚焦、按下、
+   拖动时略放大、点开卡片，都继续保持去色和删除线。 */
+.course-block.is-past,
+.course-block.is-past:hover:not(.is-conflicting),
+.course-block.is-past:active:not(.is-conflicting),
+.course-block.is-past:focus:not(.is-conflicting),
+.course-block.is-past:focus-visible:not(.is-conflicting),
+.course-block.is-past.is-expanded:not(.is-conflicting),
+.course-block.is-past.is-dragging:not(.is-conflicting) {
   filter: grayscale(1);
   opacity: 0.6;
 }
@@ -547,31 +560,21 @@ const locationText = computed(() => props.schedule.location || props.course.loca
   opacity: 0.3;
 }
 
-/* 变灰会把红色描边也滤成灰色，叠在一起时就看不出冲突。冲突优先：划线还留着，红框和半透明按原样。 */
-.course-block.is-past.is-conflicting {
+/* 变灰会把红色描边也滤成灰色，叠在一起时就看不出冲突。冲突优先：划线还留着，红框和半透明按原样。
+   悬停、按下、聚焦、放大同样保持红色，否则点开后的冲突课会丢掉这层提示。 */
+.course-block.is-past.is-conflicting,
+.course-block.is-past.is-conflicting:hover,
+.course-block.is-past.is-conflicting:active,
+.course-block.is-past.is-conflicting:focus,
+.course-block.is-past.is-conflicting:focus-visible,
+.course-block.is-past.is-conflicting.is-expanded,
+.course-block.is-past.is-conflicting.is-dragging {
   filter: none;
   opacity: 1;
 }
 
 .course-block.is-past.is-conflicting .course-accent {
   opacity: 0.85;
-}
-
-/* 鼠标悬停、或点开卡片时恢复成正常强度 —— 淡化是为了看清课表的"形状"，
-   不是为了藏起信息。已上过的课仍然要能读、能改。 */
-.course-block.is-past:hover,
-.course-block.is-past.is-expanded {
-  filter: none;
-  opacity: 1;
-}
-
-.course-block.is-past:hover .course-name,
-.course-block.is-past.is-expanded .course-name,
-.course-block.is-past:hover .course-info,
-.course-block.is-past.is-expanded .course-info,
-.course-block.is-past:hover .course-period,
-.course-block.is-past.is-expanded .course-period {
-  text-decoration: none;
 }
 
 .course-period {
