@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
-import { ChevronDown, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
+import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
 import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
@@ -45,11 +45,61 @@ const diagnoseText = ref("");
 const showTrouble = ref(false);
 
 const CREDIT_URL = "https://github.com/LinJX1210";
+/// 学校 aTrust 的服务器地址。应用里没有另存的下载页，打开这个地址就是进 aTrust。
+const VPN_HOST = "vpn.hasut.edu.cn";
+const ATRUST_URL = `https://${VPN_HOST}/`;
 
 const openCredit = () => {
   openUrl(CREDIT_URL).catch(() => {
     window.open(CREDIT_URL, "_blank", "noopener");
   });
+};
+
+const openAtrust = () => {
+  openUrl(ATRUST_URL).catch(() => {
+    const opened = window.open(ATRUST_URL, "_blank", "noopener");
+    if (!opened) showToast({ message: "打不开 aTrust，请点复制后到应用里粘贴", type: "fail" });
+  });
+};
+
+/// Clipboard API 在部分 WebView 里会拒绝，选区复制是同一套按钮的退路。
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 落到下面的选区复制。
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+};
+
+const copyVpnHost = async () => {
+  const ok = await copyText(VPN_HOST);
+  showToast(
+    ok
+      ? { message: `已复制 ${VPN_HOST}`, type: "success" }
+      : { message: "复制失败", type: "fail" }
+  );
 };
 
 /// 网络诊断矩阵。
@@ -228,7 +278,15 @@ const sync = async () => {
 
       <div class="atrust">
         <Info :size="15" class="atrust-icon" />
-        <span>需要手机能连上教务系统：先打开 aTrust 并连接，或连校园网。</span>
+        <p class="atrust-text">
+          需要手机能连上教务系统：先打开 aTrust 并连接，或连校园网。
+          <button type="button" class="atrust-jump" @click="openAtrust">打开 aTrust</button>
+          <button type="button" class="atrust-copy" :aria-label="`复制 ${VPN_HOST}`" @click="copyVpnHost">
+            <span class="atrust-host">{{ VPN_HOST }}</span>
+            <Copy :size="13" aria-hidden="true" />
+            <span>复制</span>
+          </button>
+        </p>
       </div>
 
       <label>
@@ -352,6 +410,42 @@ const sync = async () => {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--color-warning);
+}
+
+.atrust-text {
+  margin: 0;
+  min-width: 0;
+}
+
+.atrust-jump,
+.atrust-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 2px 6px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 48%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-bg-color) 78%, transparent);
+  color: var(--theme-body-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.atrust-jump {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.atrust-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .imp-notes-toggle {

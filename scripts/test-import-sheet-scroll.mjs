@@ -52,5 +52,16 @@ console.log("=== 报告不再是一屏文字墙 ===");
 }
 
 console.log("");
+console.log("=== aTrust 提示可以跳转并复制地址 ===");
+{
+  const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
+  const caps = readFileSync(join(here, "..", "src-tauri/capabilities/default.json"), "utf8");
+  check("提示旁有打开 aTrust", eams.includes("打开 aTrust") && eams.includes("openAtrust"));
+  check("复制的主机名是 vpn.hasut.edu.cn", eams.includes('const VPN_HOST = "vpn.hasut.edu.cn"') && eams.includes("copyVpnHost"));
+  check("打开的是这台 aTrust 的入口", eams.includes("const ATRUST_URL = `https://${VPN_HOST}/`"));
+  check("系统浏览器放行这个地址", caps.includes("https://vpn.hasut.edu.cn/") && caps.includes("https://vpn.hasut.edu.cn/**"));
+}
+
+console.log("");
 console.log(failed === 0 ? "  ALL CHECKS PASSED" : "  " + failed + " CHECK(S) FAILED");
 process.exit(failed ? 1 : 0);
