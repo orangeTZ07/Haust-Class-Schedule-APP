@@ -18,3 +18,8 @@ pub(crate) async fn can_install<R: Runtime>(app: AppHandle<R>) -> Result<bool> {
 pub(crate) async fn request_install_permission<R: Runtime>(app: AppHandle<R>) -> Result<()> {
   app.android_installer().request_install_permission()
 }
+
+#[command]
+pub(crate) async fn launch_app<R: Runtime>(app: AppHandle<R>, package_name: String) -> Result<bool> {
+  app.android_installer().launch_app(LaunchAppRequest { package_name })
+}

@@ -22,6 +22,11 @@ class InstallArgs {
     var path: String? = null
 }
 
+@InvokeArg
+class LaunchAppArgs {
+    var packageName: String? = null
+}
+
 @TauriPlugin
 class InstallerPlugin(private val activity: Activity) : Plugin(activity) {
 
@@ -95,6 +100,39 @@ class InstallerPlugin(private val activity: Activity) : Plugin(activity) {
     @ActivityCallback
     fun installPermissionResult(invoke: Invoke, result: ActivityResult) {
         invoke.resolve()
+    }
+
+    /**
+     * Launches an installed app by package name. Resolves `{ launched: false }` instead of
+     * rejecting when the app is not installed (or not visible to us -- on Android 11+ the package
+     * has to be declared in a `<queries>` entry in AndroidManifest.xml), so callers can fall back
+     * without a try/catch.
+     */
+    @Command
+    fun launchApp(invoke: Invoke) {
+        val packageName = invoke.parseArgs(LaunchAppArgs::class.java).packageName
+        if (packageName.isNullOrBlank()) {
+            invoke.reject("No package name provided.")
+            return
+        }
+
+        val ret = JSObject()
+        val intent = activity.packageManager.getLaunchIntentForPackage(packageName)
+        if (intent == null) {
+            ret.put("launched", false)
+            invoke.resolve(ret)
+            return
+        }
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launched = try {
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        ret.put("launched", launched)
+        invoke.resolve(ret)
     }
 
     private fun canRequestInstalls(): Boolean {

@@ -58,8 +58,25 @@ console.log("=== aTrust 提示可以跳转并复制地址 ===");
   const caps = readFileSync(join(here, "..", "src-tauri/capabilities/default.json"), "utf8");
   check("提示旁有打开 aTrust", eams.includes("打开 aTrust") && eams.includes("openAtrust"));
   check("复制的主机名是 vpn.haust.edu.cn", eams.includes('const VPN_HOST = "vpn.haust.edu.cn"') && eams.includes("copyVpnHost"));
-  check("打开的是这台 aTrust 的入口", eams.includes("const ATRUST_URL = `https://${VPN_HOST}/`"));
-  check("系统浏览器放行这个地址", caps.includes("https://vpn.haust.edu.cn/") && caps.includes("https://vpn.haust.edu.cn/**"));
+  check(
+    "优先用系统接口按包名拉起 aTrust",
+    eams.includes('const ATRUST_PACKAGE = "com.sangfor.atrust"') && eams.includes("launchApp(ATRUST_PACKAGE)")
+  );
+  check(
+    "没装 aTrust 就跳到安装说明页",
+    eams.includes('const ATRUST_HELP_URL = "https://metic.haust.edu.cn/info/1010/1972.htm"') &&
+      eams.includes("if (!launched) openAtrustHelp()")
+  );
+  check("系统浏览器放行安装说明页", caps.includes("https://metic.haust.edu.cn/info/1010/1972.htm"));
+  // Android 11+ 的包可见性：清单里不声明，装了 aTrust 也查不到，会一直落到安装说明页。
+  const installerDir = join(here, "..", "src-tauri/plugins/android-installer");
+  const manifest = readFileSync(join(installerDir, "android/src/main/AndroidManifest.xml"), "utf8");
+  const kotlin = readFileSync(
+    join(installerDir, "android/src/main/java/dev/imal/tauri/androidinstaller/InstallerPlugin.kt"),
+    "utf8"
+  );
+  check("清单里声明了能看见 aTrust 的包", /<queries>[\s\S]*<package android:name="com\.sangfor\.atrust"\s*\/>[\s\S]*<\/queries>/.test(manifest));
+  check("原生端用 PackageManager 按包名取启动意图", kotlin.includes("getLaunchIntentForPackage"));
 }
 
 console.log("");

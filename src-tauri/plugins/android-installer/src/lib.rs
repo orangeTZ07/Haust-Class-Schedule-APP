@@ -41,6 +41,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     .invoke_handler(tauri::generate_handler![
       commands::install,
       commands::can_install,
+      commands::launch_app,
       commands::request_install_permission
     ])
     .setup(|app, api| {

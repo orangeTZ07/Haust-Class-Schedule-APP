@@ -9,6 +9,7 @@ import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsC
 import { formatMatrix, runDiagnosticMatrix } from "@/services/eams/diagnose";
 import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
+import { launchApp } from "@/services/androidInstaller";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
 import { useConfirmReplace } from "./confirmReplace";
@@ -45,9 +46,12 @@ const diagnoseText = ref("");
 const showTrouble = ref(false);
 
 const CREDIT_URL = "https://github.com/LinJX1210";
-/// 学校 aTrust 的服务器地址。应用里没有另存的下载页，打开这个地址就是进 aTrust。
+/// 学校 aTrust 的服务器地址：在 aTrust 里填这个，「复制」按钮复制的也是它。
 const VPN_HOST = "vpn.haust.edu.cn";
-const ATRUST_URL = `https://${VPN_HOST}/`;
+/// aTrust 在 Android 上的包名（各应用商店都是这一个）。
+const ATRUST_PACKAGE = "com.sangfor.atrust";
+/// 手机上没有 aTrust 时去的页面：学校信息化办公室的 aTrust 下载安装说明。
+const ATRUST_HELP_URL = "https://metic.haust.edu.cn/info/1010/1972.htm";
 
 const openCredit = () => {
   openUrl(CREDIT_URL).catch(() => {
@@ -55,11 +59,23 @@ const openCredit = () => {
   });
 };
 
-const openAtrust = () => {
-  openUrl(ATRUST_URL).catch(() => {
-    const opened = window.open(ATRUST_URL, "_blank", "noopener");
-    if (!opened) showToast({ message: "打不开 aTrust，请点复制后到应用里粘贴", type: "fail" });
+const openAtrustHelp = () => {
+  openUrl(ATRUST_HELP_URL).catch(() => {
+    const opened = window.open(ATRUST_HELP_URL, "_blank", "noopener");
+    if (!opened) showToast({ message: "打不开 aTrust 安装说明，请用浏览器访问 metic.haust.edu.cn", type: "fail" });
   });
+};
+
+/// 优先用系统接口直接拉起手机上的 aTrust；没装、拉不起来，或这个平台没有这个接口（比如 iOS），
+/// 就去安装说明页。拉起失败和「没装」一样处理，所以这里吞掉异常。
+const openAtrust = async () => {
+  let launched = false;
+  try {
+    launched = await launchApp(ATRUST_PACKAGE);
+  } catch {
+    // 落到下面的安装说明页。
+  }
+  if (!launched) openAtrustHelp();
 };
 
 /// Clipboard API 在部分 WebView 里会拒绝，选区复制是同一套按钮的退路。
