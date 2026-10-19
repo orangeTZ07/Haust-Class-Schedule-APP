@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { metalShineForPresetId, useTheme, presetList } from "@/composables/useTheme";
+import { metalShineForPresetId, neonFxForPresetId, useTheme, presetList } from "@/composables/useTheme";
 import { useRouter } from "vue-router";
 import { ArrowLeft, Check } from '@lucide/vue';
 
@@ -38,13 +38,19 @@ const handleSelect = (id: string) => {
           :class="{ active: preset.id === currentPresetId }"
           @click="handleSelect(preset.id)"
         >
-          <div class="preset-preview" :style="{ background: preset.preset.bgColor }">
+          <div
+            class="preset-preview"
+            :class="{ 'is-neon-preview': !!neonFxForPresetId(preset.id) }"
+            :data-neon="neonFxForPresetId(preset.id) || undefined"
+            :style="{ background: preset.preset.bgColor, '--neon-preview': preset.color }"
+          >
             <div
               class="p-header"
               :class="{
                 'is-metal-strip': !!metalShineForPresetId(preset.id),
                 'is-metal-silver': metalShineForPresetId(preset.id) === 'silver',
-                'is-metal-gold': metalShineForPresetId(preset.id) === 'gold'
+                'is-metal-gold': metalShineForPresetId(preset.id) === 'gold',
+                'is-neon-strip': !!neonFxForPresetId(preset.id)
               }"
               :style="{ background: preset.preset.headerBgColor }"
             ></div>
@@ -174,3 +180,4 @@ const handleSelect = (id: string) => {
   color: var(--color-primary);
 }
 </style>
+
