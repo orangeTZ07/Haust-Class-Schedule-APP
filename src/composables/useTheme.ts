@@ -455,6 +455,78 @@ const plasmaPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
+// 赛博雨夜：粉 + 青的霓虹招牌，斜着落下的雨丝，偶尔一道闪电
+const rainPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#00e5ff",
+  cardBorderRadius: 8,
+  gridLineColor: "#1a1f4a",
+  gridLineOpacity: 100,
+  headerBgColor: "#0d1030",
+  headerTextColor: "#ff2e88",
+  bodyTextColor: "#e6f1ff",
+  bgColor: "#050816",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 深海荧光：青绿的生物荧光，往上浮的气泡和水面焦散光
+const abyssPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#14b8a6",
+  cardBorderRadius: 16,
+  gridLineColor: "#083344",
+  gridLineOpacity: 100,
+  headerBgColor: "#001f2e",
+  headerTextColor: "#2dd4bf",
+  bodyTextColor: "#ccfbf1",
+  bgColor: "#00101a",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 故障信号：红青错位的 Glitch，画面偶尔撕裂跳帧
+const glitchPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 25,
+  cardBorderWidth: 1,
+  cardBorderColor: "#ff0050",
+  cardBorderRadius: 0,
+  gridLineColor: "#27272a",
+  gridLineOpacity: 100,
+  headerBgColor: "#111118",
+  headerTextColor: "#00fff0",
+  bodyTextColor: "#f1f5f9",
+  bgColor: "#0b0b0f",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 星际跃迁：从中心往外飞散的星空，像在跃迁
+const warpPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#a5b4fc",
+  cardBorderRadius: 10,
+  gridLineColor: "#1e1b4b",
+  gridLineOpacity: 100,
+  headerBgColor: "#0a0820",
+  headerTextColor: "#a5b4fc",
+  bodyTextColor: "#e0e7ff",
+  bgColor: "#02010a",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
 // 默认亮色预设
 const lightPreset = catppuccinLattePreset;
 
@@ -684,10 +756,43 @@ export const presetList: PresetInfo[] = [
     name: "彩虹等离子 (特效)",
     preset: plasmaPreset,
     color: "#f472b6"
+  },
+  {
+    id: "neon-rain",
+    name: "赛博雨夜 (特效)",
+    preset: rainPreset,
+    color: "#ff2e88"
+  },
+  {
+    id: "abyss",
+    name: "深海荧光 (特效)",
+    preset: abyssPreset,
+    color: "#2dd4bf"
+  },
+  {
+    id: "glitch",
+    name: "故障信号 (特效)",
+    preset: glitchPreset,
+    color: "#ff0050"
+  },
+  {
+    id: "warp",
+    name: "星际跃迁 (特效)",
+    preset: warpPreset,
+    color: "#a5b4fc"
   }
 ];
 
-export type NeonFx = "pulse" | "synthwave" | "matrix" | "aurora" | "plasma";
+export type NeonFx =
+  | "pulse"
+  | "synthwave"
+  | "matrix"
+  | "aurora"
+  | "plasma"
+  | "rain"
+  | "abyss"
+  | "glitch"
+  | "warp";
 
 const NEON_FX_BY_PRESET: Record<string, NeonFx> = {
   "neon-pulse": "pulse",
@@ -695,6 +800,10 @@ const NEON_FX_BY_PRESET: Record<string, NeonFx> = {
   matrix: "matrix",
   aurora: "aurora",
   plasma: "plasma",
+  "neon-rain": "rain",
+  abyss: "abyss",
+  glitch: "glitch",
+  warp: "warp",
 };
 
 /// 霓虹特效预设的特效名；普通预设返回空串。

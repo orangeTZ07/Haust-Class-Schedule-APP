@@ -416,3 +416,222 @@
     transform: none;
   }
 }
+
+/* ========== 第二批：赛博雨夜 / 深海荧光 / 故障信号 / 星际跃迁 ========== */
+
+#app.neon-fx-rain {
+  --neon-a: #ff2e88;
+  --neon-b: #00e5ff;
+  --neon-c: #7c3aed;
+  --neon-breath: 3.6s;
+}
+
+#app.neon-fx-abyss {
+  --neon-a: #2dd4bf;
+  --neon-b: #38bdf8;
+  --neon-c: #0e7490;
+  --neon-breath: 5.5s;
+}
+
+#app.neon-fx-glitch {
+  --neon-a: #ff0050;
+  --neon-b: #00fff0;
+  --neon-c: #f5f5f5;
+  --neon-breath: 1.8s;
+}
+
+#app.neon-fx-warp {
+  --neon-a: #a5b4fc;
+  --neon-b: #f0abfc;
+  --neon-c: #67e8f9;
+  --neon-breath: 4.2s;
+}
+
+/* 赛博雨夜：表头像霓虹招牌一样接触不良。 */
+#app.neon-fx-rain .top-bar,
+#app.neon-fx-rain .week-grid > .header {
+  animation: neon-sign-buzz 7s steps(1, end) infinite;
+}
+
+@keyframes neon-sign-buzz {
+  0%, 60%, 63%, 65%, 100% { opacity: 1; }
+  61%, 64% { opacity: 0.4; }
+}
+
+/* 斜雨：一张超大的雨丝贴图，整体往右下平移；再叠一层地面倒影光和偶尔的闪电。 */
+#app.neon-fx-rain .neon-fx-layer::before {
+  left: -20%;
+  top: -40%;
+  width: 140%;
+  height: 180%;
+  background-image:
+    repeating-linear-gradient(100deg, transparent 0 22px, rgb(0 229 255 / 0.3) 22px 23.5px, transparent 23px 61px),
+    repeating-linear-gradient(100deg, transparent 0 37px, rgb(255 46 136 / 0.24) 37px 38.5px, transparent 38px 89px);
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 26px, transparent 26px 70px);
+  mask-image: repeating-linear-gradient(180deg, #000 0 26px, transparent 26px 70px);
+  animation: neon-rain-fall 0.7s linear infinite;
+}
+
+#app.neon-fx-rain .neon-fx-layer::after {
+  inset: 0;
+  background:
+    radial-gradient(70% 22% at 30% 105%, rgb(255 46 136 / 0.28), transparent 70%),
+    radial-gradient(60% 20% at 75% 105%, rgb(0 229 255 / 0.24), transparent 70%),
+    linear-gradient(180deg, rgb(200 230 255 / 0.18), transparent 40%);
+  animation: neon-lightning 9s linear infinite;
+}
+
+@keyframes neon-rain-fall {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-12px, 70px, 0); }
+}
+
+/* 大部分时间只亮着地面倒影；约 9 秒一次、连闪两下的闪电。 */
+@keyframes neon-lightning {
+  0%, 80%, 82.5%, 84%, 100% { opacity: 0.55; }
+  81%, 83% { opacity: 1; }
+}
+
+/* 深海荧光：往上浮的荧光气泡 + 自上而下的水面焦散光。 */
+#app.neon-fx-abyss .neon-fx-layer::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(100% + 240px);
+  background-image:
+    radial-gradient(circle at 20% 30%, rgb(45 212 191 / 0.5) 0 2px, transparent 3px),
+    radial-gradient(circle at 70% 60%, rgb(56 189 248 / 0.45) 0 3px, transparent 4px),
+    radial-gradient(circle at 45% 85%, rgb(45 212 191 / 0.35) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 85% 15%, rgb(167 243 208 / 0.4) 0 2px, transparent 3px);
+  background-size: 140px 240px;
+  animation: neon-bubbles-rise 9s linear infinite;
+}
+
+#app.neon-fx-abyss .neon-fx-layer::after {
+  inset: -20% -30% 40% -30%;
+  background:
+    radial-gradient(30% 40% at 30% 0%, rgb(45 212 191 / 0.22), transparent 70%),
+    radial-gradient(25% 35% at 65% 0%, rgb(56 189 248 / 0.2), transparent 70%),
+    radial-gradient(20% 30% at 50% 0%, rgb(204 251 241 / 0.14), transparent 70%);
+  transform-origin: 50% 0;
+  animation: neon-caustics 7s ease-in-out infinite alternate;
+}
+
+@keyframes neon-bubbles-rise {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -240px, 0); }
+}
+
+@keyframes neon-caustics {
+  0% { transform: translate3d(-6%, 0, 0) skewX(-8deg) scaleY(1); opacity: 0.7; }
+  100% { transform: translate3d(6%, 0, 0) skewX(8deg) scaleY(1.25); opacity: 1; }
+}
+
+/* 故障信号：表头和课程名红青错位、偶尔跳帧；全屏偶尔横向撕裂。 */
+#app.neon-fx-glitch .top-bar,
+#app.neon-fx-glitch .week-grid > .header {
+  text-shadow:
+    -1.5px 0 rgb(255 0 80 / 0.9),
+    1.5px 0 rgb(0 255 240 / 0.9);
+  animation: neon-glitch-shift 3.2s steps(1, end) infinite;
+}
+
+#app.neon-fx-glitch .course-block:not(.is-past):not(.is-conflicting) .course-name {
+  text-shadow:
+    -1px 0 rgb(255 0 80 / 0.8),
+    1px 0 rgb(0 255 240 / 0.8);
+  animation: neon-glitch-shift 4.4s steps(1, end) infinite;
+  animation-delay: calc(var(--neon-phase, 0) * -1.3s);
+}
+
+@keyframes neon-glitch-shift {
+  0%, 86%, 100% { translate: 0 0; }
+  87% { translate: -2px 0; }
+  89% { translate: 2px 0; }
+  91% { translate: -1px 1px; }
+  93% { translate: 1px 0; }
+}
+
+#app.neon-fx-glitch .neon-fx-layer::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  background:
+    linear-gradient(180deg,
+      transparent 0 18%, rgb(255 0 80 / 0.22) 18% 19.5%, transparent 19.5% 47%,
+      rgb(0 255 240 / 0.2) 47% 48%, transparent 48% 71%,
+      rgb(255 255 255 / 0.12) 71% 71.6%, transparent 71.6%);
+  opacity: 0;
+  animation: neon-glitch-tear 2.6s steps(1, end) infinite;
+}
+
+#app.neon-fx-glitch .neon-fx-layer::after {
+  inset: 0;
+  background: repeating-linear-gradient(180deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 2px);
+}
+
+@keyframes neon-glitch-tear {
+  0%, 70%, 100% { opacity: 0; transform: translate3d(0, 0, 0); }
+  72% { opacity: 1; transform: translate3d(-8px, 0, 0); }
+  75% { opacity: 1; transform: translate3d(10px, 6vh, 0); }
+  78% { opacity: 0.6; transform: translate3d(-4px, -10vh, 0); }
+  80% { opacity: 0; }
+}
+
+/* 星际跃迁：两层星点从屏幕中心向外放大、淡出，交替接力。 */
+#app.neon-fx-warp .neon-fx-layer::before,
+#app.neon-fx-warp .neon-fx-layer::after {
+  left: 50%;
+  top: 50%;
+  width: 120vmax;
+  height: 120vmax;
+  margin: -60vmax 0 0 -60vmax;
+  background-image:
+    radial-gradient(circle at 12% 18%, #fff 0 1px, transparent 1.5px),
+    radial-gradient(circle at 63% 9%, rgb(165 180 252) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 37% 71%, #fff 0 0.8px, transparent 1.4px),
+    radial-gradient(circle at 81% 54%, rgb(240 171 252) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 24% 46%, rgb(103 232 249) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 90% 88%, #fff 0 1.2px, transparent 2px);
+  background-size: 90px 90px;
+  -webkit-mask-image: radial-gradient(closest-side, transparent 6%, #000 40%);
+  mask-image: radial-gradient(closest-side, transparent 6%, #000 40%);
+  animation: neon-warp 3.6s cubic-bezier(0.55, 0, 1, 0.45) infinite;
+}
+
+#app.neon-fx-warp .neon-fx-layer::after {
+  background-size: 130px 130px;
+  animation-delay: -1.8s;
+}
+
+@keyframes neon-warp {
+  0% { transform: scale(0.35); opacity: 0; }
+  25% { opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* 预览：沿用 --neon-preview 的发光，故障信号的预览条换成红青双色。 */
+.preset-preview[data-neon="glitch"] .p-header.is-neon-strip::after {
+  background: linear-gradient(90deg, #ff0050 0 50%, #00fff0 50% 100%);
+  animation-timing-function: steps(6, end);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.neon-fx-glitch .top-bar,
+  #app.neon-fx-glitch .week-grid > .header,
+  #app.neon-fx-glitch .course-block .course-name {
+    animation: none !important;
+    translate: none;
+  }
+
+  #app.neon-fx-glitch .neon-fx-layer::before,
+  #app.neon-fx-warp .neon-fx-layer::after {
+    opacity: 0;
+  }
+
+  #app.neon-fx-warp .neon-fx-layer::before {
+    opacity: 0.6;
+    transform: none;
+  }
+}
