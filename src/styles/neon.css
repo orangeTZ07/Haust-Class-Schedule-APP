@@ -1,0 +1,642 @@
+/* ---------- 霓虹特效预设 ----------
+   只在 #app.neon-fx 下生效（霓虹脉冲 / 合成波日落 / 黑客矩阵 / 极光幻境 / 彩虹等离子）。
+   App.vue 按当前预设加上 neon-fx-<名字>，并挂一个全屏 .neon-fx-layer。
+
+   规则：
+   - 循环动画只动 transform / opacity（能交给合成层），背景网格和流光描边除外，已控制在小面积上。
+   - 课程卡片的内联边框色（课程色）不覆盖，只叠发光；已上过的课、冲突课不发光，状态优先。
+   - 全屏光效层用 screen 混合、不接收点击，只会让暗处变亮，不会盖住文字。
+   - prefers-reduced-motion 下停掉所有循环动画，保留静态发光。 */
+
+#app.neon-fx {
+  --neon-a: #22d3ee;
+  --neon-b: #e879f9;
+  --neon-c: #6366f1;
+  --neon-glow: 0.55;
+  --neon-breath: 3.2s;
+}
+
+#app.neon-fx-pulse {
+  --neon-a: #22d3ee;
+  --neon-b: #f0abfc;
+  --neon-c: #6366f1;
+}
+
+#app.neon-fx-synthwave {
+  --neon-a: #ff6ad5;
+  --neon-b: #ffb86c;
+  --neon-c: #8b5cf6;
+  --neon-breath: 4s;
+}
+
+#app.neon-fx-matrix {
+  --neon-a: #39ff14;
+  --neon-b: #22c55e;
+  --neon-c: #14532d;
+  --neon-glow: 0.45;
+  --neon-breath: 2.4s;
+}
+
+#app.neon-fx-aurora {
+  --neon-a: #5eead4;
+  --neon-b: #818cf8;
+  --neon-c: #c084fc;
+  --neon-breath: 5s;
+}
+
+#app.neon-fx-plasma {
+  --neon-a: #f472b6;
+  --neon-b: #fbbf24;
+  --neon-c: #38bdf8;
+  --neon-breath: 2.8s;
+}
+
+/* ---------- 顶栏、表头 ---------- */
+#app.neon-fx .top-bar,
+#app.neon-fx .week-grid > .header {
+  isolation: isolate;
+  /* 顶栏和星期表头本身是 sticky。这里再写 position: relative 会把吸顶盖掉。
+     sticky 已经是定位元素，底边灯管照样能挂在它们身上。 */
+  text-shadow:
+    0 0 4px color-mix(in srgb, var(--neon-a) 80%, transparent),
+    0 0 12px color-mix(in srgb, var(--neon-a) 45%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--neon-a) 55%, transparent);
+}
+
+/* 底边一条流动的霓虹灯管。 */
+#app.neon-fx .top-bar::before,
+#app.neon-fx .week-grid > .header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(90deg, var(--neon-a), var(--neon-b), var(--neon-c), var(--neon-a));
+  background-size: 300% 100%;
+  box-shadow:
+    0 0 6px var(--neon-a),
+    0 0 14px color-mix(in srgb, var(--neon-b) 70%, transparent);
+  animation: neon-tube-flow 4s linear infinite;
+}
+
+@keyframes neon-tube-flow {
+  from { background-position: 0% 0; }
+  to { background-position: 300% 0; }
+}
+
+/* 黑客矩阵：表头偶尔像坏掉的灯管一样闪两下。 */
+#app.neon-fx-matrix .top-bar,
+#app.neon-fx-matrix .week-grid > .header {
+  animation: neon-flicker 6s steps(1, end) infinite;
+}
+
+@keyframes neon-flicker {
+  0%, 91%, 94%, 97%, 100% { opacity: 1; }
+  92%, 96% { opacity: 0.55; }
+}
+
+/* ---------- 课程卡片 ---------- */
+#app.neon-fx .course-block:not(.is-past):not(.is-conflicting):not(.is-dragging) {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--neon-a) 35%, transparent),
+    0 0 10px color-mix(in srgb, var(--neon-a) 35%, transparent) !important;
+}
+
+#app.neon-fx .course-block:not(.is-past):not(.is-conflicting) .course-name {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--neon-a) 70%, transparent);
+}
+
+#app.neon-fx .course-block:not(.is-past):not(.is-conflicting) .course-accent {
+  opacity: 1;
+  box-shadow: 0 0 6px currentColor, 0 0 10px var(--neon-a);
+}
+
+/* 呼吸光：内发光放在伪元素上，只动 opacity。错开相位，整张课表像在缓慢起伏。 */
+#app.neon-fx .course-block:not(.is-past):not(.is-conflicting)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* 负层：发光画在卡片背景之上、课名之下，避免呼吸光盖住文字。 */
+  z-index: -1;
+  box-shadow:
+    inset 0 0 12px color-mix(in srgb, var(--neon-a) 55%, transparent),
+    inset 0 0 2px color-mix(in srgb, var(--neon-b) 80%, transparent);
+  opacity: 0.25;
+  animation: neon-breathe var(--neon-breath) ease-in-out infinite;
+  animation-delay: calc(var(--neon-phase, 0) * -0.6s);
+}
+
+#app.neon-fx .course-block:nth-child(3n + 1) { --neon-phase: 1; }
+#app.neon-fx .course-block:nth-child(3n + 2) { --neon-phase: 2; }
+#app.neon-fx .course-block:nth-child(3n) { --neon-phase: 3; }
+
+@keyframes neon-breathe {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* 彩虹等离子：卡片描边是一圈流动的彩虹。 */
+#app.neon-fx-plasma .course-block:not(.is-past):not(.is-conflicting)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(115deg, #f472b6, #fbbf24, #4ade80, #38bdf8, #a78bfa, #f472b6);
+  background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: neon-rainbow-border 5s linear infinite;
+}
+
+@keyframes neon-rainbow-border {
+  from { background-position: 0% 50%; }
+  to { background-position: 300% 50%; }
+}
+
+/* 点开的卡片：更亮的外发光。 */
+#app.neon-fx .course-block.is-expanded:not(.is-past):not(.is-conflicting) {
+  box-shadow:
+    0 0 0 1px var(--neon-a),
+    0 0 24px color-mix(in srgb, var(--neon-a) 60%, transparent),
+    0 12px 48px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ---------- 主按钮 ---------- */
+#app.neon-fx .app-btn--primary {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-accent) 60%, transparent);
+}
+
+/* ---------- 全屏光效层 ---------- */
+.neon-fx-layer {
+  position: fixed;
+  inset: 0;
+  /* 课表内容层是 2，光效要盖在课表上。再往上的可点层不能被盖住：
+     侧边栏 100、周次选择 120、功能引导 240、Vant 弹层从 2000 起、裁剪层 2500。 */
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  contain: strict;
+  animation: neon-layer-in 900ms ease-out both;
+}
+
+.neon-fx-layer::before,
+.neon-fx-layer::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+@keyframes neon-layer-in {
+  from { opacity: 0; }
+}
+
+/* 霓虹脉冲：两团交替漂移的光晕 + 缓慢下移的网格。 */
+#app.neon-fx-pulse .neon-fx-layer::before {
+  inset: -50% -50%;
+  background:
+    radial-gradient(closest-side at 30% 35%, rgb(34 211 238 / 0.22), transparent),
+    radial-gradient(closest-side at 70% 65%, rgb(232 121 249 / 0.2), transparent);
+  animation: neon-drift 14s ease-in-out infinite alternate;
+}
+
+#app.neon-fx-pulse .neon-fx-layer::after {
+  left: 0;
+  right: 0;
+  top: -48px;
+  height: calc(100% + 48px);
+  background-image:
+    linear-gradient(rgb(34 211 238 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(232 121 249 / 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: neon-grid-scroll 6s linear infinite;
+}
+
+@keyframes neon-drift {
+  0% { transform: translate3d(-6%, -4%, 0) rotate(0deg); }
+  100% { transform: translate3d(6%, 5%, 0) rotate(25deg); }
+}
+
+@keyframes neon-grid-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 48px, 0); }
+}
+
+/* 合成波日落：底部发光的条纹落日 + 透视地平线网格。 */
+#app.neon-fx-synthwave .neon-fx-layer::before {
+  left: 50%;
+  bottom: 18%;
+  width: min(70vw, 340px);
+  aspect-ratio: 1;
+  margin-left: calc(min(70vw, 340px) / -2);
+  border-radius: 50%;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 9%, rgb(0 0 0 / 0.85) 9% 11%),
+    linear-gradient(180deg, rgb(255 184 108 / 0.55), rgb(255 106 213 / 0.45) 60%, rgb(139 92 246 / 0.2));
+  -webkit-mask-image: linear-gradient(#000 45%, transparent 100%);
+  mask-image: linear-gradient(#000 45%, transparent 100%);
+  box-shadow: 0 0 90px rgb(255 106 213 / 0.35);
+  animation: neon-sun-pulse 5s ease-in-out infinite;
+}
+
+#app.neon-fx-synthwave .neon-fx-layer::after {
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 45%;
+  background-image:
+    linear-gradient(rgb(255 106 213 / 0.45) 2px, transparent 2px),
+    linear-gradient(90deg, rgb(139 92 246 / 0.45) 2px, transparent 2px);
+  background-size: 60px 40px;
+  transform: perspective(260px) rotateX(62deg);
+  transform-origin: 50% 0;
+  -webkit-mask-image: linear-gradient(transparent, #000 35%);
+  mask-image: linear-gradient(transparent, #000 35%);
+  animation: neon-horizon-run 1.6s linear infinite;
+}
+
+@keyframes neon-sun-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes neon-horizon-run {
+  from { background-position: 0 0; }
+  to { background-position: 0 40px; }
+}
+
+/* 黑客矩阵：CRT 扫描线 + 自上而下扫过的光带。 */
+#app.neon-fx-matrix .neon-fx-layer::before {
+  inset: 0;
+  background: repeating-linear-gradient(180deg, rgb(57 255 20 / 0.05) 0 1px, transparent 1px 3px);
+}
+
+#app.neon-fx-matrix .neon-fx-layer::after {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22vh;
+  background: linear-gradient(180deg, transparent, rgb(57 255 20 / 0.12) 70%, rgb(57 255 20 / 0.3) 98%, transparent);
+  transform: translate3d(0, -30vh, 0);
+  animation: neon-scan 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes neon-scan {
+  from { transform: translate3d(0, -30vh, 0); }
+  to { transform: translate3d(0, 110vh, 0); }
+}
+
+/* 极光幻境：两条缓慢摆动、交替明暗的极光带。 */
+#app.neon-fx-aurora .neon-fx-layer::before,
+#app.neon-fx-aurora .neon-fx-layer::after {
+  inset: -30% -40%;
+  background:
+    radial-gradient(60% 18% at 50% 40%, rgb(94 234 212 / 0.24), transparent 70%),
+    radial-gradient(45% 14% at 35% 55%, rgb(129 140 248 / 0.2), transparent 70%);
+  animation: neon-aurora-sway 18s ease-in-out infinite alternate;
+}
+
+#app.neon-fx-aurora .neon-fx-layer::after {
+  background:
+    radial-gradient(55% 16% at 60% 30%, rgb(192 132 252 / 0.2), transparent 70%),
+    radial-gradient(40% 12% at 70% 60%, rgb(94 234 212 / 0.16), transparent 70%);
+  animation-duration: 23s;
+  animation-direction: alternate-reverse;
+}
+
+@keyframes neon-aurora-sway {
+  0% { transform: translate3d(-8%, 0, 0) rotate(-8deg) scaleY(1); opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { transform: translate3d(8%, 6%, 0) rotate(10deg) scaleY(1.3); opacity: 0.7; }
+}
+
+/* 彩虹等离子：一整片慢慢旋转的彩色光场。 */
+#app.neon-fx-plasma .neon-fx-layer::before {
+  left: 50%;
+  top: 50%;
+  width: 160vmax;
+  height: 160vmax;
+  margin: -80vmax 0 0 -80vmax;
+  background: conic-gradient(
+    from 0deg,
+    rgb(244 114 182 / 0.16),
+    rgb(251 191 36 / 0.12),
+    rgb(74 222 128 / 0.12),
+    rgb(56 189 248 / 0.16),
+    rgb(167 139 250 / 0.14),
+    rgb(244 114 182 / 0.16)
+  );
+  -webkit-mask-image: radial-gradient(closest-side, #000 20%, transparent);
+  mask-image: radial-gradient(closest-side, #000 20%, transparent);
+  animation: neon-spin 24s linear infinite;
+}
+
+#app.neon-fx-plasma .neon-fx-layer::after {
+  inset: 0;
+  background: radial-gradient(circle at 50% 120%, rgb(244 114 182 / 0.18), transparent 60%);
+  animation: neon-sun-pulse 3s ease-in-out infinite;
+}
+
+@keyframes neon-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 预设列表里的预览 ---------- */
+.preset-preview.is-neon-preview {
+  position: relative;
+  border-color: color-mix(in srgb, var(--neon-preview) 60%, transparent) !important;
+  box-shadow:
+    0 0 10px color-mix(in srgb, var(--neon-preview) 45%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--neon-preview) 25%, transparent);
+  animation: neon-preview-breathe 3s ease-in-out infinite;
+}
+
+.preset-preview.is-neon-preview .p-card {
+  opacity: 1 !important;
+  background: transparent !important;
+  border: 1px solid var(--neon-preview);
+  box-shadow: 0 0 8px var(--neon-preview), inset 0 0 6px var(--neon-preview);
+}
+
+.p-header.is-neon-strip {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 1px 6px var(--neon-preview);
+}
+
+.p-header.is-neon-strip::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-preview), transparent);
+  transform: translateX(-100%);
+  animation: neon-preview-sweep 2.4s ease-in-out infinite;
+}
+
+.preset-preview[data-neon="plasma"] .p-header.is-neon-strip::after {
+  background: linear-gradient(90deg, #f472b6, #fbbf24, #4ade80, #38bdf8, #a78bfa);
+}
+
+@keyframes neon-preview-breathe {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+
+@keyframes neon-preview-sweep {
+  to { transform: translateX(100%); }
+}
+
+/* ---------- 减少动态效果 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  #app.neon-fx .top-bar,
+  #app.neon-fx .week-grid > .header,
+  #app.neon-fx .top-bar::before,
+  #app.neon-fx .week-grid > .header::before,
+  #app.neon-fx .course-block::before,
+  #app.neon-fx .course-block::after,
+  .neon-fx-layer,
+  .neon-fx-layer::before,
+  .neon-fx-layer::after,
+  .preset-preview.is-neon-preview,
+  .p-header.is-neon-strip::after {
+    animation: none !important;
+  }
+
+  #app.neon-fx .course-block:not(.is-past):not(.is-conflicting)::after {
+    opacity: 0.5;
+  }
+
+  .p-header.is-neon-strip::after {
+    transform: none;
+  }
+}
+
+/* ========== 第二批：赛博雨夜 / 深海荧光 / 故障信号 / 星际跃迁 ========== */
+
+#app.neon-fx-rain {
+  --neon-a: #ff2e88;
+  --neon-b: #00e5ff;
+  --neon-c: #7c3aed;
+  --neon-breath: 3.6s;
+}
+
+#app.neon-fx-abyss {
+  --neon-a: #2dd4bf;
+  --neon-b: #38bdf8;
+  --neon-c: #0e7490;
+  --neon-breath: 5.5s;
+}
+
+#app.neon-fx-glitch {
+  --neon-a: #ff0050;
+  --neon-b: #00fff0;
+  --neon-c: #f5f5f5;
+  --neon-breath: 1.8s;
+}
+
+#app.neon-fx-warp {
+  --neon-a: #a5b4fc;
+  --neon-b: #f0abfc;
+  --neon-c: #67e8f9;
+  --neon-breath: 4.2s;
+}
+
+/* 赛博雨夜：表头像霓虹招牌一样接触不良。 */
+#app.neon-fx-rain .top-bar,
+#app.neon-fx-rain .week-grid > .header {
+  animation: neon-sign-buzz 7s steps(1, end) infinite;
+}
+
+@keyframes neon-sign-buzz {
+  0%, 60%, 63%, 65%, 100% { opacity: 1; }
+  61%, 64% { opacity: 0.4; }
+}
+
+/* 斜雨：一张超大的雨丝贴图，整体往右下平移；再叠一层地面倒影光和偶尔的闪电。 */
+#app.neon-fx-rain .neon-fx-layer::before {
+  left: -20%;
+  top: -40%;
+  width: 140%;
+  height: 180%;
+  background-image:
+    repeating-linear-gradient(100deg, transparent 0 22px, rgb(0 229 255 / 0.3) 22px 23.5px, transparent 23px 61px),
+    repeating-linear-gradient(100deg, transparent 0 37px, rgb(255 46 136 / 0.24) 37px 38.5px, transparent 38px 89px);
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 26px, transparent 26px 70px);
+  mask-image: repeating-linear-gradient(180deg, #000 0 26px, transparent 26px 70px);
+  animation: neon-rain-fall 0.7s linear infinite;
+}
+
+#app.neon-fx-rain .neon-fx-layer::after {
+  inset: 0;
+  background:
+    radial-gradient(70% 22% at 30% 105%, rgb(255 46 136 / 0.28), transparent 70%),
+    radial-gradient(60% 20% at 75% 105%, rgb(0 229 255 / 0.24), transparent 70%),
+    linear-gradient(180deg, rgb(200 230 255 / 0.18), transparent 40%);
+  animation: neon-lightning 9s linear infinite;
+}
+
+@keyframes neon-rain-fall {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-12px, 70px, 0); }
+}
+
+/* 大部分时间只亮着地面倒影；约 9 秒一次、连闪两下的闪电。 */
+@keyframes neon-lightning {
+  0%, 80%, 82.5%, 84%, 100% { opacity: 0.55; }
+  81%, 83% { opacity: 1; }
+}
+
+/* 深海荧光：往上浮的荧光气泡 + 自上而下的水面焦散光。 */
+#app.neon-fx-abyss .neon-fx-layer::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(100% + 240px);
+  background-image:
+    radial-gradient(circle at 20% 30%, rgb(45 212 191 / 0.5) 0 2px, transparent 3px),
+    radial-gradient(circle at 70% 60%, rgb(56 189 248 / 0.45) 0 3px, transparent 4px),
+    radial-gradient(circle at 45% 85%, rgb(45 212 191 / 0.35) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 85% 15%, rgb(167 243 208 / 0.4) 0 2px, transparent 3px);
+  background-size: 140px 240px;
+  animation: neon-bubbles-rise 9s linear infinite;
+}
+
+#app.neon-fx-abyss .neon-fx-layer::after {
+  inset: -20% -30% 40% -30%;
+  background:
+    radial-gradient(30% 40% at 30% 0%, rgb(45 212 191 / 0.22), transparent 70%),
+    radial-gradient(25% 35% at 65% 0%, rgb(56 189 248 / 0.2), transparent 70%),
+    radial-gradient(20% 30% at 50% 0%, rgb(204 251 241 / 0.14), transparent 70%);
+  transform-origin: 50% 0;
+  animation: neon-caustics 7s ease-in-out infinite alternate;
+}
+
+@keyframes neon-bubbles-rise {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -240px, 0); }
+}
+
+@keyframes neon-caustics {
+  0% { transform: translate3d(-6%, 0, 0) skewX(-8deg) scaleY(1); opacity: 0.7; }
+  100% { transform: translate3d(6%, 0, 0) skewX(8deg) scaleY(1.25); opacity: 1; }
+}
+
+/* 故障信号：表头和课程名红青错位、偶尔跳帧；全屏偶尔横向撕裂。 */
+#app.neon-fx-glitch .top-bar,
+#app.neon-fx-glitch .week-grid > .header {
+  text-shadow:
+    -1.5px 0 rgb(255 0 80 / 0.9),
+    1.5px 0 rgb(0 255 240 / 0.9);
+  animation: neon-glitch-shift 3.2s steps(1, end) infinite;
+}
+
+#app.neon-fx-glitch .course-block:not(.is-past):not(.is-conflicting) .course-name {
+  text-shadow:
+    -1px 0 rgb(255 0 80 / 0.8),
+    1px 0 rgb(0 255 240 / 0.8);
+  animation: neon-glitch-shift 4.4s steps(1, end) infinite;
+  animation-delay: calc(var(--neon-phase, 0) * -1.3s);
+}
+
+@keyframes neon-glitch-shift {
+  0%, 86%, 100% { translate: 0 0; }
+  87% { translate: -2px 0; }
+  89% { translate: 2px 0; }
+  91% { translate: -1px 1px; }
+  93% { translate: 1px 0; }
+}
+
+#app.neon-fx-glitch .neon-fx-layer::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  background:
+    linear-gradient(180deg,
+      transparent 0 18%, rgb(255 0 80 / 0.22) 18% 19.5%, transparent 19.5% 47%,
+      rgb(0 255 240 / 0.2) 47% 48%, transparent 48% 71%,
+      rgb(255 255 255 / 0.12) 71% 71.6%, transparent 71.6%);
+  opacity: 0;
+  animation: neon-glitch-tear 2.6s steps(1, end) infinite;
+}
+
+#app.neon-fx-glitch .neon-fx-layer::after {
+  inset: 0;
+  background: repeating-linear-gradient(180deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 2px);
+}
+
+@keyframes neon-glitch-tear {
+  0%, 70%, 100% { opacity: 0; transform: translate3d(0, 0, 0); }
+  72% { opacity: 1; transform: translate3d(-8px, 0, 0); }
+  75% { opacity: 1; transform: translate3d(10px, 6vh, 0); }
+  78% { opacity: 0.6; transform: translate3d(-4px, -10vh, 0); }
+  80% { opacity: 0; }
+}
+
+/* 星际跃迁：两层星点从屏幕中心向外放大、淡出，交替接力。 */
+#app.neon-fx-warp .neon-fx-layer::before,
+#app.neon-fx-warp .neon-fx-layer::after {
+  left: 50%;
+  top: 50%;
+  width: 120vmax;
+  height: 120vmax;
+  margin: -60vmax 0 0 -60vmax;
+  background-image:
+    radial-gradient(circle at 12% 18%, #fff 0 1px, transparent 1.5px),
+    radial-gradient(circle at 63% 9%, rgb(165 180 252) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 37% 71%, #fff 0 0.8px, transparent 1.4px),
+    radial-gradient(circle at 81% 54%, rgb(240 171 252) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 24% 46%, rgb(103 232 249) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 90% 88%, #fff 0 1.2px, transparent 2px);
+  background-size: 90px 90px;
+  -webkit-mask-image: radial-gradient(closest-side, transparent 6%, #000 40%);
+  mask-image: radial-gradient(closest-side, transparent 6%, #000 40%);
+  animation: neon-warp 3.6s cubic-bezier(0.55, 0, 1, 0.45) infinite;
+}
+
+#app.neon-fx-warp .neon-fx-layer::after {
+  background-size: 130px 130px;
+  animation-delay: -1.8s;
+}
+
+@keyframes neon-warp {
+  0% { transform: scale(0.35); opacity: 0; }
+  25% { opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* 预览：沿用 --neon-preview 的发光，故障信号的预览条换成红青双色。 */
+.preset-preview[data-neon="glitch"] .p-header.is-neon-strip::after {
+  background: linear-gradient(90deg, #ff0050 0 50%, #00fff0 50% 100%);
+  animation-timing-function: steps(6, end);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.neon-fx-glitch .top-bar,
+  #app.neon-fx-glitch .week-grid > .header,
+  #app.neon-fx-glitch .course-block .course-name {
+    animation: none !important;
+    translate: none;
+  }
+
+  #app.neon-fx-glitch .neon-fx-layer::before,
+  #app.neon-fx-warp .neon-fx-layer::after {
+    opacity: 0;
+  }
+
+  #app.neon-fx-warp .neon-fx-layer::before {
+    opacity: 0.6;
+    transform: none;
+  }
+}

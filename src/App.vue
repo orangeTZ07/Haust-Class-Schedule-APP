@@ -5,7 +5,7 @@ import { useSystemBars } from "./composables/useSystemBars";
 import { useUpdateCheck } from "./composables/useUpdateCheck";
 import UpdateDialog from "./components/layout/UpdateDialog.vue";
 
-const { themeConfig, cssVariables, metalShine } = useTheme();
+const { themeConfig, cssVariables, metalShine, neonFx } = useTheme();
 // 把安卓状态栏 / 导航栏的真实尺寸写进 --native-safe-*，并让栏上的图标颜色跟着主题走；失败静默。
 useSystemBars();
 const { startAutoCheck } = useUpdateCheck();
@@ -24,7 +24,9 @@ onBeforeUnmount(() => stopAutoCheck?.());
     :class="{
       dark: themeConfig.mode === 'dark',
       'metal-shine-silver': metalShine === 'silver',
-      'metal-shine-gold': metalShine === 'gold'
+      'metal-shine-gold': metalShine === 'gold',
+      'neon-fx': !!neonFx,
+      [`neon-fx-${neonFx}`]: !!neonFx
     }"
     :style="cssVariables"
   >
@@ -34,6 +36,8 @@ onBeforeUnmount(() => stopAutoCheck?.());
       </transition>
     </router-view>
     <UpdateDialog />
+    <!-- 霓虹预设的全屏光效层：只叠加发光（screen 混合），不接收点击。 -->
+    <div v-if="neonFx" class="neon-fx-layer" aria-hidden="true"></div>
   </div>
 </template>
 
@@ -67,3 +71,4 @@ onBeforeUnmount(() => stopAutoCheck?.());
   transform: translateY(-4px);
 }
 </style>
+
