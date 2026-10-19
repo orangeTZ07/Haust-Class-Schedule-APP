@@ -359,6 +359,174 @@ const solarizedLightPreset: ThemeConfig = {
   bgBlur: 0,
 };
 
+// ---------- 霓虹特效预设 ----------
+// 五套暗色预设，颜色仍然只走 ThemeConfig；动效全部在 styles/neon.css 里，由 #app 上的
+// neon-fx / neon-fx-<名字> 类开关（同金属扫光的做法），组件里不写死颜色。
+// 课程卡片只加发光，不改内联的课程色边框；已经上过的课和冲突课不发光，状态优先。
+// prefers-reduced-motion 下所有循环动画停掉，只留静态发光。
+
+// 霓虹脉冲：青 + 品红，呼吸光、流动网格
+const neonPulsePreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#22d3ee",
+  cardBorderRadius: 10,
+  gridLineColor: "#1e1b4b",
+  gridLineOpacity: 100,
+  headerBgColor: "#0b0420",
+  headerTextColor: "#22d3ee",
+  bodyTextColor: "#e0f2fe",
+  bgColor: "#05010f",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 合成波日落：粉紫 + 橙，复古落日和透视地平线
+const synthwavePreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#ff6ad5",
+  cardBorderRadius: 8,
+  gridLineColor: "#3b0764",
+  gridLineOpacity: 100,
+  headerBgColor: "#2a0845",
+  headerTextColor: "#ff6ad5",
+  bodyTextColor: "#fde7ff",
+  bgColor: "#12002b",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 黑客矩阵：荧光绿，CRT 扫描线、扫描光带、表头闪烁
+const matrixPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 25,
+  cardBorderWidth: 1,
+  cardBorderColor: "#22c55e",
+  cardBorderRadius: 2,
+  gridLineColor: "#052e16",
+  gridLineOpacity: 100,
+  headerBgColor: "#001a08",
+  headerTextColor: "#39ff14",
+  bodyTextColor: "#b7ffb0",
+  bgColor: "#000a03",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 极光幻境：青绿 + 靛紫，缓慢漂移的极光
+const auroraPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#818cf8",
+  cardBorderRadius: 14,
+  gridLineColor: "#0f2a44",
+  gridLineOpacity: 100,
+  headerBgColor: "#04162e",
+  headerTextColor: "#5eead4",
+  bodyTextColor: "#e0f7ff",
+  bgColor: "#020b1a",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 彩虹等离子：旋转的彩色光场，课程卡片流光描边
+const plasmaPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#f472b6",
+  cardBorderRadius: 12,
+  gridLineColor: "#2e1065",
+  gridLineOpacity: 100,
+  headerBgColor: "#140b24",
+  headerTextColor: "#fbbf24",
+  bodyTextColor: "#fff7ed",
+  bgColor: "#0a0612",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 赛博雨夜：粉 + 青的霓虹招牌，斜着落下的雨丝，偶尔一道闪电
+const rainPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#00e5ff",
+  cardBorderRadius: 8,
+  gridLineColor: "#1a1f4a",
+  gridLineOpacity: 100,
+  headerBgColor: "#0d1030",
+  headerTextColor: "#ff2e88",
+  bodyTextColor: "#e6f1ff",
+  bgColor: "#050816",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 深海荧光：青绿的生物荧光，往上浮的气泡和水面焦散光
+const abyssPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#14b8a6",
+  cardBorderRadius: 16,
+  gridLineColor: "#083344",
+  gridLineOpacity: 100,
+  headerBgColor: "#001f2e",
+  headerTextColor: "#2dd4bf",
+  bodyTextColor: "#ccfbf1",
+  bgColor: "#00101a",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 故障信号：红青错位的 Glitch，画面偶尔撕裂跳帧
+const glitchPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 25,
+  cardBorderWidth: 1,
+  cardBorderColor: "#ff0050",
+  cardBorderRadius: 0,
+  gridLineColor: "#27272a",
+  gridLineOpacity: 100,
+  headerBgColor: "#111118",
+  headerTextColor: "#00fff0",
+  bodyTextColor: "#f1f5f9",
+  bgColor: "#0b0b0f",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
+// 星际跃迁：从中心往外飞散的星空，像在跃迁
+const warpPreset: ThemeConfig = {
+  mode: "dark",
+  cardOpacity: 30,
+  cardBorderWidth: 1,
+  cardBorderColor: "#a5b4fc",
+  cardBorderRadius: 10,
+  gridLineColor: "#1e1b4b",
+  gridLineOpacity: 100,
+  headerBgColor: "#0a0820",
+  headerTextColor: "#a5b4fc",
+  bodyTextColor: "#e0e7ff",
+  bgColor: "#02010a",
+  bgImage: "",
+  bgImageOpacity: 20,
+  bgBlur: 0,
+};
+
 // 默认亮色预设
 const lightPreset = catppuccinLattePreset;
 
@@ -558,8 +726,88 @@ export const presetList: PresetInfo[] = [
     name: "B站",
     preset: bilibiliPreset,
     color: "#FB7299"
+  },
+  {
+    id: "neon-pulse",
+    name: "霓虹脉冲 (特效)",
+    preset: neonPulsePreset,
+    color: "#22d3ee"
+  },
+  {
+    id: "synthwave",
+    name: "合成波日落 (特效)",
+    preset: synthwavePreset,
+    color: "#ff6ad5"
+  },
+  {
+    id: "matrix",
+    name: "黑客矩阵 (特效)",
+    preset: matrixPreset,
+    color: "#39ff14"
+  },
+  {
+    id: "aurora",
+    name: "极光幻境 (特效)",
+    preset: auroraPreset,
+    color: "#5eead4"
+  },
+  {
+    id: "plasma",
+    name: "彩虹等离子 (特效)",
+    preset: plasmaPreset,
+    color: "#f472b6"
+  },
+  {
+    id: "neon-rain",
+    name: "赛博雨夜 (特效)",
+    preset: rainPreset,
+    color: "#ff2e88"
+  },
+  {
+    id: "abyss",
+    name: "深海荧光 (特效)",
+    preset: abyssPreset,
+    color: "#2dd4bf"
+  },
+  {
+    id: "glitch",
+    name: "故障信号 (特效)",
+    preset: glitchPreset,
+    color: "#ff0050"
+  },
+  {
+    id: "warp",
+    name: "星际跃迁 (特效)",
+    preset: warpPreset,
+    color: "#a5b4fc"
   }
 ];
+
+export type NeonFx =
+  | "pulse"
+  | "synthwave"
+  | "matrix"
+  | "aurora"
+  | "plasma"
+  | "rain"
+  | "abyss"
+  | "glitch"
+  | "warp";
+
+const NEON_FX_BY_PRESET: Record<string, NeonFx> = {
+  "neon-pulse": "pulse",
+  synthwave: "synthwave",
+  matrix: "matrix",
+  aurora: "aurora",
+  plasma: "plasma",
+  "neon-rain": "rain",
+  abyss: "abyss",
+  glitch: "glitch",
+  warp: "warp",
+};
+
+/// 霓虹特效预设的特效名；普通预设返回空串。
+export const neonFxForPresetId = (id: string): NeonFx | "" => NEON_FX_BY_PRESET[id] ?? "";
 
 export const metalShineForPresetId = (id: string): "silver" | "gold" | "" => {
   if (id === "白银" || id === "白金") return "silver";
@@ -617,6 +865,7 @@ export function useTheme() {
   });
 
   const metalShine = computed(() => metalShineForPresetId(currentPresetId.value));
+  const neonFx = computed(() => neonFxForPresetId(currentPresetId.value));
 
   const updateConfig = (key: keyof ThemeConfig, value: any) => {
     (themeConfig.value as any)[key] = value;
@@ -644,6 +893,7 @@ export function useTheme() {
     cssVariables,
     currentPresetId,
     metalShine,
+    neonFx,
     toggleMode,
     applyLightPreset,
     applyDarkPreset,
@@ -655,3 +905,4 @@ export function useTheme() {
     clearBgImage,
   };
 }
+
