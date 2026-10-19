@@ -55,7 +55,8 @@
 #app.neon-fx .top-bar,
 #app.neon-fx .week-grid > .header {
   isolation: isolate;
-  position: relative;
+  /* 顶栏和星期表头本身是 sticky。这里再写 position: relative 会把吸顶盖掉。
+     sticky 已经是定位元素，底边灯管照样能挂在它们身上。 */
   text-shadow:
     0 0 4px color-mix(in srgb, var(--neon-a) 80%, transparent),
     0 0 12px color-mix(in srgb, var(--neon-a) 45%, transparent);
@@ -120,6 +121,8 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
+  /* 负层：发光画在卡片背景之上、课名之下，避免呼吸光盖住文字。 */
+  z-index: -1;
   box-shadow:
     inset 0 0 12px color-mix(in srgb, var(--neon-a) 55%, transparent),
     inset 0 0 2px color-mix(in srgb, var(--neon-b) 80%, transparent);
@@ -175,7 +178,9 @@
 .neon-fx-layer {
   position: fixed;
   inset: 0;
-  z-index: 1999; /* Vant 弹层从 2000 起，光效不压在弹窗上面 */
+  /* 课表内容层是 2，光效要盖在课表上。再往上的可点层不能被盖住：
+     侧边栏 100、周次选择 120、功能引导 240、Vant 弹层从 2000 起、裁剪层 2500。 */
+  z-index: 3;
   overflow: hidden;
   pointer-events: none;
   mix-blend-mode: screen;
