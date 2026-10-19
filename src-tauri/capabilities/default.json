@@ -21,13 +21,10 @@
     "android-installer:default",
     {
       "identifier": "opener:allow-open-url",
-      "description": "把指定网址交给系统浏览器：GitHub Release，以及教务同步里的 aTrust 入口。不用 opener:default（它放行所有 http/https 网址）。",
+      "description": "把指定网址交给系统浏览器：GitHub Release，以及教务同步里手机没装 aTrust 时跳转的安装说明页。不用 opener:default（它放行所有 http/https 网址）。",
       "allow": [
         { "url": "https://github.com/*" },
-        { "url": "https://vpn.haust.edu.cn" },
-        { "url": "https://vpn.haust.edu.cn/" },
-        { "url": "https://vpn.haust.edu.cn/*" },
-        { "url": "https://vpn.haust.edu.cn/**" }
+        { "url": "https://metic.haust.edu.cn/info/1010/1972.htm" }
       ]
     },
     {

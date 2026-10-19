@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the install command without any pre-configured scope."
         },
         {
+          "description": "Enables the launch_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-launch-app",
+          "markdownDescription": "Enables the launch_app command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the launch_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-launch-app",
+          "markdownDescription": "Denies the launch_app command without any pre-configured scope."
+        },
+        {
           "description": "Enables the request_install_permission command without any pre-configured scope.",
           "type": "string",
           "const": "allow-request-install-permission",
@@ -331,10 +343,10 @@
           "markdownDescription": "Denies the request_install_permission command without any pre-configured scope."
         },
         {
-          "description": "Allows installing APKs and managing the install-unknown-apps permission.\n#### This default permission set includes:\n\n- `allow-install`\n- `allow-can-install`\n- `allow-request-install-permission`",
+          "description": "Allows installing APKs, managing the install-unknown-apps permission and launching an installed app by package name.\n#### This default permission set includes:\n\n- `allow-install`\n- `allow-can-install`\n- `allow-launch-app`\n- `allow-request-install-permission`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows installing APKs and managing the install-unknown-apps permission.\n#### This default permission set includes:\n\n- `allow-install`\n- `allow-can-install`\n- `allow-request-install-permission`"
+          "markdownDescription": "Allows installing APKs, managing the install-unknown-apps permission and launching an installed app by package name.\n#### This default permission set includes:\n\n- `allow-install`\n- `allow-can-install`\n- `allow-launch-app`\n- `allow-request-install-permission`"
         }
       ]
     }

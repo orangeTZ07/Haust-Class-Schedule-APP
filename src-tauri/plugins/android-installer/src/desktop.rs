@@ -25,6 +25,12 @@ impl<R: Runtime> AndroidInstaller<R> {
     Ok(false)
   }
 
+  /// Always `false` off Android -- there is no package-name launch API to call (iOS needs a URL
+  /// scheme instead). Returning a value lets callers treat it as "not installed" and fall back.
+  pub fn launch_app(&self, _payload: LaunchAppRequest) -> crate::Result<bool> {
+    Ok(false)
+  }
+
   pub fn request_install_permission(&self) -> crate::Result<()> {
     Err(Error::Unsupported)
   }

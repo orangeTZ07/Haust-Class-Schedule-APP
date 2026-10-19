@@ -3,6 +3,12 @@
 
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Android 11+ hides other apps from PackageManager unless they are declared here.
+         aTrust is the one app the timetable import page needs to launch. -->
+    <queries>
+        <package android:name="com.sangfor.atrust" />
+    </queries>
+
     <application>
         <!-- Unique FileProvider subclass: merger keys providers by class name, so reusing
              androidx.core.content.FileProvider would collide with Tauri's file chooser. -->

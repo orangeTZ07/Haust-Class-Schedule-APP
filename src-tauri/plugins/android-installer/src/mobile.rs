@@ -35,6 +35,16 @@ impl<R: Runtime> AndroidInstaller<R> {
       .map_err(Into::into)
   }
 
+  /// Launch an installed app by its package name. `Ok(false)` means it is not installed (or not
+  /// visible to us); it is never an error, so callers can fall back to a web page.
+  pub fn launch_app(&self, payload: LaunchAppRequest) -> crate::Result<bool> {
+    self
+      .0
+      .run_mobile_plugin::<LaunchAppResponse>("launchApp", payload)
+      .map(|r| r.launched)
+      .map_err(Into::into)
+  }
+
   /// Open the system "install unknown apps" settings screen for this app.
   /// Resolves when the user returns; re-check [`can_install`](Self::can_install).
   pub fn request_install_permission(&self) -> crate::Result<()> {
