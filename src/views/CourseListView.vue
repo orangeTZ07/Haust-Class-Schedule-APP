@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ArrowLeft, Trash2, MapPin, User, Clock } from '@lucide/vue';
 import { showToast } from 'vant';
 import { confirmAction } from '@/utils/confirm';
+import { teacherLabel } from '@/utils/teacherLabel';
 
 const router = useRouter();
 const { courses, schedules, removeCourse, getDaySchedules, commitEdit } = useCourses();
@@ -29,6 +30,11 @@ const handleDelete = async (courseId: number, courseName: string) => {
 const getCourseSchedules = (courseId: number) => {
   return schedules.value.filter(s => s.courseId === courseId);
 };
+
+// 一门课可能有多个老师（导入时每一行各带各的）。只显示投票出来的那一位，
+// 就是用户说的"名字对不上" —— 这里把课段上的老师去重后再展示。
+const courseTeacher = (course: { id: number; teacher?: string }) =>
+  teacherLabel(course.teacher, getCourseSchedules(course.id).map(s => s.teacher));
 
 const days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -65,9 +71,9 @@ const formatSchedule = (s: any) => {
             </div>
             
             <div class="course-details">
-              <div class="detail-row" v-if="course.teacher">
+              <div class="detail-row" v-if="courseTeacher(course)">
                 <User :size="12" class="icon" />
-                <span>{{ course.teacher }}</span>
+                <span>{{ courseTeacher(course) }}</span>
               </div>
               <div class="detail-row" v-if="course.location">
                 <MapPin :size="12" class="icon" />

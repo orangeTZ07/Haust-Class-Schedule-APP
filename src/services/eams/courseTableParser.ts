@@ -52,6 +52,8 @@ export interface BackupSchedule {
   scope: "semester";
   /// 这一条课段自己的教室（来自它那一行）。同一门课换教室时，各条课段各带各的。
   location?: string;
+  /// 这一条课段自己的教师（来自它那一行）。同一门课不同周次换老师时，各条课段各带各的。
+  teacher?: string;
   /// 教务导入才有。旧备份和手填课没有这两项，不能靠它们反推来源。
   source?: "eams";
   /// 写出这份周次时的解析规则。2 = 下标即周次、跳过下标 0；3 = 教室写到课段上。
@@ -306,8 +308,9 @@ const asPeriod = (value: unknown): number | null => {
 /// 以及给老数据 / 手填课的课段兜底。所以「数据库原理 周三 4-206、周五 公教1-505」两格
 /// 现在各显示各的 —— 这一条以前是丢掉的。
 ///
-/// 教师仍然是「取出现次数最多的那个」（teacher 只在课程上，没有课段级教师），这一项的分歧
-/// 照旧写进报告：它仍然是丢信息，只是比把一门课拆成六门好。
+/// 教师同理：每一行的老师也写进它自己那条课段（CourseSchedule.teacher），课程上的教师只是
+/// 出现次数最多的那个，用于课程列表的「某 等 N 位」与老数据兜底。这样「同一门课这周张三、
+/// 下周李四」不再被压成一个人。
 export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: ConvertReport } => {
   const problems: string[] = [];
   const notes: string[] = [];
@@ -316,7 +319,7 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
     throw new Error("输入必须是数组");
   }
 
-  interface Group { name: string; teachers: Map<string, number>; rooms: Map<string, number>; rows: Array<{ day: number; start: number; end: number; weeks: unknown; room: string }> }
+  interface Group { name: string; teachers: Map<string, number>; rooms: Map<string, number>; rows: Array<{ day: number; start: number; end: number; weeks: unknown; room: string; teacher: string }> }
   const groups = new Map<string, Group>();
   let skippedNoDay = 0;
   let skippedBadPeriod = 0;
@@ -356,8 +359,9 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
     const group = groups.get(name)!;
     if (teacher) group.teachers.set(teacher, (group.teachers.get(teacher) ?? 0) + 1);
     if (room) group.rooms.set(room, (group.rooms.get(room) ?? 0) + 1);
-    // room 跟着这一行走：投票用的 group.rooms 只统计次数，教室本身要写进课段。
-    group.rows.push({ day, start, end, weeks: row.weeks, room });
+    // room / teacher 跟着这一行走：投票用的 group.rooms / group.teachers 只统计次数，
+    // 教室和老师本身要写进课段（同一门课换教室、换老师都是常态）。
+    group.rows.push({ day, start, end, weeks: row.weeks, room, teacher });
   });
 
   const courses: BackupCourse[] = [];
@@ -380,7 +384,7 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
       notes.push(`「${group.name}」在 ${rankedRooms.length} 个教室上过课（${rankedRooms.map(([r, n]) => `${r}×${n}`).join("、")}）：每节课按各自的教室显示，课程列表里显示出现最多的「${primaryRoom}」。`);
     }
     if (rankedTeachers.length > 1) {
-      notes.push(`「${group.name}」有 ${rankedTeachers.length} 位教师（${rankedTeachers.map(([t, n]) => `${t}×${n}`).join("、")}），教师取了最多的「${primaryTeacher}」。`);
+      notes.push(`「${group.name}」有 ${rankedTeachers.length} 位教师（${rankedTeachers.map(([t, n]) => `${t}×${n}`).join("、")}）：每节课按各自的教师显示，课程列表里显示出现最多的「${primaryTeacher}」。`);
     }
 
     courses.push({
@@ -409,6 +413,8 @@ export const rowsToBackup = (rows: unknown[]): { backup: Backup; report: Convert
           // 这一行自己的教室。上面那个 primaryRoom 只是课程的"门面"，不写下来就等于把
           // 换教室的细节丢了 —— 那正是这一列存在的理由。
           location: row.room || undefined,
+          // 同理：这一行自己的老师。不写下来，同一门课换老师的格子就只能显示投票选出来的那一位。
+          teacher: row.teacher || undefined,
           source: "eams",
           parserVersion: EAMS_PARSER_VERSION
         });

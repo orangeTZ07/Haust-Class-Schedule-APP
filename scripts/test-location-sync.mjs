@@ -59,7 +59,7 @@ console.log("=== B. 仅本周 / 自定义周：搬到覆盖层的那一行 ===")
     row({ id: 7, courseId: 9, location: "泰达西院6-210(d)", scope: "weekly", startWeek: 9, endWeek: 9 }),
     42,
     4,
-    true
+    { location: true, teacher: false }
   );
   check("改挂了覆盖层课程", moved.courseId === 42, moved.courseId);
   check("节次跟着 span 走", moved.endPeriod === 4, moved.endPeriod);
@@ -70,7 +70,7 @@ console.log("=== B. 仅本周 / 自定义周：搬到覆盖层的那一行 ===")
     row({ id: 8, courseId: 9, location: "泰达西院6-210(d)", scope: "weekly", startWeek: 9, endWeek: 9 }),
     9,
     4,
-    false
+    { location: false, teacher: false }
   );
   check("只改节次时保留课段地点", spanOnly.location === "泰达西院6-210(d)", spanOnly.location);
   check("只改节次时课程不变", spanOnly.courseId === 9, spanOnly.courseId);

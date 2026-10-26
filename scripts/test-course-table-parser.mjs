@@ -261,10 +261,10 @@ console.log("=== D. 接线（读源码）===");
   check("schedules 加 location 列（PRAGMA 守卫的迁移）",
     svc.includes("ALTER TABLE schedules ADD COLUMN location TEXT") && svc.includes('column.name === "location"'));
   check("从库里读回来时映射 location", svc.includes("location: typeof row.location === \"string\""));
-  check("新增课段把 location 写进库", /INSERT INTO schedules \(course_id[\s\S]{0,160}location\)/.test(svc));
+  check("新增课段把 location 写进库", /INSERT INTO schedules \(course_id[\s\S]{0,220}location, teacher\)/.test(svc));
   check("更新课段把 location 写进库", /UPDATE schedules SET[\s\S]{0,320}location = \$12/.test(svc));
   check("撤销/重做整表写回也带 location（少这一列 = 按一次撤销就抹掉所有地点）",
-    /INSERT INTO schedules \(id, course_id[\s\S]{0,160}location\)/.test(svc));
+    /INSERT INTO schedules \(id, course_id[\s\S]{0,220}location, teacher\)/.test(svc));
 
   const block = readFileSync(join(here, "..", "src", "components", "timetable", "CourseBlock.vue"), "utf8");
   check("卡片显示时课段地点优先", block.includes("props.schedule.location || props.course.location"));
