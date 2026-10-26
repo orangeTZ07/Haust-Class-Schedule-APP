@@ -518,9 +518,10 @@ export function useCourses() {
         weekType: "all",
         scope: "weekly",
         isCancelled: false,
-        // 拖动只改时间，不改教室：原来那节课的教室要跟着走到新位置上。不然新位置的卡片会
-        // 回落到课程的地点，而"课程的地点"只是出现最多的那一个。
-        location: current.location
+        // 拖动只改时间，不改教室/教师：原来那节课的教室和老师要跟着走到新位置上。不然新
+        // 位置的卡片会回落到课程级的值，而那只是出现最多的那一个。
+        location: current.location,
+        teacher: current.teacher
       });
     }
 
