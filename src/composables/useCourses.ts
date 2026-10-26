@@ -21,6 +21,7 @@ import {
   weeksForDeleteScope,
   type DeleteScopePayload
 } from "@/utils/scheduleDelete";
+import { patchWeeklyRowForOverlay, scheduleIdsWithOwnLocation } from "@/utils/locationSync";
 import { baseHiddenByWeekly } from "@/utils/weekOverride";
 import {
   createDefaultPeriodConfig,
@@ -586,22 +587,35 @@ export function useCourses() {
       (course.teacher || "") !== (teacher || "") ||
       (course.location || "") !== (location || "");
     const spanChanged = current.endPeriod !== endPeriod;
+    // 地点是否真的被改了。只有改了才整学期清理课段地点：地点没变时清空全部课段会把
+    // 多教室导入的数据毁掉（同一门课不同教室的那些行）。
     const locationChanged = (course.location || "") !== (location || "");
     const weeks = weeksForDeleteScope(payload, currentWeek.value);
 
     if (weeks === "all") {
       if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
-      // "整学期"改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
+      // 整学期改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
       // 卡片是"课段优先"的，不清就等于这次编辑没有生效（点保存、格子还是老地点）。
-      // 清掉之后回落到课程的地点，与用户的意图一致；范围与下面的节次调整同一组课段。
+      //
+      // 范围是这门课的全部课段（含按周覆盖行）—— 不是同一格的课段，那样会漏掉别的星期。
+      // 但**只有真的改了地点才清**：地点没变时清空全部课段会毁掉多教室导入的数据
+      // （数据库原理 11 条活动散在 10 个教室），那种保存应当是一次纯粹的无效操作。
+      let clearedLocations = 0;
       if (locationChanged) {
-        for (const scheduleId of idsForSemesterDelete(schedules.value, current)) {
+        for (const scheduleId of scheduleIdsWithOwnLocation(schedules.value, course.id)) {
           const row = schedules.value.find(item => item.id === scheduleId);
-          if (!row || row.isCancelled || !row.location) continue;
+          if (!row) continue;
           await patchSchedule({ ...row, location: undefined });
+          clearedLocations += 1;
         }
+      } else if (current.location && current.location !== (course.location || "")) {
+        // 地点没改、但这一格自己还带着和课程不一样的旧地点 —— 这就是历史数据分叉的样子
+        // （编辑框里是课段的值，用户看到"没变化"就直接点保存）。只清这一格，把显示收拢回课程级，
+        // 不去动别的格子，避免误伤多教室导入的数据。误点了也有撤销。
+        await patchSchedule({ ...current, location: undefined });
+        clearedLocations += 1;
       }
-      if (!spanChanged && !fieldsChanged) return false;
+      if (!spanChanged && !fieldsChanged && !clearedLocations) return false;
       if (spanChanged) {
         const ids = idsForSemesterDelete(schedules.value, current);
         for (const scheduleId of ids) {
@@ -626,11 +640,9 @@ export function useCourses() {
     for (const week of weeks) {
       const weekly = weeklyRowToDelete(snapshot, current, week);
       if (weekly) {
-        await patchSchedule({
-          ...weekly,
-          courseId: overlayCourseId,
-          endPeriod: weekly.startPeriod + span - 1
-        });
+        await patchSchedule(
+          patchWeeklyRowForOverlay(weekly, overlayCourseId, weekly.startPeriod + span - 1, fieldsChanged)
+        );
         changed = true;
         continue;
       }

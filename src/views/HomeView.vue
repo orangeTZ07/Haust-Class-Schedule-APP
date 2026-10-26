@@ -160,7 +160,9 @@ const onRequestEdit = (payload: { scheduleId: number }) => {
     period: schedule.startPeriod,
     name: course?.name ?? "",
     teacher: course?.teacher ?? "",
-    location: course?.location ?? "",
+    // 预填「卡片上显示的那个地点」：卡片、详情、提醒都是课段优先（CourseBlock 的 locationText），
+    // 这里若只读课程级，历史数据一旦分叉就会出现「编辑框显示新地点、格子显示旧地点」。
+    location: schedule.location || course?.location || "",
     span: schedule.endPeriod - schedule.startPeriod + 1
   };
   courseFormMode.value = "edit";

@@ -105,6 +105,15 @@ async function initDb(db: Database) {
     await db.execute("ALTER TABLE schedules ADD COLUMN location TEXT");
   }
 
+  // 收拢一次历史数据：课段地点和课程地点完全相同时，它就是冗余的（显示回落完全相同，
+  // 但会挡住"改课程地点"——卡片读课段、编辑框读课程，看起来像没保存）。
+  // 幂等：清掉之后显示的值一个字都不变，重复执行没有副作用，所以不需要版本号。
+  await db.execute(`
+    UPDATE schedules SET location = NULL
+    WHERE location IS NOT NULL
+      AND location = (SELECT c.location FROM courses c WHERE c.id = schedules.course_id)
+  `);
+
   // One row per action group (the timetable after one user gesture), capped per course table.
   await db.execute(`
     CREATE TABLE IF NOT EXISTS edit_action_groups (
