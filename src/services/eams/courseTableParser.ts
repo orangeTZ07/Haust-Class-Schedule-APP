@@ -13,15 +13,10 @@
 //      就是第 i 周。不要写成 i+1：那样会把第 1–16 周存成第 2–17 周，第 1 周整周空表，
 //      「当前所处周」相对课程也会整周偏后。旧注释曾用「线性代数B 周一第 2..14 周」当佐证，
 //      那个读数本身就是 i+1 的错位，不是校历。
-//   4. 教师姓名不在参数里（那里是 actTeacherName.join(',')），来自**之后**的
-//      `var teachers = [{name:"..."}]`。
-//
-//      **不要改成往前取。** 活动之前的那个 `var teachers` 属于**上一条**活动（它被用来构造
-//      actTeacherName），所以往前取会把教师整体错位一位。实测：33 条里 18 条前后不一致，
-//      往前取会写错 18 位教师 —— 而取错教师比取不到更糟，因为它看起来是正常的。
-//
-//      代价是脚本里的**最后一条**活动后面没有这一行（实测 33/34 条有）。那一条的教师为空，
-//      由分组时的"出现次数最多"兜住；如果一门课只有这一条活动，它就没有教师了。
+//   4. 教师来自第二个参数：旧模板直接给姓名，新模板传 actTeacherName.join(',')。
+//      新模板在构造活动之前声明 teachers / actTeachers，并先去除实验助教，再收集姓名。
+//      必须读取本次活动之前的声明；之后的 var teachers 已属于下一条活动。
+//      原始 34 条活动均有前置教师，向后读取会错配 19 条（含最后一条丢失教师）。
 //
 // 这个文件刻意不引入任何 Node/浏览器 API：它只接收字符串、返回数据，所以应用和命令行
 // 能跑同一份代码。两份实现必然漂移，而漂移出来的课表错误是最难发现的那种。
@@ -56,7 +51,7 @@ export interface BackupSchedule {
   teacher?: string;
   /// 教务导入才有。旧备份和手填课没有这两项，不能靠它们反推来源。
   source?: "eams";
-  /// 写出这份周次时的解析规则。2 = 下标即周次、跳过下标 0；3 = 教室写到课段上。
+  /// 解析规则版本。2 = 周次修正；3 = 课段教室；4 = 按当前活动关联教师。
   parserVersion?: number;
 }
 
@@ -98,10 +93,10 @@ const DEFAULT_END_WEEK = 20;
 /// 解析器的写入版本。存进每条课段，以后规则再变才能只改来自这一版的数据。
 /// 2：下标即周次，跳过下标 0。没有 1 —— 1 就是已经写进用户课表、无法区分来源的那次 i+1 错位。
 /// 3：每一行的教室写进它自己那条课段（2 只会把一门课的教室压成一个）。
-export const EAMS_PARSER_VERSION = 3;
+/// 4：从当前活动的第二参数及其前置声明读取教师，不再借用下一条活动的教师。
+export const EAMS_PARSER_VERSION = 4;
 
 const WEEKDAY_INDEX_RE = /index\s*=\s*(\d+)\s*\*\s*unitCount/;
-const TEACHERS_RE = /var\s+teachers\s*=\s*(\[[\s\S]*?\])\s*;?/;
 const TASK_ACTIVITY_RE = /new\s+TaskActivity\s*\(([\s\S]*?)\)\s*;/g;
 
 /// 按引号规则切分参数 —— 教室名里出现逗号是常态，简单 split(',') 会切错。
@@ -131,6 +126,63 @@ const unquote = (value: string | undefined): string => {
     return text.slice(1, -1);
   }
   return text;
+};
+
+// 只解码字面量，不执行教务返回的 JavaScript。
+const stringLiteral = (value: string): string | null => {
+  if (!/^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')$/.test(value.trim())) return null;
+  return value.trim().slice(1, -1).replace(
+    /\\(?:u([\da-f]{4})|x([\da-f]{2})|(\r\n|[\r\n])|(.))/gi,
+    (_, unicode: string, hex: string, newline: string, escaped: string) => {
+      if (unicode || hex) return String.fromCharCode(parseInt(unicode || hex, 16));
+      if (newline) return "";
+      return ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", v: "\v", "0": "\0" } as Record<string, string>)[escaped] ?? escaped;
+    }
+  );
+};
+
+interface TeacherLiteral {
+  id?: string | number;
+  name?: string;
+  lab?: boolean;
+}
+
+// EAMS 的教师数组是由 id/name/lab 字面量组成的对象数组。引号内的 ]、逗号不作分隔符。
+const teacherList = (block: string, variable: "teachers" | "actTeachers"): TeacherLiteral[] | null => {
+  const quoted = `"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'`;
+  const declarations = new RegExp(`\\b(?:var|let|const)\\s+${variable}\\s*=\\s*(\\[(?:${quoted}|[^\\]"'])*\\])`, "g");
+  const literal = [...block.matchAll(declarations)].at(-1)?.[1];
+  if (!literal) return null;
+  const objects = new RegExp(`\\{(?:${quoted}|[^{}"'])*\\}`, "g");
+  return [...literal.matchAll(objects)].map(([object]) => {
+    const record: TeacherLiteral = {};
+    const fields = new RegExp(`["']?\\b(id|name|lab)["']?\\s*:\\s*(${quoted}|true|false|-?\\d+|null)`, "g");
+    for (const [, key, raw] of object.matchAll(fields)) {
+      const value = stringLiteral(raw);
+      if (key === "name" && value !== null) record.name = value;
+      if (key === "id" && (value !== null || /^-?\d+$/.test(raw))) record.id = value ?? Number(raw);
+      if (key === "lab" && /^(true|false)$/.test(raw)) record.lab = raw === "true";
+    }
+    return record;
+  });
+};
+
+const activityTeacher = (argument: string, before: string): string => {
+  const literal = stringLiteral(argument);
+  if (literal !== null) return literal.trim();
+  if (!/^actTeacherName\s*\.\s*join\(\s*['"],['"]\s*\)$/.test(argument.trim())) return "";
+
+  const teachers = teacherList(before, "teachers");
+  const activities = teacherList(before, "actTeachers");
+  let selected = activities ?? teachers ?? [];
+  // 与页面 _.filter / _.reject 一致：仅将未列入课程教师、lab=true 的活动教师视为助教。
+  if (activities && teachers && /\b_\s*\.\s*filter\(\s*actTeachers\b/.test(before) && /\b_\s*\.\s*reject\(\s*actTeachers\b/.test(before)) {
+    const assistants = activities.filter((candidate) => candidate.lab === true && !teachers.some((teacher) =>
+      teacher.id === candidate.id && teacher.name === candidate.name && teacher.lab === candidate.lab
+    ));
+    selected = activities.filter((candidate) => !assistants.some((assistant) => assistant.id === candidate.id));
+  }
+  return selected.map((teacher) => teacher.name?.trim()).filter(Boolean).join("、");
 };
 
 /// 去掉 (rjxy_1012049.001) 这类课程代码，并把 <sup> 标签还原成文字。
@@ -184,13 +236,18 @@ export const parseCourseTable = (html: string): { rows: CourseRow[]; problems: s
   const problems: string[] = [];
 
   TASK_ACTIVITY_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let index = 0;
+  const activities = [...html.matchAll(TASK_ACTIVITY_RE)];
 
-  while ((match = TASK_ACTIVITY_RE.exec(html)) !== null) {
-    index += 1;
+  for (let position = 0; position < activities.length; position++) {
+    const match = activities[position];
+    const index = position + 1;
     const args = splitActivityArgs(match[1]);
-    const after = html.slice(match.index + match[0].length, match.index + match[0].length + 700);
+    const previous = activities[position - 1];
+    const before = html.slice(previous ? previous.index + previous[0].length : 0, match.index)
+      .split(/<\/?script\b[^>]*>/i).at(-1)!;
+    // 不限字符数，但不能越过下一条活动的声明、构造或当前脚本末尾去借用星期。
+    const after = html.slice(match.index + match[0].length, activities[position + 1]?.index ?? html.length)
+      .split(/\b(?:var|let|const)\s+(?:teachers|actTeachers)\s*=|<\/script\s*>/i)[0];
 
     if (args.length < 14) {
       problems.push(`第 ${index} 条只有 ${args.length} 个参数（期望 14），已跳过`);
@@ -208,14 +265,7 @@ export const parseCourseTable = (html: string): { rows: CourseRow[]; problems: s
       continue;
     }
 
-    const teacherMatch = after.match(TEACHERS_RE);
-    let teacher = "";
-    if (teacherMatch) {
-      teacher = [...teacherMatch[1].matchAll(/name\s*:\s*["']([^"']*)["']/g)]
-        .map((x) => x[1].trim())
-        .filter(Boolean)
-        .join("、");
-    }
+    const teacher = activityTeacher(args[1], before);
 
     const startUnit = parseInt(unquote(args[12]), 10);
     const endUnit = parseInt(unquote(args[13]), 10);
@@ -301,7 +351,7 @@ const asPeriod = (value: unknown): number | null => {
 ///
 /// **只按课名分组**，教室和教师都不进分组键，两个理由都来自真实数据：
 ///   1. 教室：数据库原理有 11 条活动、散在 10 个教室，按教室分组会让它变成 11 门同名课。
-///   2. 教师：同一门课的不同活动本来就可能挂不同教师，那门课挂了 6 位，按教师会变成 6 门。
+///   2. 教师：同一门课的不同活动可能由不同教师授课，仍需保留为一门课程。
 ///
 /// 分组仍然只按课名，但**地点不再被压成一个**：每一行的教室写进它自己那条课段
 /// （CourseSchedule.location），课程上留的是出现次数最多的那个，只用于课程列表显示、

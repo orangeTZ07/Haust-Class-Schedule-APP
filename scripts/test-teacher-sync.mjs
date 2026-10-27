@@ -1,4 +1,4 @@
-// 教师和地点是同一类问题：教务里同一门课不同周次由不同老师上是常态，而课程上只存得下一个。
+// 一门课可能由不同教师授课，而课程上只存得下一个。这里用合成数据验证课段级教师。
 //
 // 这一组断言盯两件事：
 // 1. 导入时每一行的老师必须写进课段（否则多教师课只能显示投票出来的那一位 = "名字对不上"）；
@@ -78,6 +78,10 @@ console.log("\n=== C. 课程列表上的教师标签 ===");
   check("全都没有时返回空串（模板 v-if 隐藏这一行）", label.teacherLabel(undefined, []) === "");
   check("去重后再计数", label.teacherLabel(undefined, ["甲", "甲", "乙"]) === "甲 等 2 位");
   check("忽略空白", label.teacherLabel(undefined, ["  ", "甲"]) === "甲");
+  check("课段回落到课程教师后再汇总，不漏掉默认教师",
+    label.teacherLabel("甲", [undefined, "乙"]) === "甲 等 2 位");
+  check("所有课段都指定教师时，不把未参与授课的课程默认值算进去",
+    label.teacherLabel("甲", ["乙", "丙"]) === "乙 等 2 位");
 }
 
 console.log("\n=== D. 导入：每一行的教师写进课段 ===");
@@ -117,7 +121,7 @@ console.log("\n=== F. 接线：三个读法都课段优先 ===");
 
   const courses = read("src/composables/useCourses.ts");
   check("整学期改教师会清全部课段教师", /if \(teacherChanged\) \{[\s\S]{0,300}scheduleIdsWithOwnTeacher/.test(courses));
-  check("教师没改但这一格有旧值时单格收拢", /else if \(current\.teacher && current\.teacher !== \(course\.teacher \|\| ""\)\)/.test(courses));
+  // 未改教师时必须保留合法的课段差异；完整编辑行为见 test-teacher-edits.mjs。
   check("教师变更算作变更（否则保存无反应）", courses.includes("!spanChanged && !fieldsChanged && !clearedLocations"));
   check("按周保存传的是两个字段各自的变更", /patchWeeklyRowForOverlay\(weekly, overlayCourseId[\s\S]{0,120}teacher: teacherChanged/.test(courses));
   check("备份恢复带回课段教师", courses.includes("teacher: schedule.teacher"));

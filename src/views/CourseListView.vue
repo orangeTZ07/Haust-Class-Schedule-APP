@@ -31,8 +31,7 @@ const getCourseSchedules = (courseId: number) => {
   return schedules.value.filter(s => s.courseId === courseId);
 };
 
-// 一门课可能有多个老师（导入时每一行各带各的）。只显示投票出来的那一位，
-// 就是用户说的"名字对不上" —— 这里把课段上的老师去重后再展示。
+// 汇总这门课各个课段的实际教师；课表格子仍显示各自课段的教师。
 const courseTeacher = (course: { id: number; teacher?: string }) =>
   teacherLabel(course.teacher, getCourseSchedules(course.id).map(s => s.teacher));
 

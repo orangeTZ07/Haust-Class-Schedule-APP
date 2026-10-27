@@ -585,21 +585,21 @@ export function useCourses() {
     if (!name) return false;
     const teacher = payload.teacher?.trim() || undefined;
     const location = payload.location?.trim() || undefined;
+    // 表单预填的是这一格实际显示的值。与它比较才能区分用户改了字段，还是原本就有课段差异。
+    const teacherChanged = (current.teacher || course.teacher || "") !== (teacher || "");
+    const locationChanged = (current.location || course.location || "") !== (location || "");
     const fieldsChanged =
       course.name !== name ||
-      (course.teacher || "") !== (teacher || "") ||
-      (course.location || "") !== (location || "");
+      teacherChanged || locationChanged;
     const spanChanged = current.endPeriod !== endPeriod;
-    // 地点是否真的被改了。只有改了才整学期清理课段地点：地点没变时清空全部课段会把
-    // 多教室导入的数据毁掉（同一门课不同教室的那些行）。
-    const locationChanged = (course.location || "") !== (location || "");
-    // 教师同理：同一门课不同周次由不同老师上是常态，课段上留着导入时的旧老师，
-    // 改课程教师就等于没生效（卡片/详情读课段优先）。
-    const teacherChanged = (course.teacher || "") !== (teacher || "");
     const weeks = weeksForDeleteScope(payload, currentWeek.value);
 
     if (weeks === "all") {
-      if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
+      if (fieldsChanged) await updateCourseFields(course.id, {
+        name,
+        teacher: teacherChanged ? teacher : course.teacher,
+        location: locationChanged ? location : course.location
+      });
       // 整学期改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
       // 卡片是"课段优先"的，不清就等于这次编辑没有生效（点保存、格子还是老地点）。
       //
@@ -614,12 +614,6 @@ export function useCourses() {
           await patchSchedule({ ...row, location: undefined });
           clearedLocations += 1;
         }
-      } else if (current.location && current.location !== (course.location || "")) {
-        // 地点没改、但这一格自己还带着和课程不一样的旧地点 —— 这就是历史数据分叉的样子
-        // （编辑框里是课段的值，用户看到"没变化"就直接点保存）。只清这一格，把显示收拢回课程级，
-        // 不去动别的格子，避免误伤多教室导入的数据。误点了也有撤销。
-        await patchSchedule({ ...current, location: undefined });
-        clearedLocations += 1;
       }
       // 教师和地点同理：真的改了课程教师，就把这门课所有课段上的旧老师一起清掉。
       if (teacherChanged) {
@@ -629,11 +623,6 @@ export function useCourses() {
           await patchSchedule({ ...row, teacher: undefined });
           clearedLocations += 1;
         }
-      } else if (current.teacher && current.teacher !== (course.teacher || "")) {
-        // 和历史分叉的地点一样：教师没改、但这一格自己带着和课程不一样的老师，
-        // 就只清这一格，把显示收拢回课程级。
-        await patchSchedule({ ...current, teacher: undefined });
-        clearedLocations += 1;
       }
       if (!spanChanged && !fieldsChanged && !clearedLocations) return false;
       if (spanChanged) {
@@ -649,6 +638,7 @@ export function useCourses() {
       return true;
     }
 
+    if (!fieldsChanged && !spanChanged) return false;
     let overlayCourseId = current.courseId;
     if (fieldsChanged) {
       const created = await addCourse(name, teacher, location, course.color);
@@ -686,7 +676,10 @@ export function useCourses() {
           endWeek: week,
           weekType: "all",
           scope: "weekly",
-          isCancelled: false
+          isCancelled: false,
+          // 只改节数时不会新建课程，覆盖课段仍须保留原来这一格的教师和地点。
+          teacher: teacherChanged ? undefined : current.teacher,
+          location: locationChanged ? undefined : current.location
         });
         changed = true;
       }

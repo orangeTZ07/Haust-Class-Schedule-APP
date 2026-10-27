@@ -28,9 +28,8 @@ export interface CourseSchedule {
   /// 而 `Course.location` 只有一个，所以导入时把每一行的教室写在这里。为空时回落到课程的地点 ——
   /// 老数据（这一列是后加的）、手填课、以及只改过一次课的覆盖层都是空的。
   location?: string;
-  /// 这一次课自己的教师。和地点同一个道理：教务数据里同一门课不同周次由不同老师上是常态
-  /// （实测一份 34 行的课表里，数据库原理有 6 位老师、前端开发技术 3 位），而 `Course.teacher`
-  /// 只有一个 —— 导入时把每一行的老师写在这里。为空时回落到课程的教师（老数据、手填课、
+  /// 这一次课自己的教师。同一门课可能有不同的任课教师，而 `Course.teacher`
+  /// 只有一个，因此导入时把每一条活动的实际教师写在这里。为空时回落到课程的教师（老数据、手填课、
   /// 以及「整学期」改过教师的课，都走回落）。
   teacher?: string;
   /// Set on segments written by a parser that knows its own rules. Absent on anything saved

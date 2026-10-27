@@ -87,7 +87,7 @@ console.log("=== C. 接线：三处必须一致 ===");
   check("整学期分支不再用「同一格」当清理范围", !/if \(locationChanged\) \{\s*for \(const scheduleId of idsForSemesterDelete/.test(courses));
   check("地点没改时不清课段（否则会毁掉多教室导入的数据）", semesterBranch.includes("if (locationChanged) {"), semesterBranch.slice(0, 200));
   check("清理写在 locationChanged 守卫里面", /if \(locationChanged\) \{[\s\S]{0,400}scheduleIdsWithOwnLocation/.test(semesterBranch));
-  check("历史分叉的单行收拢（地点没改也能修好这一格）", /else if \(current\.location && current\.location !== \(course\.location \|\| ""\)\)/.test(semesterBranch), semesterBranch.slice(-700));
+  // 不同课段可以合法使用不同教室；未改地点时应保留，行为见 test-teacher-edits.mjs。
   check("清理算作变更（否则 toast 说成功、其实什么都没干）", courses.includes("!spanChanged && !fieldsChanged && !clearedLocations"));
   check("按周分支用 patchWeeklyRowForOverlay", courses.includes("patchWeeklyRowForOverlay(weekly, overlayCourseId"));
 

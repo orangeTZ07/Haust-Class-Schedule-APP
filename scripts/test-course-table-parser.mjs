@@ -108,11 +108,17 @@ if (!existsSync(realPath)) {
   check("教室解析正确", linAlg.every((r) => r.room.includes("4-106")), linAlg.map((r) => r.room));
   check("节次解析正确", linAlg.every((r) => r.start_unit === 1 || r.start_unit === 3), linAlg.map((r) => [r.start_unit, r.end_unit]));
 
-  // `var teachers` 出现在活动之后，所以脚本里的最后一条活动页面上没有这一行（实测 33/34 条有）。
-  // 这里刻意**不**用"往前取"去补：实测 33 条里有 18 条前后不一致，往前取等于把教师错位一位，
-  // 会写错 18 位教师 —— 取错教师比取不到更糟。最后那一条由分组的"出现最多"兜住。
-  check("33/34 条能从 var teachers 取到教师", rows.filter((r) => r.teacher).length === 33, rows.filter((r) => r.teacher).length);
-  check("能取到的那条是李学军", linAlg.filter((r) => r.teacher).every((r) => r.teacher === "李学军"), linAlg.map((r) => r.teacher));
+  // 教务先构造 actTeachers / actTeacherName，再把姓名传给 TaskActivity。
+  // 后面的 var teachers 已属于下一条活动；旧断言把错位后的结果当成了正确答案。
+  check("34/34 条都有实际教师（含最后一条）", rows.filter((r) => r.teacher).length === 34, rows.filter((r) => r.teacher).length);
+  check("线性代数B 两条活动都是和凌云", linAlg.every((r) => r.teacher === "和凌云"), linAlg.map((r) => r.teacher));
+  const teachersByCourse = new Map();
+  for (const row of rows) {
+    if (!teachersByCourse.has(row.course_name)) teachersByCourse.set(row.course_name, new Set());
+    teachersByCourse.get(row.course_name).add(row.teacher);
+  }
+  check("这份真实课表每门课各有一位教师（此前的多教师来自错位）",
+    [...teachersByCourse.values()].every((teachers) => teachers.size === 1));
 
   // 周次。下标即周次、跳过下标 0。
   // 旧断言写成「周一第 2-14 周、周五双周、奇数周 1 节」，那是 i+1 把整张课表推后一周之后的读数。
@@ -145,7 +151,7 @@ if (!existsSync(realPath)) {
   check("生成 39 条日程", backup.schedules.length === 39, backup.schedules.length);
   check("数据库原理只有一门（不是 11 门）", backup.courses.filter((c) => c.name === "数据库原理").length === 1);
   check("最大节次是 11", report.maxPeriod === 11, report.maxPeriod);
-  check("多教室/多教师都进了报告", report.notes.length >= 3, report.notes.length);
+  check("多教室进入报告，不再虚构多教师", report.notes.length > 0 && !report.notes.some((note) => note.includes("位教师")), report.notes.length);
   check("每条日程都能对应到课程", backup.schedules.every((s) => backup.courses.some((c) => c.id === s.courseId)));
   check("weekType 只在 all/odd/even 内", backup.schedules.every((s) => ["all", "odd", "even"].includes(s.weekType)));
   check("真实课表的课段带来源与 parserVersion", backup.schedules.every((s) => s.source === "eams" && s.parserVersion === parser.EAMS_PARSER_VERSION));
@@ -185,6 +191,7 @@ console.log("=== C. 公开 EAMS 样本（位串下标 0）===");
   );
   const { rows, problems } = parser.parseCourseTable(sample);
   check("样本能解析且没有失败项", rows.length === 4 && problems.length === 0, { rows: rows.length, problems });
+  check("静态 TaskActivity 教师参数也能正确读取", JSON.stringify(rows.map((row) => row.teacher)) === JSON.stringify(["陈俊梅", "李伟刚", "李伟刚", "李伟刚"]));
   check("样本第 1 周不是空的", rows.some((row) => row.weeks.includes(1)));
 }
 
