@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ArrowLeft, Trash2, MapPin, User, Clock } from '@lucide/vue';
 import { showToast } from 'vant';
 import { confirmAction } from '@/utils/confirm';
+import { teacherLabel } from '@/utils/teacherLabel';
 
 const router = useRouter();
 const { courses, schedules, removeCourse, getDaySchedules, commitEdit } = useCourses();
@@ -29,6 +30,10 @@ const handleDelete = async (courseId: number, courseName: string) => {
 const getCourseSchedules = (courseId: number) => {
   return schedules.value.filter(s => s.courseId === courseId);
 };
+
+// 汇总这门课各个课段的实际教师；课表格子仍显示各自课段的教师。
+const courseTeacher = (course: { id: number; teacher?: string }) =>
+  teacherLabel(course.teacher, getCourseSchedules(course.id).map(s => s.teacher));
 
 const days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -65,9 +70,9 @@ const formatSchedule = (s: any) => {
             </div>
             
             <div class="course-details">
-              <div class="detail-row" v-if="course.teacher">
+              <div class="detail-row" v-if="courseTeacher(course)">
                 <User :size="12" class="icon" />
-                <span>{{ course.teacher }}</span>
+                <span>{{ courseTeacher(course) }}</span>
               </div>
               <div class="detail-row" v-if="course.location">
                 <MapPin :size="12" class="icon" />

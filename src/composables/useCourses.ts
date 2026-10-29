@@ -21,6 +21,7 @@ import {
   weeksForDeleteScope,
   type DeleteScopePayload
 } from "@/utils/scheduleDelete";
+import { patchWeeklyRowForOverlay, scheduleIdsWithOwnTeacher, scheduleIdsWithOwnLocation } from "@/utils/locationSync";
 import { baseHiddenByWeekly } from "@/utils/weekOverride";
 import {
   createDefaultPeriodConfig,
@@ -469,7 +470,7 @@ export function useCourses() {
     dayOfWeek: number,
     startPeriod: number,
     endPeriod: number,
-    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion" | "location">> = {}
+    options: Partial<Pick<CourseSchedule, "startWeek" | "endWeek" | "weekType" | "scope" | "isCancelled" | "source" | "parserVersion" | "location" | "teacher">> = {}
   ): Promise<CourseSchedule> => {
     const scheduleData = {
       courseId,
@@ -485,8 +486,10 @@ export function useCourses() {
       // segments as if a parser wrote them.
       ...(options.source ? { source: options.source } : {}),
       ...(typeof options.parserVersion === "number" ? { parserVersion: options.parserVersion } : {}),
-      // 课段自己的地点。只有教务那种"每一行都带教室"的来源会传；手填课时留空，显示时用课程的地点。
-      ...(options.location ? { location: options.location } : {})
+      // 课段自己的地点/教师。只有教务那种"每一行都带教室和老师"的来源会传；
+      // 手填课时留空，显示时用课程级的值。
+      ...(options.location ? { location: options.location } : {}),
+      ...(options.teacher ? { teacher: options.teacher } : {})
     };
     
     const id = await courseService.addSchedule(scheduleData);
@@ -515,9 +518,10 @@ export function useCourses() {
         weekType: "all",
         scope: "weekly",
         isCancelled: false,
-        // 拖动只改时间，不改教室：原来那节课的教室要跟着走到新位置上。不然新位置的卡片会
-        // 回落到课程的地点，而"课程的地点"只是出现最多的那一个。
-        location: current.location
+        // 拖动只改时间，不改教室/教师：原来那节课的教室和老师要跟着走到新位置上。不然新
+        // 位置的卡片会回落到课程级的值，而那只是出现最多的那一个。
+        location: current.location,
+        teacher: current.teacher
       });
     }
 
@@ -581,27 +585,46 @@ export function useCourses() {
     if (!name) return false;
     const teacher = payload.teacher?.trim() || undefined;
     const location = payload.location?.trim() || undefined;
+    // 表单预填的是这一格实际显示的值。与它比较才能区分用户改了字段，还是原本就有课段差异。
+    const teacherChanged = (current.teacher || course.teacher || "") !== (teacher || "");
+    const locationChanged = (current.location || course.location || "") !== (location || "");
     const fieldsChanged =
       course.name !== name ||
-      (course.teacher || "") !== (teacher || "") ||
-      (course.location || "") !== (location || "");
+      teacherChanged || locationChanged;
     const spanChanged = current.endPeriod !== endPeriod;
-    const locationChanged = (course.location || "") !== (location || "");
     const weeks = weeksForDeleteScope(payload, currentWeek.value);
 
     if (weeks === "all") {
-      if (fieldsChanged) await updateCourseFields(course.id, { name, teacher, location });
-      // "整学期"改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
+      if (fieldsChanged) await updateCourseFields(course.id, {
+        name,
+        teacher: teacherChanged ? teacher : course.teacher,
+        location: locationChanged ? location : course.location
+      });
+      // 整学期改地点 = 这门课以后都在新教室。课段上那些导入时带来的旧教室必须一起清掉：
       // 卡片是"课段优先"的，不清就等于这次编辑没有生效（点保存、格子还是老地点）。
-      // 清掉之后回落到课程的地点，与用户的意图一致；范围与下面的节次调整同一组课段。
+      //
+      // 范围是这门课的全部课段（含按周覆盖行）—— 不是同一格的课段，那样会漏掉别的星期。
+      // 但**只有真的改了地点才清**：地点没变时清空全部课段会毁掉多教室导入的数据
+      // （数据库原理 11 条活动散在 10 个教室），那种保存应当是一次纯粹的无效操作。
+      let clearedLocations = 0;
       if (locationChanged) {
-        for (const scheduleId of idsForSemesterDelete(schedules.value, current)) {
+        for (const scheduleId of scheduleIdsWithOwnLocation(schedules.value, course.id)) {
           const row = schedules.value.find(item => item.id === scheduleId);
-          if (!row || row.isCancelled || !row.location) continue;
+          if (!row) continue;
           await patchSchedule({ ...row, location: undefined });
+          clearedLocations += 1;
         }
       }
-      if (!spanChanged && !fieldsChanged) return false;
+      // 教师和地点同理：真的改了课程教师，就把这门课所有课段上的旧老师一起清掉。
+      if (teacherChanged) {
+        for (const scheduleId of scheduleIdsWithOwnTeacher(schedules.value, course.id)) {
+          const row = schedules.value.find(item => item.id === scheduleId);
+          if (!row) continue;
+          await patchSchedule({ ...row, teacher: undefined });
+          clearedLocations += 1;
+        }
+      }
+      if (!spanChanged && !fieldsChanged && !clearedLocations) return false;
       if (spanChanged) {
         const ids = idsForSemesterDelete(schedules.value, current);
         for (const scheduleId of ids) {
@@ -615,6 +638,7 @@ export function useCourses() {
       return true;
     }
 
+    if (!fieldsChanged && !spanChanged) return false;
     let overlayCourseId = current.courseId;
     if (fieldsChanged) {
       const created = await addCourse(name, teacher, location, course.color);
@@ -626,11 +650,12 @@ export function useCourses() {
     for (const week of weeks) {
       const weekly = weeklyRowToDelete(snapshot, current, week);
       if (weekly) {
-        await patchSchedule({
-          ...weekly,
-          courseId: overlayCourseId,
-          endPeriod: weekly.startPeriod + span - 1
-        });
+        await patchSchedule(
+          patchWeeklyRowForOverlay(weekly, overlayCourseId, weekly.startPeriod + span - 1, {
+            location: locationChanged,
+            teacher: teacherChanged
+          })
+        );
         changed = true;
         continue;
       }
@@ -651,7 +676,10 @@ export function useCourses() {
           endWeek: week,
           weekType: "all",
           scope: "weekly",
-          isCancelled: false
+          isCancelled: false,
+          // 只改节数时不会新建课程，覆盖课段仍须保留原来这一格的教师和地点。
+          teacher: teacherChanged ? undefined : current.teacher,
+          location: locationChanged ? undefined : current.location
         });
         changed = true;
       }
@@ -1006,8 +1034,9 @@ export function useCourses() {
           isCancelled: schedule.isCancelled,
           source: schedule.source,
           parserVersion: schedule.parserVersion,
-          // 备份里带课段地点就原样恢复；旧备份没有这一项，显示时回落到课程的地点。
-          location: schedule.location
+          // 备份里带课段地点/教师就原样恢复；旧备份没有这两项，显示时回落到课程级的值。
+          location: schedule.location,
+          teacher: schedule.teacher
         });
         scheduleCount++;
       }

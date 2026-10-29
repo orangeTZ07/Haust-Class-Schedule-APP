@@ -241,6 +241,10 @@ const periodText = computed(() => {
 /// 所有课段只能共用一个 —— 那正是"周五显示成周三的教室"的来源。课段没有自己的地点
 /// （老数据、手填课、覆盖层）时才回落到课程的地点。
 const locationText = computed(() => props.schedule.location || props.course.location || "");
+
+/// 教师和教室同理：教务导入时每一条活动各带各的老师（实测：数据库原理 6 位、前端开发技术 3 位），
+/// 课程级那一位是投票选出来的。长按展开时把这一格真正的老师显示出来，否则用户只能在编辑框里猜。
+const teacherText = computed(() => props.schedule.teacher || props.course.teacher || "");
 </script>
 
 <template>
@@ -268,6 +272,10 @@ const locationText = computed(() => props.schedule.location || props.course.loca
     <div class="course-info" v-if="locationText">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
       <span class="loc-text">{{ locationText }}</span>
+    </div>
+    <div class="course-info course-teacher" v-if="isExpanded && teacherText">
+      <span class="loc-icon" v-if="!themeConfig.hideIcons">👤</span>
+      <span class="loc-text">{{ teacherText }}</span>
     </div>
     <div v-if="(conflictCount || 0) > 1" class="conflict-count-badge">
       {{ conflictCount }}
