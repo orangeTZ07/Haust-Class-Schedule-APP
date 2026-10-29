@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
+import { useCourses } from "./composables/useCourses";
 import { useTheme } from "./composables/useTheme";
 import { useSystemBars } from "./composables/useSystemBars";
 import { useUpdateCheck } from "./composables/useUpdateCheck";
+import { MAX_SPLASH_MS, hideAppSplash } from "./utils/splash";
 import UpdateDialog from "./components/layout/UpdateDialog.vue";
 
 const { themeConfig, cssVariables, metalShine, neonFx } = useTheme();
 // 把安卓状态栏 / 导航栏的真实尺寸写进 --native-safe-*，并让栏上的图标颜色跟着主题走；失败静默。
 useSystemBars();
 const { startAutoCheck } = useUpdateCheck();
+// 首屏数据由 useCourses 在模块加载时就开始读（coursesReady 是模块级 Promise）。
+const { coursesReady } = useCourses();
 
 // 版本检查在后台跑，不挡首屏；失败静默。弹窗挂在这一层，所以任何页面都能弹。
 let stopAutoCheck: (() => void) | undefined;
 onMounted(() => {
   stopAutoCheck = startAutoCheck();
+
+  // 启动屏（index.html 里内联的 #app-splash）等首屏课表数据到位再淡出：先露一张空网格、
+  // 几百毫秒后课程再跳出来，比多等这一会儿更难看。读库失败或卡住时由 MAX_SPLASH_MS 兜底。
+  void Promise.race([
+    coursesReady.catch(() => undefined),
+    new Promise<void>((resolve) => window.setTimeout(resolve, MAX_SPLASH_MS)),
+  ]).then(() => hideAppSplash());
 });
 onBeforeUnmount(() => stopAutoCheck?.());
 </script>

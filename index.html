@@ -8,8 +8,180 @@
          算出来的键盘高度就是 0。 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Haust课程表</title>
+    <script>
+      // 启动屏的底色必须在首帧之前定下来，否则暗色用户会先看到一帧白屏再被主题色替换（闪一下）。
+      // 主题存在 localStorage["course-mngr-theme"]（见 composables/useTheme.ts 的 STORAGE_KEY），
+      // 这里只读 bgColor / bodyTextColor / mode；读不到或解析失败就按默认亮色（Catppuccin Latte）。
+      (function () {
+        var cfg = null;
+        try {
+          cfg = JSON.parse(localStorage.getItem("course-mngr-theme") || "null");
+        } catch (e) {
+          cfg = null;
+        }
+        var dark = !!cfg && cfg.mode === "dark";
+        var bg = (cfg && cfg.bgColor) || (dark ? "#1e1e2e" : "#eff1f5");
+        var fg = (cfg && cfg.bodyTextColor) || (dark ? "#cdd6f4" : "#4c4f69");
+        var root = document.documentElement;
+        root.setAttribute("data-splash-theme", dark ? "dark" : "light");
+        root.style.colorScheme = dark ? "dark" : "light";
+        root.style.backgroundColor = bg;
+        root.style.setProperty("--splash-bg", bg);
+        root.style.setProperty("--splash-fg", fg);
+        root.style.setProperty("--splash-bar", dark ? "#e8915a" : "#4c4f69");
+        root.style.setProperty(
+          "--splash-track",
+          dark ? "rgba(205,214,244,.18)" : "rgba(76,79,105,.16)"
+        );
+        root.style.setProperty(
+          "--splash-tile-shadow",
+          dark
+            ? "0 24px 54px -16px rgba(0,0,0,.72), 0 2px 8px rgba(0,0,0,.45)"
+            : "0 22px 48px -16px rgba(30,25,60,.42), 0 2px 6px rgba(30,25,60,.10)"
+        );
+      })();
+    </script>
+    <style>
+      /* 启动屏：样式内联，保证 CSS 包还没下载/解析完也能画出来（首帧就是品牌页，不是白屏）。
+         数据就绪后由 src/utils/splash.ts 加上 .is-leaving 淡出，再移除节点。 */
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+          max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        background: var(--splash-bg, #eff1f5);
+        color: var(--splash-fg, #4c4f69);
+        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        opacity: 1;
+        transition: opacity 320ms ease, transform 320ms ease;
+      }
+
+      #app-splash.is-leaving {
+        opacity: 0;
+        transform: scale(1.02);
+        pointer-events: none;
+      }
+
+      /* 尺寸都跟着窗口短边走，窗口大小 / 横屏竖屏都不会挤变形 */
+      .splash-tile {
+        width: clamp(88px, 27vmin, 148px);
+        height: clamp(88px, 27vmin, 148px);
+        border-radius: 24%;
+        overflow: hidden;
+        box-shadow: var(--splash-tile-shadow, none);
+        opacity: 0;
+        transform: scale(0.9);
+        animation: splash-rise-in 520ms cubic-bezier(0.2, 0.8, 0.25, 1) 40ms forwards;
+      }
+
+      .splash-tile img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .splash-name {
+        margin-top: clamp(14px, 3.4vmin, 26px);
+        font-size: clamp(19px, 5.4vmin, 30px);
+        font-weight: 650;
+        letter-spacing: 0.6px;
+        line-height: 1.15;
+        text-align: center;
+        opacity: 0;
+        transform: translateY(9px);
+        animation: splash-rise 480ms cubic-bezier(0.2, 0.8, 0.25, 1) 170ms forwards;
+      }
+
+      .splash-bar {
+        margin-top: clamp(16px, 4.2vmin, 30px);
+        width: clamp(64px, 17vmin, 104px);
+        height: max(2px, 0.28vmin);
+        border-radius: 2px;
+        background: var(--splash-track, rgba(76, 79, 105, 0.16));
+        overflow: hidden;
+        opacity: 0;
+        animation: splash-fade-in 420ms ease 340ms forwards;
+      }
+
+      .splash-bar i {
+        display: block;
+        width: 34%;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--splash-bar, #4c4f69);
+        transform: translateX(-110%);
+        animation: splash-sweep 1200ms cubic-bezier(0.55, 0.1, 0.45, 0.9) infinite;
+      }
+
+      @keyframes splash-rise-in {
+        from {
+          opacity: 0;
+          transform: translateY(10px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes splash-rise {
+        from {
+          opacity: 0;
+          transform: translateY(10px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes splash-fade-in {
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes splash-sweep {
+        0% {
+          transform: translateX(-110%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+
+      /* 系统开了"减少动态效果"：不做入场/循环动画，退场也直接切（由 splash.ts 直接移除节点） */
+      @media (prefers-reduced-motion: reduce) {
+        #app-splash {
+          transition: none;
+        }
+        .splash-tile,
+        .splash-name,
+        .splash-bar {
+          animation-duration: 1ms;
+          animation-delay: 0ms;
+        }
+        .splash-bar i {
+          animation: none;
+          transform: translateX(0);
+          width: 100%;
+          opacity: 0.5;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="app-splash" aria-hidden="true">
+      <div class="splash-tile"><img src="./splash-icon.png" alt="" /></div>
+      <div class="splash-name">Haust课程表</div>
+      <div class="splash-bar"><i></i></div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
