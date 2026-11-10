@@ -82,6 +82,7 @@ interface DropPreviewFrame {
 type OrbitPhase = "idle" | "opening" | "open" | "closing";
 
 const bodyRef = ref<HTMLElement | null>(null);
+const expandedCardKey = ref<string | null>(null);
 const dragState = ref<DragState | null>(null);
 let dragPointerId = -1;
 let dragSourceEl: HTMLElement | null = null;
@@ -479,6 +480,7 @@ const clearOrbitAnimationTimer = () => {
 };
 
 const clearConflictOrbitImmediately = () => {
+  if (expandedCardKey.value?.startsWith("orbit-")) expandedCardKey.value = null;
   clearOrbitAnimationTimer();
   openConflictGroupId.value = null;
   closingConflictGroupId.value = null;
@@ -506,6 +508,10 @@ const closeConflictGroup = () => {
   }, ORBIT_CLOSE_DURATION_MS);
 };
 
+const toggleExpandedCard = (key: string) => {
+  expandedCardKey.value = expandedCardKey.value === key ? null : key;
+};
+
 const handleGlobalClick = (event: MouseEvent) => {
   if (suppressNextClick.value) {
     suppressNextClick.value = false;
@@ -515,10 +521,12 @@ const handleGlobalClick = (event: MouseEvent) => {
     return;
   }
 
-  if (!openConflictGroupId.value || dragState.value) return;
-  if (!(event.target instanceof HTMLElement)) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (!target.closest(".course-block")) expandedCardKey.value = null;
 
-  if (event.target.closest(".orbit-card") || event.target.closest(".conflict-orbit-center")) {
+  if (!openConflictGroupId.value || dragState.value) return;
+  if (target.closest(".orbit-card") || target.closest(".conflict-orbit-center")) {
     return;
   }
 
@@ -528,6 +536,7 @@ const handleGlobalClick = (event: MouseEvent) => {
 const openConflictGroupFromBlock = async (block: MergedBlock, event: MouseEvent) => {
   const group = conflictGroupByScheduleId.value.get(block.schedule.id);
   if (!group) return;
+  expandedCardKey.value = null;
 
   if (displayedConflictGroupId.value === group.id && orbitPhase.value !== "closing") {
     closeConflictGroup();
@@ -1183,6 +1192,7 @@ watch(activeConflictGroup, async (group) => {
 }, { flush: "post" });
 
 watch(currentWeek, () => {
+  expandedCardKey.value = null;
   clearConflictOrbitImmediately();
 });
 
@@ -1285,9 +1295,11 @@ onUnmounted(() => {
                 :conflict-index="getConflictMeta(block.schedule.id).index"
                 :allow-drag="getConflictMeta(block.schedule.id).count === 1"
                 :allow-expand="getConflictMeta(block.schedule.id).count === 1"
+                :expanded="expandedCardKey === `sch-${block.schedule.id}-c${block.course.id}`"
                 @pointerdown.capture="startEmbeddedConflictDrag(block, $event)"
                 @drag-start="startDrag(block, $event, 'grid')"
                 @activate="openConflictGroupFromBlock(block, $event)"
+                @toggle-expand="toggleExpandedCard(`sch-${block.schedule.id}-c${block.course.id}`)"
               />
             </template>
           </div>
@@ -1367,7 +1379,9 @@ onUnmounted(() => {
           :show-conflict-tag="false"
           :is-past="isPastBlock(block.schedule.id)"
           :allow-drag="!isBlockDragging(block.schedule.id)"
+          :expanded="expandedCardKey === `orbit-${block.schedule.id}`"
           @drag-start="startDrag(block, $event, 'floating')"
+          @toggle-expand="toggleExpandedCard(`orbit-${block.schedule.id}`)"
         />
       </div>
     </div>

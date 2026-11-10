@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, ref } from "vue";
 import type { Course, CourseSchedule } from "@/types/course";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<{
   floatingFrame?: FloatingFrame;
   allowDrag?: boolean;
   allowExpand?: boolean;
+  expanded?: boolean;
   showConflictTag?: boolean;
   /// Number of 午休 / 晚饭 dividers strictly inside this block's span. They occupy vertical
   /// space between the rows, so a block spanning one would otherwise end short of the next
@@ -52,9 +53,9 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: "drag-start", event: PointerEvent): void;
   (e: "activate", event: MouseEvent): void;
+  (e: "toggle-expand"): void;
 }>();
 
-const isExpanded = ref(false);
 const blockRef = ref<HTMLElement | null>(null);
 const pointerDown = ref<{ x: number; y: number } | null>(null);
 const suppressNextClick = ref(false);
@@ -70,11 +71,7 @@ const toggleExpand = (e: MouseEvent) => {
     return;
   }
   if (props.isDragging) return;
-  isExpanded.value = !isExpanded.value;
-};
-
-const closeExpand = () => {
-  isExpanded.value = false;
+  emit("toggle-expand");
 };
 
 const handlePointerDown = (event: PointerEvent) => {
@@ -83,7 +80,7 @@ const handlePointerDown = (event: PointerEvent) => {
   suppressNextClick.value = false;
   if (props.allowDrag === false) return;
   pointerDown.value = { x: event.clientX, y: event.clientY };
-  if (!isExpanded.value) emit("drag-start", event);
+  if (!props.expanded) emit("drag-start", event);
 };
 
 const handlePointerUp = (event: PointerEvent) => {
@@ -95,14 +92,6 @@ const handlePointerUp = (event: PointerEvent) => {
   }
   pointerDown.value = null;
 };
-
-onMounted(() => {
-  window.addEventListener('click', closeExpand);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('click', closeExpand);
-});
 
 const style = computed(() => {
   const isFloating = !!props.floatingFrame;
@@ -135,7 +124,7 @@ const style = computed(() => {
   // 写进内联样式：悬停、按下、点开放大都改不掉。冲突课不过滤，红框在摊开之后还要认得出来。
   const mutedFilter = props.isPast && !hasConflict ? 'grayscale(1)' : undefined;
   
-  if (isExpanded.value) {
+  if (props.expanded) {
     const expandedHeight = Math.max(baseHeight * 1.5, 140);
     if (isFloating && props.floatingFrame) {
       const expandedWidth = Math.max(props.floatingFrame.width * 2.2, 220);
@@ -255,7 +244,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
     :data-schedule-id="schedule.id"
     data-coach-course="true"
     :class="{
-      'is-expanded': isExpanded,
+      'is-expanded': expanded,
       'is-dragging': isDragging,
       'is-conflicting': (conflictCount || 0) > 1,
       'is-conflict-pair': (conflictCount || 0) === 2 && !isDragging && !floatingFrame,
@@ -275,7 +264,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
       <span class="loc-text">{{ locationText }}</span>
     </div>
-    <div class="course-info course-teacher" v-if="isExpanded && teacherText">
+    <div class="course-info course-teacher" v-if="expanded && teacherText">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">👤</span>
       <span class="loc-text">{{ teacherText }}</span>
     </div>
