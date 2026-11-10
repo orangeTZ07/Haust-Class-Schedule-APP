@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
 import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
 import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
+import { fetchExams } from "@/services/eams/examClient";
+import { saveExamSnapshot } from "@/services/eams/examStorage";
+import type { EamsDeps } from "@/services/eams/casLogin";
 import { formatMatrix, runDiagnosticMatrix } from "@/services/eams/diagnose";
 import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
@@ -26,14 +31,19 @@ const props = defineProps<{
   overwrite: boolean;
 }>();
 
-const { importFromJsonBackup, importAsNewCourseTable } = useCourses();
+const { activeCourseTableId, importFromJsonBackup, importAsNewCourseTable } = useCourses();
 const confirmReplace = useConfirmReplace();
+const router = useRouter();
 
 const username = ref("");
 const password = ref("");
-const busy = ref(false);
+const syncing = ref<"timetable" | "exams" | null>(null);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
+const syncDependencies = (): EamsDeps => ({
+  http: createTauriHttp(),
+  encryptPassword: async (pw, key) => encryptPasswordWithKey(pw, key) ?? ""
+});
 /// 解析器那份"注意事项"（哪些课换过教室、教师取了谁）。默认收起：一条就够长（数据库原理列了
 /// 11 个教室），三条直接是一屏多的文字墙 —— 而它出现在表单上面，会把学号 / 密码 / 开始同步顶到
 /// 好几屏以外。收起不等于瞒着：给出条数，想核对的人点开就看得到。
@@ -170,7 +180,7 @@ const describeFailure = (result: SyncResult & { ok: false }): string => {
 };
 
 const sync = async () => {
-  if (busy.value) return;
+  if (syncing.value) return;
 
   if (!username.value.trim() || !password.value) {
     messageKind.value = "err";
@@ -181,14 +191,15 @@ const sync = async () => {
   // Only overwriting asks, and it asks up front rather than after the fetch: a prompt that shows up
   // after the wait is one the user is no longer expecting. A new table destroys nothing.
   if (props.overwrite && !(await confirmReplace("教务同步"))) return;
+  if (syncing.value) return;
 
-  busy.value = true;
+  syncing.value = "timetable";
   messageKind.value = "info";
   message.value = "正在连接教务系统…";
 
   try {
     const result = await fetchTimetable(
-      { http: createTauriHttp(), encryptPassword: async (pw, key) => encryptPasswordWithKey(pw, key) ?? "" },
+      syncDependencies(),
       username.value.trim(),
       password.value
     );
@@ -253,7 +264,44 @@ const sync = async () => {
     // 取 .message 会得到 undefined，把真实原因吞掉（踩过一次）。describeError 专门处理这个。
     message.value = `同步出错：${describeError(error)}`;
   } finally {
-    busy.value = false;
+    syncing.value = null;
+  }
+};
+
+const openExams = () => {
+  emit("close");
+  void router.push({ name: "exams" });
+};
+
+const syncExams = async () => {
+  if (syncing.value) return;
+  if (!isTauri()) {
+    messageKind.value = "err";
+    message.value = "请在 App 里同步考试。";
+    return;
+  }
+
+  const tableId = activeCourseTableId.value;
+  syncing.value = "exams";
+  messageKind.value = "info";
+  message.value = "正在查询本学期考试安排…";
+  try {
+    const result = await fetchExams(syncDependencies(), username.value.trim(), password.value);
+    if (!result.ok) {
+      messageKind.value = "err";
+      message.value = result.message;
+      return;
+    }
+
+    saveExamSnapshot(tableId, result.snapshot);
+    password.value = "";
+    message.value = "";
+    openExams();
+  } catch (error) {
+    messageKind.value = "err";
+    message.value = `考试同步失败：${describeError(error)}`;
+  } finally {
+    syncing.value = null;
   }
 };
 </script>
@@ -262,6 +310,9 @@ const sync = async () => {
   <div class="eams-section">
     <!-- 结果放在最上面：不用滚动就能看到 -->
     <ImportNotice v-if="message" :kind="messageKind">{{ message }}</ImportNotice>
+    <button type="button" class="app-btn app-btn--outline" :disabled="!!syncing" @click="openExams">
+      查看考试安排
+    </button>
 
     <!-- 注意事项默认收起：展开是一屏多的文字（数据库原理一条就列 11 个教室），会把下面的表单
          顶到几屏以外 —— 同步完还想再点一次「开始同步」，得先滑过整段说明。 -->
@@ -288,7 +339,7 @@ const sync = async () => {
       </div>
 
       <p class="imp-hint">
-        用「我i科大」（学校统一身份认证）的学号与登录密码登录，直接把课表取回来。密码只在这次同步时用一次，
+        用「我i科大」（学校统一身份认证）的学号与登录密码登录，同步课表或考试安排。密码只在这次同步时使用，
         <strong>不会保存到手机上</strong>。
       </p>
 
@@ -329,13 +380,18 @@ const sync = async () => {
         />
       </label>
 
-      <button class="app-btn app-btn--primary" :disabled="busy" @click="sync">
-        <Loader2 v-if="busy" :size="18" class="imp-spin" />
+      <button class="app-btn app-btn--primary" :disabled="!!syncing" @click="sync">
+        <Loader2 v-if="syncing === 'timetable'" :size="18" class="imp-spin" />
         <DownloadCloud v-else :size="18" />
-        <span>{{ busy ? "同步中…" : "开始同步" }}</span>
+        <span>{{ syncing === "timetable" ? "正在同步课表…" : "同步课表" }}</span>
+      </button>
+      <button class="app-btn app-btn--outline" :disabled="!!syncing" @click="syncExams">
+        <Loader2 v-if="syncing === 'exams'" :size="18" class="imp-spin" />
+        <DownloadCloud v-else :size="18" />
+        <span>{{ syncing === "exams" ? "正在同步考试…" : "同步考试" }}</span>
       </button>
 
-      <p class="imp-hint small">默认同步为一个新课表，原来的课表不受影响。</p>
+      <p class="imp-hint small">课表默认同步为新课表，考试安排保存到当前课表。</p>
     </div>
 
     <div class="trouble">
@@ -347,7 +403,7 @@ const sync = async () => {
 
       <div v-if="showTrouble" class="trouble-body">
         <ul class="trouble-list">
-          <li>确认 aTrust 已经显示「已连接」，再重新点「开始同步」。</li>
+          <li>确认 aTrust 已经显示「已连接」，再点对应的同步按钮。</li>
           <li>若手机连不上教务系统，可改用顶部的「AI 识别」直接导入课表文本或截图。</li>
           <li>还是不行，点下面的「网络诊断」，把结果发给开发者。</li>
         </ul>
