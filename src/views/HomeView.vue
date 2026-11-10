@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
@@ -25,6 +25,7 @@ import {
 } from "@/utils/weekOffsetPrompt";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
+import TodayClassBar from "@/components/timetable/TodayClassBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
 import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
@@ -239,7 +240,13 @@ const closeSidebar = () => {
 };
 
 const gridContainerRef = ref<HTMLElement | null>(null);
-const weekGridRef = ref<{ resetView: () => boolean; playDeleteAnimation?: (id: number) => Promise<void> } | null>(null);
+const weekGridRef = ref<InstanceType<typeof WeekGrid> | null>(null);
+
+const locateTodayClass = async (week: number, scheduleId: number) => {
+  setCurrentWeek(week);
+  await nextTick();
+  await weekGridRef.value?.locateCourse(scheduleId);
+};
 
 // Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the horizontal
 // offset lives on this component's container, so neither had a way back: they are easy to disturb
@@ -700,6 +707,8 @@ const onEdgeTouchEnd = () => {
         @toggle-sidebar="toggleSidebar"
         @change-week="setCurrentWeek"
       />
+
+      <TodayClassBar @locate="locateTodayClass" />
 
       <div ref="gridContainerRef" class="grid-container">
         <WeekGrid
