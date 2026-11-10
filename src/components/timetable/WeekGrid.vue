@@ -8,7 +8,7 @@ import { conflictPlacements, type DragSlot } from "@/utils/dragConflict";
 import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, semesterStartDate, weekDateLabels, moveSchedule, commitEdit } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, semesterStartDate, weekDateLabels, shiftCurrentWeek, moveSchedule, commitEdit } = useCourses();
 const { now, todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
@@ -630,8 +630,21 @@ const getHorizontalTouchDistance = (touches: TouchList) => {
   return Math.abs(touches[0].clientX - touches[1].clientX);
 };
 
+const WEEK_SWIPE_INTENT_PX = 14;
+const WEEK_SWIPE_DISTANCE_PX = 56;
+const WEEK_SWIPE_HORIZONTAL_RATIO = 1.25;
+let weekSwipe: { x: number; y: number; horizontal: boolean } | null = null;
+
 const handleTouchStart = (event: TouchEvent) => {
+  const touch = event.touches[0];
+  // Leave a zoomed timetable free to pan across its wider columns.
+  weekSwipe = event.touches.length === 1 && !dragState.value && gridZoom.value === 1
+    ? { x: touch.clientX, y: touch.clientY, horizontal: false }
+    : null;
+
   if (event.touches.length !== 2) return;
+  clearLongPress();
+  clearTimePress();
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
 
@@ -641,6 +654,27 @@ const handleTouchStart = (event: TouchEvent) => {
   };
 };
 
+const handleWeekSwipeMove = (event: TouchEvent) => {
+  const swipe = weekSwipe;
+  if (!swipe || event.touches.length !== 1) return;
+
+  if (!swipe.horizontal) {
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - swipe.x);
+    const dy = Math.abs(touch.clientY - swipe.y);
+    if (Math.max(dx, dy) < WEEK_SWIPE_INTENT_PX) return;
+    if (dx < dy * WEEK_SWIPE_HORIZONTAL_RATIO) {
+      weekSwipe = null;
+      return;
+    }
+    swipe.horizontal = true;
+    clearLongPress();
+    clearTimePress();
+  }
+
+  if (event.cancelable) event.preventDefault();
+};
+
 const handleTouchMove = (event: TouchEvent) => {
   // A drag in progress owns the gesture: without this the browser would also scroll the
   // page under the finger, because course blocks are touch-action: pan-y.
@@ -648,7 +682,10 @@ const handleTouchMove = (event: TouchEvent) => {
     if (event.cancelable) event.preventDefault();
     return;
   }
-  if (!pinchState.value || event.touches.length !== 2) return;
+  if (!pinchState.value || event.touches.length !== 2) {
+    handleWeekSwipeMove(event);
+    return;
+  }
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
 
@@ -660,9 +697,25 @@ const handleTouchMove = (event: TouchEvent) => {
   gridZoom.value = Math.round(clamp(nextScale, 1, MAX_GRID_ZOOM) * 100) / 100;
 };
 
+const cancelGridTouch = () => {
+  weekSwipe = null;
+  pinchState.value = null;
+};
+
 const handleTouchEnd = (event: TouchEvent) => {
   if (event.touches.length >= 2) return;
-  pinchState.value = null;
+  const swipe = weekSwipe;
+  cancelGridTouch();
+  const touch = event.changedTouches[0];
+  if (!swipe?.horizontal || !touch || event.touches.length !== 0 || dragState.value) return;
+
+  if (event.cancelable) event.preventDefault();
+  const dx = touch.clientX - swipe.x;
+  const dy = touch.clientY - swipe.y;
+  if (Math.abs(dx) < WEEK_SWIPE_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * WEEK_SWIPE_HORIZONTAL_RATIO) return;
+
+  lastSlotTap = { day: 0, period: 0, at: 0 };
+  shiftCurrentWeek(dx < 0 ? 1 : -1);
 };
 
 const getFloatingFrame = (block: MergedBlock, index: number, total: number): FloatingFrame | null => {
@@ -1010,6 +1063,7 @@ const startTimePress = (period: number, event: PointerEvent) => {
   timePressTimer = setTimeout(() => {
     clearTimePress();
     if (dragState.value || pinchState.value) return;
+    weekSwipe = null;
     navigator.vibrate?.(10);
     // The release that follows must not count as a tap on whatever sheet or cell is under it.
     suppressCellClickUntil = Date.now() + 600;
@@ -1027,6 +1081,7 @@ const beginDrag = (
   event: PointerEvent,
   source: "grid" | "floating" | "embedded-conflict" = "grid"
 ) => {
+  weekSwipe = null;
   event.stopPropagation();
   if (event.cancelable) event.preventDefault();
   suppressCellClickUntil = Date.now() + 600;
@@ -1166,10 +1221,10 @@ onUnmounted(() => {
       dragState ? 'is-dragging-course' : ''
     ]"
     :style="weekGridStyle"
-    @touchstart="handleTouchStart"
+    @touchstart.passive="handleTouchStart"
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
-    @touchcancel="handleTouchEnd"
+    @touchcancel="cancelGridTouch"
   >
     <div class="header">
       <div class="time-col"></div>

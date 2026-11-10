@@ -499,10 +499,9 @@ const onEdgeTouchStart = (event: TouchEvent) => {
     return;
   }
 
-  // A touch landing on a course is the user grabbing that course, not reaching for the drawer. The
-  // swipe band overlaps the first day column, so without this a long-press drag near the left edge
-  // moved the drawer at the same time as the course.
-  if (event.target instanceof Element && event.target.closest(".course-block")) {
+  // The closed drawer shares this swipe band with the timetable. Give the grid the gesture
+  // inside its own area, and leave the drawer gesture available outside it.
+  if (event.target instanceof Element && event.target.closest(".grid-container")) {
     dragState = null;
     return;
   }

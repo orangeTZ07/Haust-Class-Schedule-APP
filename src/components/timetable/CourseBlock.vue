@@ -79,6 +79,8 @@ const closeExpand = () => {
 
 const handlePointerDown = (event: PointerEvent) => {
   if (event.button !== 0) return;
+  // A swipe may suppress the synthetic click entirely. A new press starts a fresh tap.
+  suppressNextClick.value = false;
   if (props.allowDrag === false) return;
   if (isExpanded.value) return;
   pointerDown.value = { x: event.clientX, y: event.clientY };
