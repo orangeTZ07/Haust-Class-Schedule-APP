@@ -31,6 +31,8 @@ const summary = computed(() => {
     if (last.end <= minute) continue;
 
     const remaining = first.start - minute;
+    // 老课表的课程名可能带教务编号，例如「体育(3)(1012049.001)」。
+    const name = course.name.replace(/\s*[(（](?:[a-z]+_)?\d{6,}\.\d+[)）]\s*$/i, "") || course.name;
     const location = schedule.location || course.location;
     return {
       message: remaining > 0 ? "下一节" : "正在上课",
@@ -38,7 +40,8 @@ const summary = computed(() => {
         week,
         scheduleId: schedule.id,
         startTime: formatMinutes(first.start),
-        details: location ? `${course.name} · ${location}` : course.name,
+        name,
+        location,
         countdown: remaining > 0 && remaining <= 60 ? `${remaining} 分钟后` : ""
       }
     };
@@ -58,7 +61,10 @@ const summary = computed(() => {
     >
       <span class="today-class-status">{{ summary.message }}</span>
       <time :datetime="summary.lesson.startTime">{{ summary.lesson.startTime }}</time>
-      <span class="today-class-details">{{ summary.lesson.details }}</span>
+      <span class="today-class-details">
+        <span class="today-class-name">{{ summary.lesson.name }}</span>
+        <span v-if="summary.lesson.location" class="today-class-location">{{ summary.lesson.location }}</span>
+      </span>
       <span v-if="summary.lesson.countdown" class="today-class-countdown">{{ summary.lesson.countdown }}</span>
       <ChevronRight :size="14" aria-hidden="true" />
     </button>
@@ -81,7 +87,7 @@ const summary = computed(() => {
   min-height: 36px;
   width: 100%;
   margin: 0;
-  padding: 0 8px;
+  padding: 3px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -113,10 +119,28 @@ button.today-class-content:active {
 }
 
 .today-class-details {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.today-class-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.today-class-location {
+  flex: none;
+  max-width: 72%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.today-class-location::before {
+  content: "· ";
 }
 
 .today-class-content svg {
