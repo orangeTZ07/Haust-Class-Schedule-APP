@@ -637,8 +637,9 @@ let weekSwipe: { x: number; y: number; horizontal: boolean } | null = null;
 
 const handleTouchStart = (event: TouchEvent) => {
   const touch = event.touches[0];
-  // Leave a zoomed timetable free to pan across its wider columns.
-  weekSwipe = event.touches.length === 1 && !dragState.value && gridZoom.value === 1
+  const inExpandedCard = event.target instanceof Element && event.target.closest(".course-block.is-expanded");
+  // Leave expanded details free to scroll, and a zoomed timetable free to pan.
+  weekSwipe = event.touches.length === 1 && !inExpandedCard && !dragState.value && gridZoom.value === 1
     ? { x: touch.clientX, y: touch.clientY, horizontal: false }
     : null;
 

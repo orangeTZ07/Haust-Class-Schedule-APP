@@ -82,9 +82,8 @@ const handlePointerDown = (event: PointerEvent) => {
   // A swipe may suppress the synthetic click entirely. A new press starts a fresh tap.
   suppressNextClick.value = false;
   if (props.allowDrag === false) return;
-  if (isExpanded.value) return;
   pointerDown.value = { x: event.clientX, y: event.clientY };
-  emit("drag-start", event);
+  if (!isExpanded.value) emit("drag-start", event);
 };
 
 const handlePointerUp = (event: PointerEvent) => {
@@ -267,6 +266,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
+    @pointercancel="pointerDown = null"
     @click="toggleExpand"
   >
     <div class="course-accent" :style="{ backgroundColor: course.color }"></div>
@@ -405,10 +405,11 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 
 /* Opening the card is the springy direction (the base rule above is the way back). */
 .course-block.is-expanded {
-  overflow-y: auto; /* 允许垂直滚动内容 */
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 12px;
   border-color: var(--theme-card-border-color);
-  scrollbar-width: none; /* 隐藏 Firefox 滚动条 */
+  scrollbar-width: thin;
   transition:
     transform var(--dur-slow) var(--ease-spring),
     left var(--dur-slow) var(--ease-spring),
@@ -438,8 +439,9 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
   z-index: 300;
 }
 
-.course-block.is-expanded::-webkit-scrollbar {
-  display: none; /* 隐藏 Chrome/Safari 滚动条 */
+/* Keep each row at its full height so excess content scrolls instead of being clipped. */
+.course-block.is-expanded > * {
+  flex-shrink: 0;
 }
 
 .course-name {
@@ -513,6 +515,8 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 }
 
 .is-expanded .course-info {
+  align-items: flex-start;
+  overflow: visible;
   white-space: normal;
   opacity: 0.9;
   line-height: 1.5;
@@ -535,6 +539,8 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 }
 
 .is-expanded .loc-text {
+  overflow: visible;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
