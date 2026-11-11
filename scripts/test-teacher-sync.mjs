@@ -110,7 +110,7 @@ console.log("\n=== F. 接线：三个读法都课段优先 ===");
 {
   const block = read("src/components/timetable/CourseBlock.vue");
   check("卡片：课段教师优先", block.includes("props.schedule.teacher || props.course.teacher"), block.match(/const teacherText[^\n]*/)?.[0]);
-  check("长按展开才显示教师行", /v-if="isExpanded && teacherText"/.test(block));
+  check("展开后才显示教师行", /v-if="expanded && teacherText"/.test(block));
 
   const home = read("src/views/HomeView.vue");
   check("编辑框预填课段教师", home.includes("teacher: schedule.teacher || course?.teacher || \"\""), home.match(/teacher: schedule[^\n]*/)?.[0]);
