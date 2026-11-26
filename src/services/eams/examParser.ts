@@ -13,7 +13,7 @@ export interface ExamSnapshot {
   exams: ExamEntry[];
 }
 
-const text = (node: Element | null | undefined) =>
+const text = (node: Element | undefined) =>
   (node?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 export const isExamLandingPage = (html: string): boolean => {
@@ -21,19 +21,12 @@ export const isExamLandingPage = (html: string): boolean => {
   return !!doc.querySelector("form#semesterForm[action$='/stdExamTable.action']");
 };
 
-const validDate = (date: string): boolean => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  const parsed = new Date(`${date}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
-};
+/// Format checks only: they catch a changed table layout. The values themselves come from EAMS.
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const parseTimeRange = (value: string): [string, string] | null => {
   const range = value.match(/^(\d{1,2}:\d{2})\s*[~～〜–—至-]\s*(\d{1,2}:\d{2})$/);
-  if (!range) return null;
-  const start = range[1].padStart(5, "0");
-  const end = range[2].padStart(5, "0");
-  const clock = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-  return clock.test(start) && clock.test(end) && start < end ? [start, end] : null;
+  return range ? [range[1].padStart(5, "0"), range[2].padStart(5, "0")] : null;
 };
 
 /// The same response contains a second table without exam dates. Match the scheduled table
@@ -48,16 +41,15 @@ export const parseExamTable = (html: string): ExamEntry[] | null => {
     const exams: ExamEntry[] = [];
     for (const row of Array.from(table.rows).slice(header.rowIndex + 1)) {
       if (row.parentElement?.tagName === "TFOOT") continue;
-      const cells = Array.from(row.cells);
-      if (cells.length === 1 && cells[0].colSpan >= columns.length &&
-          /^(?:(?:暂无|没有|无)(?:数据|记录|考试安排)[。！!]?)?$/.test(text(cells[0]))) continue;
+      const cells = row.cells;
+      if (cells.length === 1 && /^(?:(?:暂无|没有|无)(?:数据|记录|考试安排)[。！!]?)?$/.test(text(cells[0]))) continue;
       if (cells.length !== columns.length) return null;
 
       const cell = (label: string) => text(cells[columns.indexOf(label)]);
       const courseName = cell("课程名称");
       const date = cell("考试日期");
       const times = parseTimeRange(cell("考试安排"));
-      if (!courseName || !validDate(date) || !times) return null;
+      if (!courseName || !DATE.test(date) || !times) return null;
 
       exams.push({
         courseName,

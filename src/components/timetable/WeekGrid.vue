@@ -83,7 +83,6 @@ type OrbitPhase = "idle" | "opening" | "open" | "closing";
 
 const bodyRef = ref<HTMLElement | null>(null);
 const expandedCardKey = ref<string | null>(null);
-const locatedScheduleId = ref<number | null>(null);
 const dragState = ref<DragState | null>(null);
 let dragPointerId = -1;
 let dragSourceEl: HTMLElement | null = null;
@@ -487,20 +486,6 @@ const clearConflictOrbitImmediately = () => {
   orbitPhase.value = "idle";
 };
 
-const locateCourse = async (scheduleId: number) => {
-  if (displayedConflictGroupId.value) {
-    clearConflictOrbitImmediately();
-    await nextTick();
-  }
-
-  const card = bodyRef.value?.querySelector<HTMLElement>(`.course-block[data-schedule-id="${scheduleId}"]`);
-  if (!card) return;
-  card.scrollIntoView({ block: "nearest", inline: "nearest" });
-  locatedScheduleId.value = scheduleId;
-};
-
-defineExpose({ resetView, playDeleteAnimation, locateCourse });
-
 const closeConflictGroup = () => {
   const currentGroupId = displayedConflictGroupId.value;
   if (!currentGroupId || !activeConflictLayout.value) {
@@ -536,7 +521,6 @@ const handleGlobalClick = (event: MouseEvent) => {
 
   const target = event.target;
   if (!(target instanceof Element)) return;
-  locatedScheduleId.value = null;
   if (!target.closest(".course-block")) expandedCardKey.value = null;
 
   if (!openConflictGroupId.value || dragState.value) return;
@@ -726,14 +710,17 @@ const cancelGridTouch = () => {
   pinchState.value = null;
 };
 
+defineExpose({ resetView, playDeleteAnimation, cancelGridTouch });
+
 const handleTouchEnd = (event: TouchEvent) => {
   if (event.touches.length >= 2) return;
   const swipe = weekSwipe;
   cancelGridTouch();
-  const touch = event.changedTouches[0];
-  if (!swipe?.horizontal || !touch || event.touches.length !== 0 || dragState.value) return;
+  // A drag never reaches here with a swipe: beginDrag drops weekSwipe when it picks the course up.
+  if (!swipe?.horizontal || event.touches.length !== 0) return;
 
   if (event.cancelable) event.preventDefault();
+  const touch = event.changedTouches[0];
   const dx = touch.clientX - swipe.x;
   const dy = touch.clientY - swipe.y;
   if (Math.abs(dx) < WEEK_SWIPE_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * WEEK_SWIPE_HORIZONTAL_RATIO) return;
@@ -1207,7 +1194,6 @@ watch(activeConflictGroup, async (group) => {
 
 watch(currentWeek, () => {
   expandedCardKey.value = null;
-  locatedScheduleId.value = null;
   clearConflictOrbitImmediately();
 });
 
@@ -1298,7 +1284,6 @@ onUnmounted(() => {
           >
             <template v-for="block in getBlocksByDayAndPeriod(day, slot.period)" :key="`sch-${block.schedule.id}-c${block.course.id}`">
               <CourseBlock
-                :class="{ 'is-located': locatedScheduleId === block.schedule.id }"
                 :course="block.course"
                 :schedule="block.schedule"
                 :span="block.span"
@@ -1426,11 +1411,6 @@ onUnmounted(() => {
 
 .week-grid.is-dragging-course .course-block:not(.is-dragging) {
   pointer-events: none;
-}
-
-.course-block.is-located {
-  outline: 2px solid var(--theme-accent);
-  outline-offset: -2px;
 }
 
 .header {

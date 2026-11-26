@@ -27,7 +27,7 @@ const snapshot = computed(() => readExamSnapshot(activeCourseTableId.value));
       <ul v-else class="exam-list">
         <li
           v-for="(exam, index) in snapshot.exams"
-          :key="`${exam.courseCode}-${exam.date}-${exam.startTime}-${index}`"
+          :key="index"
           class="exam-card"
         >
           <h2>{{ exam.courseName }}</h2>
@@ -66,12 +66,6 @@ const snapshot = computed(() => readExamSnapshot(activeCourseTableId.value));
   color: inherit;
 }
 
-.exam-header h1,
-.exam-card h2,
-.exam-card p {
-  margin: 0;
-}
-
 .exam-header h1 {
   font-size: 18px;
 }
@@ -89,8 +83,6 @@ const snapshot = computed(() => readExamSnapshot(activeCourseTableId.value));
   display: grid;
   gap: 10px;
   list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 .exam-card {

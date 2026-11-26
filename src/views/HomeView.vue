@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
@@ -25,7 +25,6 @@ import {
 } from "@/utils/weekOffsetPrompt";
 import TopBar from "@/components/layout/TopBar.vue";
 import SideBar from "@/components/layout/SideBar.vue";
-import TodayClassBar from "@/components/timetable/TodayClassBar.vue";
 import WeekGrid from "@/components/timetable/WeekGrid.vue";
 import ImportSheet from "@/components/course/import/ImportSheet.vue";
 import ExportPopup from "@/components/course/ExportPopup.vue";
@@ -240,13 +239,7 @@ const closeSidebar = () => {
 };
 
 const gridContainerRef = ref<HTMLElement | null>(null);
-const weekGridRef = ref<InstanceType<typeof WeekGrid> | null>(null);
-
-const locateTodayClass = async (week: number, scheduleId: number) => {
-  setCurrentWeek(week);
-  await nextTick();
-  await weekGridRef.value?.locateCourse(scheduleId);
-};
+const weekGridRef = ref<{ resetView: () => boolean; playDeleteAnimation?: (id: number) => Promise<void>; cancelGridTouch: () => void } | null>(null);
 
 // Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the horizontal
 // offset lives on this component's container, so neither had a way back: they are easy to disturb
@@ -506,9 +499,10 @@ const onEdgeTouchStart = (event: TouchEvent) => {
     return;
   }
 
-  // The closed drawer shares this swipe band with the timetable. Give the grid the gesture
-  // inside its own area, and leave the drawer gesture available outside it.
-  if (event.target instanceof Element && event.target.closest(".grid-container")) {
+  // A touch landing on a course is the user grabbing that course, not reaching for the drawer. The
+  // swipe band overlaps the first day column, so without this a long-press drag near the left edge
+  // moved the drawer at the same time as the course.
+  if (event.target instanceof Element && event.target.closest(".course-block")) {
     dragState = null;
     return;
   }
@@ -568,6 +562,9 @@ const onEdgeTouchMove = (event: TouchEvent) => {
 
     state.horizontal = true;
     sidebarDragging.value = true;
+    // WeekGrid's week swipe follows the same touch and flips the week on release, so it has to let
+    // go once the drawer owns the gesture.
+    weekGridRef.value?.cancelGridTouch();
   }
 
   // Cancelling the default only after claiming the gesture, so a vertical scroll is untouched.
@@ -707,8 +704,6 @@ const onEdgeTouchEnd = () => {
         @toggle-sidebar="toggleSidebar"
         @change-week="setCurrentWeek"
       />
-
-      <TodayClassBar @locate="locateTodayClass" />
 
       <div ref="gridContainerRef" class="grid-container">
         <WeekGrid

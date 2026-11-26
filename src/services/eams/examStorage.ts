@@ -14,3 +14,7 @@ export const readExamSnapshot = (tableId: number): ExamSnapshot | null => {
 export const saveExamSnapshot = (tableId: number, snapshot: ExamSnapshot) => {
   localStorage.setItem(storageKey(tableId), JSON.stringify(snapshot));
 };
+
+export const clearExamSnapshot = (tableId: number) => {
+  localStorage.removeItem(storageKey(tableId));
+};
