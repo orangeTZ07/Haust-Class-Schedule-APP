@@ -46,6 +46,8 @@ export interface SyncFailure {
   /// 给用户看的一句话，必须说清是哪一类问题。
   message: string;
   detail?: string;
+  /// 学校明确提示学号或密码不对（只随 kind "login" 出现）。
+  wrongCredentials?: true;
 }
 
 export type SyncResult = SyncSuccess | SyncFailure;
@@ -129,7 +131,8 @@ export const fetchTimetable = async (
       ok: false,
       kind: "login",
       message: login.reason ?? "登录失败",
-      detail: login.detail
+      detail: login.detail,
+      wrongCredentials: login.wrongCredentials
     });
   }
 

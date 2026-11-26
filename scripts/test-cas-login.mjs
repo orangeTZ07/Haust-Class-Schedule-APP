@@ -116,6 +116,8 @@ const cases = [
 cases.forEach(([label, html, expect]) => {
   const r = mod.classifyLoginFailure(html, "https://cas.haust.edu.cn/cas/login", 200);
   check(`${label} -> 归类正确`, !r.ok && String(r.reason).includes(expect), r.reason);
+  // 只有学校明确说学号或密码不对时才带 wrongCredentials，App 据此删掉已存的密码。
+  check(`${label} -> wrongCredentials ${label === "密码错" ? "为真" : "不出现"}`, r.wrongCredentials === (label === "密码错" ? true : undefined), r.wrongCredentials);
 });
 
 // ★ 守着那个已经犯过一次的错误：页面上**永远存在** __captchaImgUrl（它是静态图片路径），

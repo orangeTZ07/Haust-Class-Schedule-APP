@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -7,7 +7,8 @@ import { showToast } from "vant";
 import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
+import { fetchTimetable, JWC_HOST, type SyncFailure, type SyncResult } from "@/services/eams/eamsClient";
+import { clearSavedPassword, readCredentials, saveCredentials } from "@/services/eams/credentialStorage";
 import { fetchExams } from "@/services/eams/examClient";
 import { saveExamSnapshot } from "@/services/eams/examStorage";
 import type { EamsDeps } from "@/services/eams/casLogin";
@@ -35,8 +36,14 @@ const { activeCourseTableId, importFromJsonBackup, importAsNewCourseTable } = us
 const confirmReplace = useConfirmReplace();
 const router = useRouter();
 
-const username = ref("");
-const password = ref("");
+const savedCredentials = readCredentials();
+const username = ref(savedCredentials?.username ?? "");
+const rememberPassword = ref(savedCredentials?.rememberPassword ?? false);
+const password = ref(rememberPassword.value ? savedCredentials?.password ?? "" : "");
+// 取消勾选（包括下面因为学号或密码不对而自动取消）时立刻删掉已存的密码，学号留着。
+watch(rememberPassword, (remember) => {
+  if (!remember) clearSavedPassword();
+});
 const syncing = ref<"timetable" | "exams" | null>(null);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
@@ -179,6 +186,20 @@ const describeFailure = (result: SyncResult & { ok: false }): string => {
   }
 };
 
+/// 同步结果出来后按登录这一步的成败处理已存的登录信息。
+///   * 学校明确说学号或密码不对：取消勾选，watch 会删掉已存的密码；
+///   * 连不上或其它登录失败（验证码、锁定、认不出原因）：已存的不动；
+///   * 成功，或失败发生在登录之后：记下学号，勾了「记住密码」再记密码。凭已有会话免密同步考试时
+///     输入框可能是空的，空值不存，免得盖掉已存的学号。
+const rememberLogin = (result: { ok: true } | SyncFailure, account: string, secret: string) => {
+  if (!result.ok && result.wrongCredentials) {
+    rememberPassword.value = false;
+    return;
+  }
+  if (!result.ok && (result.kind === "unreachable" || result.kind === "login")) return;
+  if (account && secret) saveCredentials(account, secret, rememberPassword.value);
+};
+
 const sync = async () => {
   if (syncing.value) return;
 
@@ -191,18 +212,16 @@ const sync = async () => {
   // Only overwriting asks, and it asks up front rather than after the fetch: a prompt that shows up
   // after the wait is one the user is no longer expecting. A new table destroys nothing.
   if (props.overwrite && !(await confirmReplace("教务同步"))) return;
-  if (syncing.value) return;
 
   syncing.value = "timetable";
   messageKind.value = "info";
   message.value = "正在连接教务系统…";
 
   try {
-    const result = await fetchTimetable(
-      syncDependencies(),
-      username.value.trim(),
-      password.value
-    );
+    const account = username.value.trim();
+    const secret = password.value;
+    const result = await fetchTimetable(syncDependencies(), account, secret);
+    rememberLogin(result, account, secret);
 
     if (!result.ok) {
       messageKind.value = "err";
@@ -227,7 +246,7 @@ const sync = async () => {
     }
 
     messageKind.value = "ok";
-    password.value = "";
+    if (!rememberPassword.value) password.value = "";
     showToast(imported.tableName ? newTableToast(imported.tableName) : "课表已同步");
 
     // A warning is something the user has to act on or at least read, so the sheet stays open to
@@ -286,7 +305,10 @@ const syncExams = async () => {
   messageKind.value = "info";
   message.value = "正在查询本学期考试安排…";
   try {
-    const result = await fetchExams(syncDependencies(), username.value.trim(), password.value);
+    const account = username.value.trim();
+    const secret = password.value;
+    const result = await fetchExams(syncDependencies(), account, secret);
+    rememberLogin(result, account, secret);
     if (!result.ok) {
       messageKind.value = "err";
       message.value = result.message;
@@ -294,7 +316,7 @@ const syncExams = async () => {
     }
 
     saveExamSnapshot(tableId, result.snapshot);
-    password.value = "";
+    if (!rememberPassword.value) password.value = "";
     message.value = "";
     openExams();
   } catch (error) {
@@ -339,8 +361,7 @@ const syncExams = async () => {
       </div>
 
       <p class="imp-hint">
-        用「我i科大」（学校统一身份认证）的学号与登录密码登录，同步课表或考试安排。密码只在这次同步时使用，
-        <strong>不会保存到手机上</strong>。
+        用「我i科大」（学校统一身份认证）的学号与登录密码登录，同步课表或考试安排。
       </p>
 
       <div class="atrust">
@@ -379,6 +400,11 @@ const syncExams = async () => {
           @keyup.enter="sync"
         />
       </label>
+
+      <div class="remember">
+        <van-checkbox v-model="rememberPassword" shape="square" icon-size="16px">记住密码</van-checkbox>
+        <span class="remember-note">密码只保存在这台手机上</span>
+      </div>
 
       <button class="app-btn app-btn--primary" :disabled="!!syncing" @click="sync">
         <Loader2 v-if="syncing === 'timetable'" :size="18" class="imp-spin" />
@@ -437,6 +463,22 @@ const syncExams = async () => {
 .imp-hint.small {
   font-size: 12px;
   text-align: center;
+  opacity: 0.6;
+}
+
+.remember {
+  --van-checkbox-label-color: var(--theme-body-text);
+  --van-checkbox-checked-icon-color: var(--theme-accent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.remember-note {
+  font-size: 12px;
+  color: var(--theme-body-text);
   opacity: 0.6;
 }
 
