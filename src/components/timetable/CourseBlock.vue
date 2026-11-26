@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, ref } from "vue";
 import type { Course, CourseSchedule } from "@/types/course";
 import { useTheme } from "@/composables/useTheme";
 import { useCourses } from "@/composables/useCourses";
@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<{
   floatingFrame?: FloatingFrame;
   allowDrag?: boolean;
   allowExpand?: boolean;
+  expanded?: boolean;
   showConflictTag?: boolean;
   /// Number of 午休 / 晚饭 dividers strictly inside this block's span. They occupy vertical
   /// space between the rows, so a block spanning one would otherwise end short of the next
@@ -52,9 +53,9 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: "drag-start", event: PointerEvent): void;
   (e: "activate", event: MouseEvent): void;
+  (e: "toggle-expand"): void;
 }>();
 
-const isExpanded = ref(false);
 const blockRef = ref<HTMLElement | null>(null);
 const pointerDown = ref<{ x: number; y: number } | null>(null);
 const suppressNextClick = ref(false);
@@ -70,19 +71,16 @@ const toggleExpand = (e: MouseEvent) => {
     return;
   }
   if (props.isDragging) return;
-  isExpanded.value = !isExpanded.value;
-};
-
-const closeExpand = () => {
-  isExpanded.value = false;
+  emit("toggle-expand");
 };
 
 const handlePointerDown = (event: PointerEvent) => {
   if (event.button !== 0) return;
+  // A swipe may suppress the synthetic click entirely. A new press starts a fresh tap.
+  suppressNextClick.value = false;
   if (props.allowDrag === false) return;
-  if (isExpanded.value) return;
   pointerDown.value = { x: event.clientX, y: event.clientY };
-  emit("drag-start", event);
+  if (!props.expanded) emit("drag-start", event);
 };
 
 const handlePointerUp = (event: PointerEvent) => {
@@ -94,14 +92,6 @@ const handlePointerUp = (event: PointerEvent) => {
   }
   pointerDown.value = null;
 };
-
-onMounted(() => {
-  window.addEventListener('click', closeExpand);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('click', closeExpand);
-});
 
 const style = computed(() => {
   const isFloating = !!props.floatingFrame;
@@ -134,7 +124,7 @@ const style = computed(() => {
   // 写进内联样式：悬停、按下、点开放大都改不掉。冲突课不过滤，红框在摊开之后还要认得出来。
   const mutedFilter = props.isPast && !hasConflict ? 'grayscale(1)' : undefined;
   
-  if (isExpanded.value) {
+  if (props.expanded) {
     const expandedHeight = Math.max(baseHeight * 1.5, 140);
     if (isFloating && props.floatingFrame) {
       const expandedWidth = Math.max(props.floatingFrame.width * 2.2, 220);
@@ -254,7 +244,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
     :data-schedule-id="schedule.id"
     data-coach-course="true"
     :class="{
-      'is-expanded': isExpanded,
+      'is-expanded': expanded,
       'is-dragging': isDragging,
       'is-conflicting': (conflictCount || 0) > 1,
       'is-conflict-pair': (conflictCount || 0) === 2 && !isDragging && !floatingFrame,
@@ -265,6 +255,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
     :style="style"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
+    @pointercancel="pointerDown = null"
     @click="toggleExpand"
   >
     <div class="course-accent" :style="{ backgroundColor: course.color }"></div>
@@ -273,7 +264,7 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
       <span class="loc-icon" v-if="!themeConfig.hideIcons">📍</span>
       <span class="loc-text">{{ locationText }}</span>
     </div>
-    <div class="course-info course-teacher" v-if="isExpanded && teacherText">
+    <div class="course-info course-teacher" v-if="expanded && teacherText">
       <span class="loc-icon" v-if="!themeConfig.hideIcons">👤</span>
       <span class="loc-text">{{ teacherText }}</span>
     </div>
@@ -403,10 +394,11 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 
 /* Opening the card is the springy direction (the base rule above is the way back). */
 .course-block.is-expanded {
-  overflow-y: auto; /* 允许垂直滚动内容 */
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 12px;
   border-color: var(--theme-card-border-color);
-  scrollbar-width: none; /* 隐藏 Firefox 滚动条 */
+  scrollbar-width: thin;
   transition:
     transform var(--dur-slow) var(--ease-spring),
     left var(--dur-slow) var(--ease-spring),
@@ -436,8 +428,9 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
   z-index: 300;
 }
 
-.course-block.is-expanded::-webkit-scrollbar {
-  display: none; /* 隐藏 Chrome/Safari 滚动条 */
+/* Keep each row at its full height so excess content scrolls instead of being clipped. */
+.course-block.is-expanded > * {
+  flex-shrink: 0;
 }
 
 .course-name {
@@ -511,6 +504,8 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 }
 
 .is-expanded .course-info {
+  align-items: flex-start;
+  overflow: visible;
   white-space: normal;
   opacity: 0.9;
   line-height: 1.5;
@@ -533,6 +528,8 @@ const teacherText = computed(() => props.schedule.teacher || props.course.teache
 }
 
 .is-expanded .loc-text {
+  overflow: visible;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 

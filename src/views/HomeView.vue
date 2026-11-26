@@ -239,7 +239,7 @@ const closeSidebar = () => {
 };
 
 const gridContainerRef = ref<HTMLElement | null>(null);
-const weekGridRef = ref<{ resetView: () => boolean; playDeleteAnimation?: (id: number) => Promise<void> } | null>(null);
+const weekGridRef = ref<{ resetView: () => boolean; playDeleteAnimation?: (id: number) => Promise<void>; cancelGridTouch: () => void } | null>(null);
 
 // Undo an accidental pinch-zoom or sideways pan. The grid width is pinch-driven and the horizontal
 // offset lives on this component's container, so neither had a way back: they are easy to disturb
@@ -562,6 +562,9 @@ const onEdgeTouchMove = (event: TouchEvent) => {
 
     state.horizontal = true;
     sidebarDragging.value = true;
+    // WeekGrid's week swipe follows the same touch and flips the week on release, so it has to let
+    // go once the drawer owns the gesture.
+    weekGridRef.value?.cancelGridTouch();
   }
 
   // Cancelling the default only after claiming the gesture, so a vertical scroll is untouched.

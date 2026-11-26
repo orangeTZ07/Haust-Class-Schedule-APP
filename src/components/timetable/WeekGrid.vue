@@ -8,7 +8,7 @@ import { conflictPlacements, type DragSlot } from "@/utils/dragConflict";
 import { cellFromHitStack, isDraggingSchedule, offsetForSchedule } from "@/utils/dragOffset";
 import CourseBlock from "./CourseBlock.vue";
 
-const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, semesterStartDate, weekDateLabels, moveSchedule, commitEdit } = useCourses();
+const { periodSlots, effectiveSchedules, courses, periodConfig, currentWeek, semesterStartDate, weekDateLabels, shiftCurrentWeek, moveSchedule, commitEdit } = useCourses();
 const { now, todayDayNumber: calendarDayNumber, actualWeek } = useToday();
 
 const emit = defineEmits<{
@@ -82,6 +82,7 @@ interface DropPreviewFrame {
 type OrbitPhase = "idle" | "opening" | "open" | "closing";
 
 const bodyRef = ref<HTMLElement | null>(null);
+const expandedCardKey = ref<string | null>(null);
 const dragState = ref<DragState | null>(null);
 let dragPointerId = -1;
 let dragSourceEl: HTMLElement | null = null;
@@ -136,8 +137,6 @@ const resetView = (): boolean => {
 
   return changed;
 };
-
-defineExpose({ resetView, playDeleteAnimation });
 
 /// Today's column (1-7), or 0 when there is none to mark. Only the week that is really the current
 /// one has a "today": the weekday alone says nothing about which week is on screen, and marking it
@@ -479,6 +478,7 @@ const clearOrbitAnimationTimer = () => {
 };
 
 const clearConflictOrbitImmediately = () => {
+  if (expandedCardKey.value?.startsWith("orbit-")) expandedCardKey.value = null;
   clearOrbitAnimationTimer();
   openConflictGroupId.value = null;
   closingConflictGroupId.value = null;
@@ -506,6 +506,10 @@ const closeConflictGroup = () => {
   }, ORBIT_CLOSE_DURATION_MS);
 };
 
+const toggleExpandedCard = (key: string) => {
+  expandedCardKey.value = expandedCardKey.value === key ? null : key;
+};
+
 const handleGlobalClick = (event: MouseEvent) => {
   if (suppressNextClick.value) {
     suppressNextClick.value = false;
@@ -515,10 +519,12 @@ const handleGlobalClick = (event: MouseEvent) => {
     return;
   }
 
-  if (!openConflictGroupId.value || dragState.value) return;
-  if (!(event.target instanceof HTMLElement)) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (!target.closest(".course-block")) expandedCardKey.value = null;
 
-  if (event.target.closest(".orbit-card") || event.target.closest(".conflict-orbit-center")) {
+  if (!openConflictGroupId.value || dragState.value) return;
+  if (target.closest(".orbit-card") || target.closest(".conflict-orbit-center")) {
     return;
   }
 
@@ -528,6 +534,7 @@ const handleGlobalClick = (event: MouseEvent) => {
 const openConflictGroupFromBlock = async (block: MergedBlock, event: MouseEvent) => {
   const group = conflictGroupByScheduleId.value.get(block.schedule.id);
   if (!group) return;
+  expandedCardKey.value = null;
 
   if (displayedConflictGroupId.value === group.id && orbitPhase.value !== "closing") {
     closeConflictGroup();
@@ -630,8 +637,22 @@ const getHorizontalTouchDistance = (touches: TouchList) => {
   return Math.abs(touches[0].clientX - touches[1].clientX);
 };
 
+const WEEK_SWIPE_INTENT_PX = 14;
+const WEEK_SWIPE_DISTANCE_PX = 56;
+const WEEK_SWIPE_HORIZONTAL_RATIO = 1.25;
+let weekSwipe: { x: number; y: number; horizontal: boolean } | null = null;
+
 const handleTouchStart = (event: TouchEvent) => {
+  const touch = event.touches[0];
+  const inExpandedCard = event.target instanceof Element && event.target.closest(".course-block.is-expanded");
+  // Leave expanded details free to scroll, and a zoomed timetable free to pan.
+  weekSwipe = event.touches.length === 1 && !inExpandedCard && !dragState.value && gridZoom.value === 1
+    ? { x: touch.clientX, y: touch.clientY, horizontal: false }
+    : null;
+
   if (event.touches.length !== 2) return;
+  clearLongPress();
+  clearTimePress();
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
 
@@ -641,6 +662,27 @@ const handleTouchStart = (event: TouchEvent) => {
   };
 };
 
+const handleWeekSwipeMove = (event: TouchEvent) => {
+  const swipe = weekSwipe;
+  if (!swipe || event.touches.length !== 1) return;
+
+  if (!swipe.horizontal) {
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - swipe.x);
+    const dy = Math.abs(touch.clientY - swipe.y);
+    if (Math.max(dx, dy) < WEEK_SWIPE_INTENT_PX) return;
+    if (dx < dy * WEEK_SWIPE_HORIZONTAL_RATIO) {
+      weekSwipe = null;
+      return;
+    }
+    swipe.horizontal = true;
+    clearLongPress();
+    clearTimePress();
+  }
+
+  if (event.cancelable) event.preventDefault();
+};
+
 const handleTouchMove = (event: TouchEvent) => {
   // A drag in progress owns the gesture: without this the browser would also scroll the
   // page under the finger, because course blocks are touch-action: pan-y.
@@ -648,7 +690,10 @@ const handleTouchMove = (event: TouchEvent) => {
     if (event.cancelable) event.preventDefault();
     return;
   }
-  if (!pinchState.value || event.touches.length !== 2) return;
+  if (!pinchState.value || event.touches.length !== 2) {
+    handleWeekSwipeMove(event);
+    return;
+  }
   const distance = getHorizontalTouchDistance(event.touches);
   if (distance < 24) return;
 
@@ -660,9 +705,28 @@ const handleTouchMove = (event: TouchEvent) => {
   gridZoom.value = Math.round(clamp(nextScale, 1, MAX_GRID_ZOOM) * 100) / 100;
 };
 
+const cancelGridTouch = () => {
+  weekSwipe = null;
+  pinchState.value = null;
+};
+
+defineExpose({ resetView, playDeleteAnimation, cancelGridTouch });
+
 const handleTouchEnd = (event: TouchEvent) => {
   if (event.touches.length >= 2) return;
-  pinchState.value = null;
+  const swipe = weekSwipe;
+  cancelGridTouch();
+  // A drag never reaches here with a swipe: beginDrag drops weekSwipe when it picks the course up.
+  if (!swipe?.horizontal || event.touches.length !== 0) return;
+
+  if (event.cancelable) event.preventDefault();
+  const touch = event.changedTouches[0];
+  const dx = touch.clientX - swipe.x;
+  const dy = touch.clientY - swipe.y;
+  if (Math.abs(dx) < WEEK_SWIPE_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * WEEK_SWIPE_HORIZONTAL_RATIO) return;
+
+  lastSlotTap = { day: 0, period: 0, at: 0 };
+  shiftCurrentWeek(dx < 0 ? 1 : -1);
 };
 
 const getFloatingFrame = (block: MergedBlock, index: number, total: number): FloatingFrame | null => {
@@ -1010,6 +1074,7 @@ const startTimePress = (period: number, event: PointerEvent) => {
   timePressTimer = setTimeout(() => {
     clearTimePress();
     if (dragState.value || pinchState.value) return;
+    weekSwipe = null;
     navigator.vibrate?.(10);
     // The release that follows must not count as a tap on whatever sheet or cell is under it.
     suppressCellClickUntil = Date.now() + 600;
@@ -1027,6 +1092,7 @@ const beginDrag = (
   event: PointerEvent,
   source: "grid" | "floating" | "embedded-conflict" = "grid"
 ) => {
+  weekSwipe = null;
   event.stopPropagation();
   if (event.cancelable) event.preventDefault();
   suppressCellClickUntil = Date.now() + 600;
@@ -1127,6 +1193,7 @@ watch(activeConflictGroup, async (group) => {
 }, { flush: "post" });
 
 watch(currentWeek, () => {
+  expandedCardKey.value = null;
   clearConflictOrbitImmediately();
 });
 
@@ -1166,10 +1233,10 @@ onUnmounted(() => {
       dragState ? 'is-dragging-course' : ''
     ]"
     :style="weekGridStyle"
-    @touchstart="handleTouchStart"
+    @touchstart.passive="handleTouchStart"
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
-    @touchcancel="handleTouchEnd"
+    @touchcancel="cancelGridTouch"
   >
     <div class="header">
       <div class="time-col"></div>
@@ -1229,9 +1296,11 @@ onUnmounted(() => {
                 :conflict-index="getConflictMeta(block.schedule.id).index"
                 :allow-drag="getConflictMeta(block.schedule.id).count === 1"
                 :allow-expand="getConflictMeta(block.schedule.id).count === 1"
+                :expanded="expandedCardKey === `sch-${block.schedule.id}-c${block.course.id}`"
                 @pointerdown.capture="startEmbeddedConflictDrag(block, $event)"
                 @drag-start="startDrag(block, $event, 'grid')"
                 @activate="openConflictGroupFromBlock(block, $event)"
+                @toggle-expand="toggleExpandedCard(`sch-${block.schedule.id}-c${block.course.id}`)"
               />
             </template>
           </div>
@@ -1311,7 +1380,9 @@ onUnmounted(() => {
           :show-conflict-tag="false"
           :is-past="isPastBlock(block.schedule.id)"
           :allow-drag="!isBlockDragging(block.schedule.id)"
+          :expanded="expandedCardKey === `orbit-${block.schedule.id}`"
           @drag-start="startDrag(block, $event, 'floating')"
+          @toggle-expand="toggleExpandedCard(`orbit-${block.schedule.id}`)"
         />
       </div>
     </div>

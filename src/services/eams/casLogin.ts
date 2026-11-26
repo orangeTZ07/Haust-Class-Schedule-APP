@@ -170,6 +170,8 @@ export interface LoginResult {
   reason?: string;
   /// 失败时附上服务端的原文，便于继续追。
   detail?: string;
+  /// 只有学校明确提示学号或密码不对时才有，调用方据此删掉已存的密码。
+  wrongCredentials?: true;
 }
 
 /// 失败原因的归类。
@@ -246,7 +248,12 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
     [/账号或密码(?:错误|不正确)/, "页面提示账号或密码错误"]
   ]);
   if (badCredential) {
-    return { ok: false, reason: "学号或密码不对（学校明确这么提示的）。", detail: `${badCredential}｜${detail}` };
+    return {
+      ok: false,
+      reason: "学号或密码不对（学校明确这么提示的）。",
+      detail: `${badCredential}｜${detail}`,
+      wrongCredentials: true
+    };
   }
 
   // 认不出来就老实说认不出来，并附上服务端原话与最终地址。

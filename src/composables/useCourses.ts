@@ -35,6 +35,7 @@ import {
 } from "@/utils/periodSchedule";
 import { parseIsoDate, weekDayDate } from "@/utils/semesterWeek";
 import * as courseService from "@/services/courseService";
+import { clearExamSnapshot } from "@/services/eams/examStorage";
 
 const COLORS = [
   "#1989fa", "#07c160", "#ff976a", "#ee0a24", "#7232dd",
@@ -772,6 +773,7 @@ export function useCourses() {
   const deleteCourseTable = async (id: number) => {
     if (id === historyTableId) historyTableId = 0;
     await courseService.deleteCourseTable(id);
+    clearExamSnapshot(id);
     await loadDataFromDb();
   };
 

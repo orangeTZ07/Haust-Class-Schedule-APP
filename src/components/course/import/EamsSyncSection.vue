@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
 import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { fetchTimetable, JWC_HOST, type SyncResult } from "@/services/eams/eamsClient";
+import { fetchTimetable, JWC_HOST, type SyncFailure, type SyncResult } from "@/services/eams/eamsClient";
+import { clearSavedPassword, readCredentials, saveCredentials } from "@/services/eams/credentialStorage";
+import { fetchExams } from "@/services/eams/examClient";
+import { saveExamSnapshot } from "@/services/eams/examStorage";
+import type { EamsDeps } from "@/services/eams/casLogin";
 import { formatMatrix, runDiagnosticMatrix } from "@/services/eams/diagnose";
 import { createTauriHttp } from "@/services/eams/tauriHttp";
 import { encryptPasswordWithKey } from "@/services/eams/rsaEncrypt";
@@ -26,14 +32,25 @@ const props = defineProps<{
   overwrite: boolean;
 }>();
 
-const { importFromJsonBackup, importAsNewCourseTable } = useCourses();
+const { activeCourseTableId, importFromJsonBackup, importAsNewCourseTable } = useCourses();
 const confirmReplace = useConfirmReplace();
+const router = useRouter();
 
-const username = ref("");
-const password = ref("");
-const busy = ref(false);
+const savedCredentials = readCredentials();
+const username = ref(savedCredentials?.username ?? "");
+const rememberPassword = ref(savedCredentials?.rememberPassword ?? false);
+const password = ref(rememberPassword.value ? savedCredentials?.password ?? "" : "");
+// 取消勾选（包括下面因为学号或密码不对而自动取消）时立刻删掉已存的密码，学号留着。
+watch(rememberPassword, (remember) => {
+  if (!remember) clearSavedPassword();
+});
+const syncing = ref<"timetable" | "exams" | null>(null);
 const message = ref("");
 const messageKind = ref<"ok" | "err" | "info">("info");
+const syncDependencies = (): EamsDeps => ({
+  http: createTauriHttp(),
+  encryptPassword: async (pw, key) => encryptPasswordWithKey(pw, key) ?? ""
+});
 /// 解析器那份"注意事项"（哪些课换过教室、教师取了谁）。默认收起：一条就够长（数据库原理列了
 /// 11 个教室），三条直接是一屏多的文字墙 —— 而它出现在表单上面，会把学号 / 密码 / 开始同步顶到
 /// 好几屏以外。收起不等于瞒着：给出条数，想核对的人点开就看得到。
@@ -169,8 +186,22 @@ const describeFailure = (result: SyncResult & { ok: false }): string => {
   }
 };
 
+/// 同步结果出来后按登录这一步的成败处理已存的登录信息。
+///   * 学校明确说学号或密码不对：取消勾选，watch 会删掉已存的密码；
+///   * 连不上或其它登录失败（验证码、锁定、认不出原因）：已存的不动；
+///   * 成功，或失败发生在登录之后：记下学号，勾了「记住密码」再记密码。凭已有会话免密同步考试时
+///     输入框可能是空的，空值不存，免得盖掉已存的学号。
+const rememberLogin = (result: { ok: true } | SyncFailure, account: string, secret: string) => {
+  if (!result.ok && result.wrongCredentials) {
+    rememberPassword.value = false;
+    return;
+  }
+  if (!result.ok && (result.kind === "unreachable" || result.kind === "login")) return;
+  if (account && secret) saveCredentials(account, secret, rememberPassword.value);
+};
+
 const sync = async () => {
-  if (busy.value) return;
+  if (syncing.value) return;
 
   if (!username.value.trim() || !password.value) {
     messageKind.value = "err";
@@ -182,16 +213,15 @@ const sync = async () => {
   // after the wait is one the user is no longer expecting. A new table destroys nothing.
   if (props.overwrite && !(await confirmReplace("教务同步"))) return;
 
-  busy.value = true;
+  syncing.value = "timetable";
   messageKind.value = "info";
   message.value = "正在连接教务系统…";
 
   try {
-    const result = await fetchTimetable(
-      { http: createTauriHttp(), encryptPassword: async (pw, key) => encryptPasswordWithKey(pw, key) ?? "" },
-      username.value.trim(),
-      password.value
-    );
+    const account = username.value.trim();
+    const secret = password.value;
+    const result = await fetchTimetable(syncDependencies(), account, secret);
+    rememberLogin(result, account, secret);
 
     if (!result.ok) {
       messageKind.value = "err";
@@ -216,7 +246,7 @@ const sync = async () => {
     }
 
     messageKind.value = "ok";
-    password.value = "";
+    if (!rememberPassword.value) password.value = "";
     showToast(imported.tableName ? newTableToast(imported.tableName) : "课表已同步");
 
     // A warning is something the user has to act on or at least read, so the sheet stays open to
@@ -253,7 +283,47 @@ const sync = async () => {
     // 取 .message 会得到 undefined，把真实原因吞掉（踩过一次）。describeError 专门处理这个。
     message.value = `同步出错：${describeError(error)}`;
   } finally {
-    busy.value = false;
+    syncing.value = null;
+  }
+};
+
+const openExams = () => {
+  emit("close");
+  void router.push({ name: "exams" });
+};
+
+const syncExams = async () => {
+  if (syncing.value) return;
+  if (!isTauri()) {
+    messageKind.value = "err";
+    message.value = "请在 App 里同步考试。";
+    return;
+  }
+
+  const tableId = activeCourseTableId.value;
+  syncing.value = "exams";
+  messageKind.value = "info";
+  message.value = "正在查询本学期考试安排…";
+  try {
+    const account = username.value.trim();
+    const secret = password.value;
+    const result = await fetchExams(syncDependencies(), account, secret);
+    rememberLogin(result, account, secret);
+    if (!result.ok) {
+      messageKind.value = "err";
+      message.value = result.message;
+      return;
+    }
+
+    saveExamSnapshot(tableId, result.snapshot);
+    if (!rememberPassword.value) password.value = "";
+    message.value = "";
+    openExams();
+  } catch (error) {
+    messageKind.value = "err";
+    message.value = `考试同步失败：${describeError(error)}`;
+  } finally {
+    syncing.value = null;
   }
 };
 </script>
@@ -262,6 +332,9 @@ const sync = async () => {
   <div class="eams-section">
     <!-- 结果放在最上面：不用滚动就能看到 -->
     <ImportNotice v-if="message" :kind="messageKind">{{ message }}</ImportNotice>
+    <button type="button" class="app-btn app-btn--outline" :disabled="!!syncing" @click="openExams">
+      查看考试安排
+    </button>
 
     <!-- 注意事项默认收起：展开是一屏多的文字（数据库原理一条就列 11 个教室），会把下面的表单
          顶到几屏以外 —— 同步完还想再点一次「开始同步」，得先滑过整段说明。 -->
@@ -288,8 +361,7 @@ const sync = async () => {
       </div>
 
       <p class="imp-hint">
-        用「我i科大」（学校统一身份认证）的学号与登录密码登录，直接把课表取回来。密码只在这次同步时用一次，
-        <strong>不会保存到手机上</strong>。
+        用「我i科大」（学校统一身份认证）的学号与登录密码登录，同步课表或考试安排。
       </p>
 
       <div class="atrust">
@@ -329,13 +401,23 @@ const sync = async () => {
         />
       </label>
 
-      <button class="app-btn app-btn--primary" :disabled="busy" @click="sync">
-        <Loader2 v-if="busy" :size="18" class="imp-spin" />
+      <div class="remember">
+        <van-checkbox v-model="rememberPassword" shape="square" icon-size="16px">记住密码</van-checkbox>
+        <span class="remember-note">密码只保存在这台手机上</span>
+      </div>
+
+      <button class="app-btn app-btn--primary" :disabled="!!syncing" @click="sync">
+        <Loader2 v-if="syncing === 'timetable'" :size="18" class="imp-spin" />
         <DownloadCloud v-else :size="18" />
-        <span>{{ busy ? "同步中…" : "开始同步" }}</span>
+        <span>{{ syncing === "timetable" ? "正在同步课表…" : "同步课表" }}</span>
+      </button>
+      <button class="app-btn app-btn--outline" :disabled="!!syncing" @click="syncExams">
+        <Loader2 v-if="syncing === 'exams'" :size="18" class="imp-spin" />
+        <DownloadCloud v-else :size="18" />
+        <span>{{ syncing === "exams" ? "正在同步考试…" : "同步考试" }}</span>
       </button>
 
-      <p class="imp-hint small">默认同步为一个新课表，原来的课表不受影响。</p>
+      <p class="imp-hint small">课表默认同步为新课表，考试安排保存到当前课表。</p>
     </div>
 
     <div class="trouble">
@@ -347,7 +429,7 @@ const sync = async () => {
 
       <div v-if="showTrouble" class="trouble-body">
         <ul class="trouble-list">
-          <li>确认 aTrust 已经显示「已连接」，再重新点「开始同步」。</li>
+          <li>确认 aTrust 已经显示「已连接」，再点对应的同步按钮。</li>
           <li>若手机连不上教务系统，可改用顶部的「AI 识别」直接导入课表文本或截图。</li>
           <li>还是不行，点下面的「网络诊断」，把结果发给开发者。</li>
         </ul>
@@ -381,6 +463,22 @@ const sync = async () => {
 .imp-hint.small {
   font-size: 12px;
   text-align: center;
+  opacity: 0.6;
+}
+
+.remember {
+  --van-checkbox-label-color: var(--theme-body-text);
+  --van-checkbox-checked-icon-color: var(--theme-accent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.remember-note {
+  font-size: 12px;
+  color: var(--theme-body-text);
   opacity: 0.6;
 }
 
