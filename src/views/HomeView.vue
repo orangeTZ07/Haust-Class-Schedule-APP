@@ -52,7 +52,7 @@ const {
 } = useFeatureCoach();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
-        coursesReady, storageError, takeRecoveredTableNames, refreshData,
+        coursesReady, storageError, ensureStorageReady, takeRecoveredTableNames, refreshData,
         editing, sessionCount, canUndoEdit, canRedoEdit,
         commitEdit, undoEdit, redoEdit, exitEditMode, removeScheduleInScope, updateOccurrenceInScope, getCourseById } = useCourses();
 const SIDEBAR_WIDTH = 280;
@@ -294,13 +294,23 @@ const loadSample = async () => {
 
 const handleClear = async () => {
   closeSidebar();
+  // 读库失败时屏幕上是一张空表，用户以为「清空」无所谓，删掉的却是真正的当前课表。先重读再问。
+  if (!(await ensureStorageReady())) {
+    showToast("本地课表数据库暂时无法打开，请重启应用后重试。");
+    return;
+  }
   const confirmed = await confirmAction({
     title: "清空所有课程？",
     message: "课程和课段都会被删除，此操作无法撤销。",
     confirmText: "清空",
     danger: true,
   });
-  if (confirmed) clearAll();
+  if (!confirmed) return;
+  try {
+    await clearAll();
+  } catch (error) {
+    showToast((error as Error).message);
+  }
 };
 
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean; gearActive?: boolean }) => {

@@ -202,11 +202,28 @@ console.log("=== 4. 回退记录不再跨连接开事务 ===");
   await service.writeEditHistory(5, { snapshots: [snapshot(1), snapshot(2), snapshot(3)], index: 2 });
   const statements = fake.sql.map(entry => entry.sql);
   check("没有 BEGIN / COMMIT / ROLLBACK", !statements.some(sql => /^(BEGIN|COMMIT|ROLLBACK)\b/.test(sql)), statements.filter(sql => /^(BEGIN|COMMIT|ROLLBACK)/.test(sql)));
-  const inserts = fake.sql.filter(entry => entry.sql.startsWith("INSERT INTO edit_action_groups"));
-  check("全部动作组用一条 INSERT 写回", inserts.length === 1, inserts.length);
+  const inserts = fake.sql.filter(entry => entry.sql.startsWith("INSERT OR REPLACE INTO edit_action_groups"));
+  check("全部动作组用一条 INSERT OR REPLACE 写回", inserts.length === 1, inserts.length);
   check("三组 × 4 个参数", inserts[0]?.params.length === 12, inserts[0]?.params.length);
+  const placeholders = [...(inserts[0]?.sql ?? "").matchAll(/\$(\d+)/g)].map(m => Number(m[1]));
+  check(
+    "占位符 $1…$12 依次出现、与参数一一对应",
+    placeholders.length === 12 && placeholders.every((n, i) => n === i + 1),
+    placeholders
+  );
   check("参数顺序是 table_id, position, courses, schedules", inserts[0]?.params[0] === 5 && inserts[0]?.params[5] === 1 && inserts[0]?.params[10].includes("课3"), inserts[0]?.params.slice(0, 6));
+  const writeIndex = fake.sql.findIndex(entry => entry.sql.startsWith("INSERT OR REPLACE INTO edit_action_groups"));
+  const trimIndex = fake.sql.findIndex(entry => /^DELETE FROM edit_action_groups WHERE table_id = \$1 AND position >= \$2/.test(entry.sql));
+  check("先写入、再删多出来的旧位置（写入失败时旧记录还在）", writeIndex >= 0 && trimIndex > writeIndex && fake.sql[trimIndex].params[1] === 3, [writeIndex, trimIndex]);
+  check("没有先整张删掉再写", !fake.sql.some(entry => /^DELETE FROM edit_action_groups WHERE table_id = \$1$/.test(entry.sql)));
   check("当前位置写进 edit_history_heads", fake.sql.some(entry => entry.sql.startsWith("INSERT INTO edit_history_heads") && entry.params[1] === 2));
+
+  // 500 组是上限：2000 个参数，远低于 SQLite 3.32+ 的 32766。
+  resetFake();
+  const many = { snapshots: Array.from({ length: 500 }, (_, i) => snapshot(i)), index: 499 };
+  await service.writeEditHistory(5, many);
+  const big = fake.sql.find(entry => entry.sql.startsWith("INSERT OR REPLACE INTO edit_action_groups"));
+  check("上限 500 组时参数 2000 个、在 SQLite 上限之内", big?.params.length === 2000 && big.params.length < 32766, big?.params.length);
 }
 
 console.log("");
@@ -281,6 +298,40 @@ console.log("=== 6. 恢复写到一半失败：不留半张表，数据留到下
   check("恢复失败不影响打开库", opened);
   check("半张表被删掉", fake.tables.length === 1, fake.tables.map(table => table.name));
   check("localStorage 里的数据还在，下次再试", storage.has("web-fallback-courses"));
+}
+
+console.log("");
+console.log("=== 6b. 第一张表恢复成功、第二张失败：下次只补第二张 ===");
+{
+  storage.clear();
+  resetFake();
+  fake.tables = [{ id: 1, name: "默认课程表", created_at: "x", updated_at: "x" }];
+  storage.set("web-fallback-course-tables", JSON.stringify([{ id: 2, name: "甲" }, { id: 3, name: "乙" }]));
+  storage.set("web-fallback-courses", JSON.stringify([
+    { id: 7, tableId: 2, name: "甲课", color: "#fff" },
+    { id: 8, tableId: 3, name: "乙课", color: "#fff" }
+  ]));
+  storage.set("web-fallback-schedules", JSON.stringify([
+    { id: 1, courseId: 7, dayOfWeek: 1, startPeriod: 1, endPeriod: 2, startWeek: 1, endWeek: 16, weekType: "all" },
+    { id: 2, courseId: 8, dayOfWeek: 2, startPeriod: 1, endPeriod: 2, startWeek: 1, endWeek: 16, weekType: "all" }
+  ]));
+  // 只让「乙课」那一条课段写入失败。
+  let scheduleWrites = 0;
+  fake.failWhen = sql => /^\s*INSERT INTO schedules/.test(sql) && ++scheduleWrites === 2;
+  const first = await freshService({ tauri: true });
+  await first.getCourseTables();
+  const namesAfterFirst = fake.tables.map(table => table.name);
+  check("甲恢复了，乙的半张表被删掉", namesAfterFirst.includes("甲（恢复）") && !namesAfterFirst.includes("乙（恢复）"), namesAfterFirst);
+  const left = JSON.parse(storage.get("web-fallback-courses") ?? "[]");
+  check("localStorage 里只剩乙的课程", left.length === 1 && left[0].name === "乙课", left);
+  check("这次也告诉界面甲已恢复", first.takeRecoveredTableNames().join() === "甲（恢复）");
+
+  resetFake();
+  const second = await freshService({ tauri: true });
+  await second.getCourseTables();
+  const names = fake.tables.map(table => table.name);
+  check("下次启动只补上乙，甲不重复", names.filter(name => name === "甲（恢复）").length === 1 && names.includes("乙（恢复）"), names);
+  check("全部搬完后清掉旧数据", webKeys().length === 0, webKeys());
 }
 
 console.log("");

@@ -30,7 +30,7 @@ const props = defineProps<{
   overwrite: boolean;
 }>();
 
-const { activeCourseTableId, periodConfig, importFromJsonBackup, importAsNewCourseTable } = useCourses();
+const { activeCourseTableId, periodConfig, ensureStorageReady, importFromJsonBackup, importAsNewCourseTable } = useCourses();
 const confirmReplace = useConfirmReplace();
 
 const savedCredentials = readCredentials();
@@ -211,9 +211,18 @@ const sync = async () => {
     return;
   }
 
+  // 读一次就定下来：同步要等好几秒，期间拨动底部开关不能让一次「新课表」同步变成没确认过的覆盖。
+  const overwrite = props.overwrite;
+
+  // 上次读库失败时，「当前课表」和课程数都不可信：确认框会以为是空表而跳过。先重读，读不到就不同步。
+  if (!(await ensureStorageReady())) {
+    showMessage("err", "本地课表数据库暂时无法打开，请重启应用后重试。");
+    return;
+  }
+
   // Only overwriting asks, and it asks up front rather than after the fetch: a prompt that shows up
   // after the wait is one the user is no longer expecting. A new table destroys nothing.
-  if (props.overwrite && !(await confirmReplace("教务同步"))) return;
+  if (overwrite && !(await confirmReplace("教务同步"))) return;
 
   syncing.value = true;
   showMessage("info", "");
@@ -231,7 +240,8 @@ const sync = async () => {
     // 复用已有的备份导入逻辑：它已经过测试，会处理按周覆盖层、单双周、ID 重映射等。
     // 新课表在取到数据之后才建，所以网络失败不会留下空课表。
     const backupJson = JSON.stringify(result.backup);
-    const imported: ImportOutcome = props.overwrite
+    const targetTableId = activeCourseTableId.value;
+    const imported: ImportOutcome = overwrite
       ? await importFromJsonBackup(backupJson)
       : await importAsNewCourseTable(`教务同步 ${importDateLabel()}`, () => importFromJsonBackup(backupJson));
     if (!imported.success) {
@@ -239,8 +249,8 @@ const sync = async () => {
       return;
     }
 
-    // 导入为新课表时，新课表此刻已经是当前课表，考试安排跟着它走。
-    const exams = await syncExamsInto(activeCourseTableId.value, account, secret);
+    // 考试安排存到刚写入课表的那张表：新课表用导入返回的编号，覆盖则是同步开始时的当前课表。
+    const exams = await syncExamsInto(imported.tableId ?? targetTableId, account, secret);
     if (!rememberPassword.value) password.value = "";
 
     const examCount = exams.ok ? exams.snapshot.exams.length : 0;
@@ -262,7 +272,8 @@ const sync = async () => {
       return;
     }
 
-    showMessage("info", [`${summary}。`, ...warnings].join("\n"));
+    // 考试安排取不到时，把它的诊断信息也收进「诊断信息」，方便复制给开发者。
+    showMessage("info", [`${summary}。`, ...warnings].join("\n"), exams.ok ? "" : exams.detail ?? "");
   } catch (error) {
     // 这里以前写成 (error as Error).message —— 而 Tauri 拒绝时给的是错误值本身，对字符串错误
     // 取 .message 会得到 undefined，把真实原因吞掉（踩过一次）。describeError 专门处理这个。

@@ -262,7 +262,14 @@ async function adoptStrandedWebData(db: Database): Promise<void> {
       [name, now, now]
     );
     const tableId = created.lastInsertId;
-    if (typeof tableId !== "number") throw new Error("恢复课表时没有拿到新课表的编号");
+    if (typeof tableId !== "number") {
+      // 拿不到编号就没法往里写；按名称删掉刚建的那张空表，免得留下一张空的「（恢复）」。
+      await db.execute(
+        "DELETE FROM course_tables WHERE name = $1 AND id NOT IN (SELECT DISTINCT table_id FROM courses)",
+        [name]
+      ).catch(cleanupError => console.error("Failed to remove the empty recovered table", cleanupError));
+      throw new Error("恢复课表时没有拿到新课表的编号");
+    }
 
     try {
       const idMap = new Map<number, number>();
@@ -296,9 +303,14 @@ async function adoptStrandedWebData(db: Database): Promise<void> {
         );
       }
     } catch (error) {
-      await db.execute("DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)", [tableId]);
-      await db.execute("DELETE FROM courses WHERE table_id = $1", [tableId]);
-      await db.execute("DELETE FROM course_tables WHERE id = $1", [tableId]);
+      // 回滚本身也可能失败（库又被锁住）：记下来，抛出最初的那个错误。
+      try {
+        await db.execute("DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)", [tableId]);
+        await db.execute("DELETE FROM courses WHERE table_id = $1", [tableId]);
+        await db.execute("DELETE FROM course_tables WHERE id = $1", [tableId]);
+      } catch (cleanupError) {
+        console.error("Failed to remove the half-recovered table", cleanupError);
+      }
       throw error;
     }
     restored.push(name);
@@ -750,9 +762,10 @@ export async function writeEditHistory(tableId: number, history: TableHistory): 
   // 要么「database is locked」，要么写进一个永远不提交的事务里，重启就没了；下次启动连迁移都可能
   // 拿不到锁，库就「打不开」了（issue #54）。
   //
-  // 所以改成两条各自原子的语句：先删，再用一条多行 INSERT 写回全部动作组。
-  await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+  // 所以改成各自原子的单条语句：先用一条多行 INSERT OR REPLACE 写入全部动作组，再删掉多出来的
+  // 旧位置。写入失败时库里还是上一份完整的记录，不会出现「删了、没写进去」的空档。
   if (capped.snapshots.length === 0) {
+    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
     await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
     return;
   }
@@ -765,8 +778,12 @@ export async function writeEditHistory(tableId: number, history: TableHistory): 
     values.push(tableId, position, JSON.stringify(snapshot.courses), JSON.stringify(snapshot.schedules));
   });
   await db.execute(
-    `INSERT INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ${rows.join(", ")}`,
+    `INSERT OR REPLACE INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ${rows.join(", ")}`,
     values
+  );
+  await db.execute(
+    "DELETE FROM edit_action_groups WHERE table_id = $1 AND position >= $2",
+    [tableId, capped.snapshots.length]
   );
   await db.execute(
     `INSERT INTO edit_history_heads (table_id, current_index) VALUES ($1, $2)

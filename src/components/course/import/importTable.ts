@@ -1,14 +1,15 @@
 /// Naming and wording for imports that land in a new course table, shared by the three import tabs
 /// so they name the table and describe the result the same way.
 
-/// What an import reports back. `tableName` is only there when it went into a new course table;
-/// `skipped` is how many schedules the file had that could not be placed.
+/// What an import reports back. `tableName` and `tableId` are only there when it went into a new
+/// course table; `skipped` is how many schedules the file had that could not be placed.
 export interface ImportOutcome {
   success: boolean;
   message: string;
   count: number;
   skipped?: number;
   tableName?: string;
+  tableId?: number;
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");

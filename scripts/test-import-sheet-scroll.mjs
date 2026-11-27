@@ -110,7 +110,13 @@ console.log("=== 课表与考试一次同步（issue #51）===");
   const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
   check("只有一个同步按钮", eams.includes("同步课表与考试") && !eams.includes('"同步考试"') && !eams.includes("syncExams()") && !eams.includes("@click=\"syncExams\""));
   check("面板里不再放「查看考试安排」", !eams.includes("查看考试安排"));
-  check("考试安排存到刚写入课表的那张表", eams.includes("syncExamsInto(activeCourseTableId.value"));
+  check("考试安排存到刚写入课表的那张表（新课表用导入返回的编号）", eams.includes("syncExamsInto(imported.tableId ?? targetTableId"));
+  check("覆盖开关在同步开始时读一次（中途拨动不会变成没确认的覆盖）", eams.includes("const overwrite = props.overwrite;") && !/props\.overwrite[\s\S]*props\.overwrite/.test(eams.slice(eams.indexOf("const sync = async"))));
+  check(
+    "确认覆盖之前先确认读得到库（读库失败时确认框会以为是空表）",
+    eams.indexOf("ensureStorageReady()") > -1 && eams.indexOf("ensureStorageReady()") < eams.indexOf('confirmReplace("教务同步")')
+  );
+  check("考试安排取不到时诊断信息也能复制", eams.includes('exams.ok ? "" : exams.detail ?? ""'));
   check("课表之后取考试时跳过重复的连通性探测", eams.includes("skipReachabilityProbe: true"));
   const examClient = readFileSync(join(here, "..", "src/services/eams/examClient.ts"), "utf8");
   check("考试同步支持跳过探测", examClient.includes("if (!options.skipReachabilityProbe)"));
