@@ -103,6 +103,11 @@
   height: var(--safe-bottom);
 }
 
+/* 键盘弹起时面板底边贴着键盘，下面已经没有手势条了，这块留白只会挤掉内容区的高度。 */
+.kb-open .app-sheet-safe {
+  height: 0;
+}
+
 /* ---------- Buttons ----------
    One size, one radius. Primary is filled with the accent, secondary is a quiet tint, outline is for
    an action that sits next to a primary in the same card. */

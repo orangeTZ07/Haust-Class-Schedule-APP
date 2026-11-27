@@ -70,6 +70,10 @@ let historyWrite: Promise<void> = Promise.resolve();
 let nextCourseId = 1;
 let nextScheduleId = 1;
 
+/// 上一次读课表失败的原因，读成功后清空。App 里打不开 SQLite 时课表是空的，主页据此提示重试，
+/// 而不是让用户以为导入的课程丢了。
+const storageError = ref<string | null>(null);
+
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
   CURRENT_WEEK: "course-mngr-current-week",
@@ -145,8 +149,10 @@ async function loadDataFromDb() {
       semesterStartDate.value = savedSemesterStart;
     }
     await adoptEditHistory();
+    storageError.value = null;
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
+    storageError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -1201,7 +1207,10 @@ export function useCourses() {
     undoEdit,
     redoEdit,
     exitEditMode,
-    coursesReady,    switchCourseTable,
+    coursesReady,
+    storageError,
+    takeRecoveredTableNames: courseService.takeRecoveredTableNames,
+    switchCourseTable,
     createCourseTable,
     renameCourseTable,
     deleteCourseTable,

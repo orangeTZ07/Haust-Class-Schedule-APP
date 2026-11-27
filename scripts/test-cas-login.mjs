@@ -111,7 +111,7 @@ const cases = [
   ["密码错", '<div>用户名或密码错误</div>', "学号或密码"],
   ["真要求验证码", "<div>请输入验证码</div>", "验证码"],
   ["锁定", "<div>失败次数过多，请稍后再试</div>", "锁定"],
-  ["无法识别", "<html>出了点问题</html>", "没有给出可识别的原因"]
+  ["无法识别", "<html>出了点问题</html>", "原因无法识别"]
 ];
 cases.forEach(([label, html, expect]) => {
   const r = mod.classifyLoginFailure(html, "https://cas.haust.edu.cn/cas/login", 200);
@@ -128,7 +128,7 @@ const falsePositive = mod.classifyLoginFailure(
   200
 );
 check("★ 只有 __captchaImgUrl 时不得误报为验证码", !falsePositive.reason.includes("验证码"), falsePositive.reason);
-check("★ 认不出来时如实说认不出来", falsePositive.reason.includes("没有给出可识别的原因"), falsePositive.reason);
+check("★ 认不出来时如实说认不出来", falsePositive.reason.includes("原因无法识别"), falsePositive.reason);
 
 check("无法识别时给出原文片段而不是猜", !!mod.classifyLoginFailure("<html>xyz</html>", "u", 200).detail);
 check("诊断信息里带上了 HTTP 状态与最终地址", (() => {

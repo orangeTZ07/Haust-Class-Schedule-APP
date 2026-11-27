@@ -133,7 +133,7 @@ console.log("=== 引导步骤 ===");
   );
   check("没有第二套 previewChannel helper", !existsSync(join(here, "..", "src/services/previewChannelSettings.ts")));
   const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
-  check("教务同步页底有爬虫致谢", eams.includes("eams-footer") && eams.includes("@LinJX1210") && eams.includes("连不上？"));
+  check("教务同步页底有爬虫致谢", eams.includes("eams-footer") && eams.includes("@LinJX1210") && eams.includes("连接问题"));
   const gridSettings = readFileSync(join(here, "..", "src/views/settings/GridSettings.vue"), "utf8");
   check("上课时间锚点打在时间细节整块上", (gridSettings.match(/data-coach="period-timing"/g) || []).length === 1 && gridSettings.includes('class="section" data-coach="period-timing"'));
   const coachBubble = readFileSync(join(here, "..", "src/components/coach/FeatureCoach.vue"), "utf8");

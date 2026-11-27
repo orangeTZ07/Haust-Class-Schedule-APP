@@ -1,4 +1,4 @@
-import { KEYBOARD_INSET_VAR, keyboardInsetFrom } from "@/utils/keyboardInset";
+import { KEYBOARD_INSET_VAR, KEYBOARD_OPEN_CLASS, keyboardInsetFrom } from "@/utils/keyboardInset";
 
 /// 把"被软键盘挡住的高度"写进 --kb-inset，底部面板据此整体上移（读它的地方见 popups.css 与
 /// ImportSheet.vue）。判据和为什么不写 interactive-widget 都在 utils/keyboardInset.ts 里。
@@ -25,6 +25,9 @@ export function installKeyboardInset(): void {
     if (inset === last) return;
     last = inset;
     document.documentElement.style.setProperty(KEYBOARD_INSET_VAR, `${inset}px`);
+    // 底部面板在键盘弹起时把不滚动的部分（底部开关、手势条留白）收起来，高度留给内容区。
+    // CSS 变量做不了「大于 0 就隐藏」，所以另给一个类。
+    document.documentElement.classList.toggle(KEYBOARD_OPEN_CLASS, inset > 0);
   };
 
   viewport.addEventListener("resize", apply);

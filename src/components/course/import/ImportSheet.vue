@@ -44,19 +44,26 @@ const close = () => emit("update:show", false);
 </script>
 
 <template>
+  <!-- lock-scroll 关掉，滚动交给 .sheet-body 自己（overscroll-behavior: contain 挡住滚动链）。
+       vant 的锁滚动在 document 上记录 touchstart，再在 touchmove 里判断「滚到头了没」：
+         * 以前这里有 @touchstart.stop，document 收不到 touchstart，起点一直是旧值，面板在顶部时
+           往上滑也会被判成往下滑而 preventDefault —— 打开面板常常完全滑不动（issue #53）；
+         * 即使起点正确，手指落在输入框、提示词预览这类内层滚动区上时，vant 只看内层，内层到头就
+           拦掉，外层面板也跟着滑不动。
+       面板后面是 100dvh、overflow: hidden 的主页，遮罩自己也拦 touchmove，没有可以漏出去的滚动。
+       侧栏的边缘滑动监听在 .home-view 上，而面板 teleport 到了 body，触摸事件本来就到不了那里。 -->
   <van-popup
     :show="props.show"
     position="bottom"
     round
     teleport="body"
+    :lock-scroll="false"
     class="app-popup app-popup--sheet import-sheet"
     :style="cssVariables"
     :overlay-style="{ backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.25)' }"
     @update:show="emit('update:show', $event)"
   >
-    <!-- The edge swipe that opens the sidebar listens on the whole home view. Inside the sheet a
-         sideways drag (selecting text, scrolling the prompt box) must not start it. -->
-    <div class="sheet" @touchstart.stop>
+    <div class="sheet">
       <div class="app-sheet-handle" />
 
       <header class="sheet-head">
@@ -76,7 +83,7 @@ const close = () => emit("update:show", false);
         <AiImportSection v-show="method === 'ai'" @close="close" />
       </div>
 
-      <!-- AI 识别 has its own 新课表 / 追加 switch, so this one is only for the other two tabs. -->
+      <!-- AI 识别 has its own 新课表 / 追加 switch, so this one is only for 教务同步. -->
       <footer v-if="method !== 'ai'" class="sheet-foot">
         <button
           type="button"
@@ -88,7 +95,7 @@ const close = () => emit("update:show", false);
           <span class="overwrite-text">
             <span class="overwrite-title">覆盖当前课表</span>
             <span class="overwrite-sub" :class="{ 'is-on': overwrite }">
-              {{ overwrite ? "会清空当前课表再导入，导入前会再确认一次" : "关闭时导入为新课表，原来的课表不受影响" }}
+              {{ overwrite ? "将清空当前课表后导入，导入前需确认" : "导入为新课表，不影响现有课表" }}
             </span>
           </span>
           <span class="switch" :class="{ on: overwrite }" aria-hidden="true">
@@ -111,6 +118,14 @@ const close = () => emit("update:show", false);
      键盘一收，--kb-inset 回到 0，这里就又等于 88%。 */
   max-height: min(88%, calc(100% - var(--kb-inset, 0px)));
   overflow: hidden;
+  /* 从标题、页签、底部开关这些不滚动的地方起手拖动时，不要带出系统的回弹或边缘光晕。 */
+  overscroll-behavior: none;
+}
+
+/* 键盘弹起时面板本来就矮了一截，「覆盖当前课表」开关又不是输入时要用的：先收起来，把高度留给
+   正在填写的表单。键盘一收就回来。 */
+:global(.kb-open .import-sheet .sheet-foot) {
+  display: none;
 }
 
 .sheet {

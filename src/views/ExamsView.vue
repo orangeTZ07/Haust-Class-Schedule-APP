@@ -22,7 +22,7 @@ const snapshot = computed(() => readExamSnapshot(activeCourseTableId.value));
         {{ activeCourseTable?.name || "当前课表" }}<template v-if="snapshot"> · {{ snapshot.exams.length }} 场考试</template>
       </p>
       <p v-if="snapshot" class="exam-summary">上次同步 {{ new Date(snapshot.syncedAt).toLocaleString("zh-CN") }}</p>
-      <p v-if="!snapshot" class="exam-summary">请在「导入课表 → 教务同步」中同步考试。</p>
+      <p v-if="!snapshot" class="exam-summary">暂无考试安排。通过「导入课表 → 教务同步」同步课表时将一并获取。</p>
       <p v-else-if="!snapshot.exams.length" class="exam-summary">本学期暂无已安排的考试。</p>
       <ul v-else class="exam-list">
         <li

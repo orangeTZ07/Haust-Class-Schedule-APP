@@ -11,22 +11,66 @@ import {
 
 const DB_NAME = "sqlite:course_mngr.db";
 const DEFAULT_TABLE_ID = 1;
-let dbInstance: Database | null = null;
 
 // 检测是否在 Tauri 环境中
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
 
-export async function getDb() {
-  if (!isTauri) return null;
-  if (dbInstance) return dbInstance;
-  try {
-    dbInstance = await Database.load(DB_NAME);
-    await initDb(dbInstance);
-    return dbInstance;
-  } catch (e) {
-    console.error("Failed to load Tauri SQL plugin", e);
-    return null;
+/// App 里打不开 SQLite 时抛出的错误。
+///
+/// 以前这里返回 null，于是每个读写函数都悄悄改用浏览器的 localStorage：那里是空的，课表就显示
+/// 成一张空表；getActiveCourseTableId 还会把记住的当前课表改回 1 号，下次 SQLite 能打开了，
+/// 用户看到的仍然是空的「默认课程表」，导入的课表躲在「选择课程表」里（issue #54）。
+/// 现在 App 里只认 SQLite：打不开就明确失败，由界面提示重试，绝不写到别处去。
+export class StorageUnavailableError extends Error {
+  constructor(readonly cause: unknown) {
+    super("无法打开本地课表数据库");
+    this.name = "StorageUnavailableError";
   }
+}
+
+const DB_OPEN_ATTEMPTS = 3;
+const DB_RETRY_BASE_MS = 300;
+
+/// 同一时刻只开一次库：第一次 initDb 还没跑完，第二个调用者就拿到库的话，迁移和查询会撞在一起
+/// （以前 dbInstance 在 initDb 之前就赋值了）。失败时清空，下一次调用会重新尝试。
+let dbOpening: Promise<Database> | null = null;
+
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+async function openDb(): Promise<Database> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= DB_OPEN_ATTEMPTS; attempt++) {
+    try {
+      const db = await Database.load(DB_NAME);
+      await initDb(db);
+      try {
+        await adoptStrandedWebData(db);
+      } catch (error) {
+        // 恢复失败不影响正常使用：数据还留在 localStorage，下次启动再试。
+        console.error("Failed to move fallback data into SQLite", error);
+      }
+      return db;
+    } catch (error) {
+      lastError = error;
+      console.error(`Failed to open SQLite (attempt ${attempt}/${DB_OPEN_ATTEMPTS})`, error);
+      // 多半是库被短暂锁住（上一次进程还没退干净、另一条连接正在写），稍等再试。
+      if (attempt < DB_OPEN_ATTEMPTS) await delay(DB_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw new StorageUnavailableError(lastError);
+}
+
+/// 浏览器里（没有 Tauri）返回 null，调用方改用 localStorage，这只是给开发调试用的。
+/// App 里要么返回已经迁移好的库，要么抛 StorageUnavailableError，不会返回 null。
+export async function getDb(): Promise<Database | null> {
+  if (!isTauri) return null;
+  if (!dbOpening) {
+    dbOpening = openDb().catch(error => {
+      dbOpening = null;
+      throw error;
+    });
+  }
+  return dbOpening;
 }
 
 async function initDb(db: Database) {
@@ -115,18 +159,25 @@ async function initDb(db: Database) {
   // 收拢一次历史数据：课段地点和课程地点完全相同时，它就是冗余的（显示回落完全相同，
   // 但会挡住"改课程地点"——卡片读课段、编辑框读课程，看起来像没保存）。
   // 幂等：清掉之后显示的值一个字都不变，重复执行没有副作用，所以不需要版本号。
-  await db.execute(`
-    UPDATE schedules SET location = NULL
-    WHERE location IS NOT NULL
-      AND location = (SELECT c.location FROM courses c WHERE c.id = schedules.course_id)
-  `);
-  // 教师同理：课段上的教师和课程教师一样时就是冗余，清掉不改变任何显示，
-  // 但能让「整学期改教师」真正生效（卡片/详情读课段优先）。
-  await db.execute(`
-    UPDATE schedules SET teacher = NULL
-    WHERE teacher IS NOT NULL
-      AND teacher = (SELECT c.teacher FROM courses c WHERE c.id = schedules.course_id)
-  `);
+  //
+  // 这两条是整理，不是建表：它们每次启动都要拿写锁，库被短暂锁住时会失败。失败就留到下次启动，
+  // 不能因此让整个库「打不开」。
+  try {
+    await db.execute(`
+      UPDATE schedules SET location = NULL
+      WHERE location IS NOT NULL
+        AND location = (SELECT c.location FROM courses c WHERE c.id = schedules.course_id)
+    `);
+    // 教师同理：课段上的教师和课程教师一样时就是冗余，清掉不改变任何显示，
+    // 但能让「整学期改教师」真正生效（卡片/详情读课段优先）。
+    await db.execute(`
+      UPDATE schedules SET teacher = NULL
+      WHERE teacher IS NOT NULL
+        AND teacher = (SELECT c.teacher FROM courses c WHERE c.id = schedules.course_id)
+    `);
+  } catch (error) {
+    console.error("Skipped the redundant location/teacher cleanup", error);
+  }
 
   // One row per action group (the timetable after one user gesture), capped per course table.
   await db.execute(`
@@ -147,12 +198,121 @@ async function initDb(db: Database) {
 }
 
 // --- Web Fallback Logic ---
+// 只在浏览器里（没有 Tauri）使用。ACTIVE_TABLE_ID 例外：App 里也用它记住当前课表。
 const WEB_STORAGE_KEYS = {
   COURSES: "web-fallback-courses",
   SCHEDULES: "web-fallback-schedules",
   TABLES: "web-fallback-course-tables",
   ACTIVE_TABLE_ID: "web-fallback-active-course-table-id"
 };
+
+/// 本次启动从 localStorage 搬回 SQLite 的课表名称，界面取走一次后清空。
+let recoveredTableNames: string[] = [];
+
+export function takeRecoveredTableNames(): string[] {
+  const names = recoveredTableNames;
+  recoveredTableNames = [];
+  return names;
+}
+
+const readJsonArray = (key: string): any[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+/// 把旧版本在 App 里「打不开 SQLite 时」悄悄写进 localStorage 的课表搬回 SQLite。
+///
+/// 旧版本打不开库时会改写 localStorage：那段时间里新导入或编辑的课程只存在那里，下次库能打开，
+/// 它们就再也看不到了。这里每张有课程的表各建一张新课表（名称后加「（恢复）」），
+/// 全部写完才删掉 localStorage 里的那份；某张表写到一半失败，就把这张表删掉再抛出，
+/// 下次启动重来，不会留下半张表，也不会重复。
+async function adoptStrandedWebData(db: Database): Promise<void> {
+  const webCourses = readJsonArray(WEB_STORAGE_KEYS.COURSES) as Array<Course & { tableId?: number }>;
+  const clearStranded = () => {
+    localStorage.removeItem(WEB_STORAGE_KEYS.COURSES);
+    localStorage.removeItem(WEB_STORAGE_KEYS.SCHEDULES);
+    localStorage.removeItem(WEB_STORAGE_KEYS.TABLES);
+  };
+  if (webCourses.length === 0) {
+    clearStranded();
+    return;
+  }
+
+  const webSchedules = readJsonArray(WEB_STORAGE_KEYS.SCHEDULES).map(normalizeSchedule);
+  const webTables = readJsonArray(WEB_STORAGE_KEYS.TABLES) as CourseTable[];
+  const tableNames = new Map(webTables.map(table => [table.id, table.name]));
+
+  const coursesByTable = new Map<number, Array<Course & { tableId?: number }>>();
+  for (const course of webCourses) {
+    const tableId = course.tableId ?? DEFAULT_TABLE_ID;
+    if (!coursesByTable.has(tableId)) coursesByTable.set(tableId, []);
+    coursesByTable.get(tableId)!.push(course);
+  }
+
+  const restored: string[] = [];
+  for (const [webTableId, tableCourses] of coursesByTable) {
+    const now = new Date().toISOString();
+    const name = `${tableNames.get(webTableId) || "课程表"}（恢复）`;
+    const created = await db.execute(
+      "INSERT INTO course_tables (name, created_at, updated_at) VALUES ($1, $2, $3)",
+      [name, now, now]
+    );
+    const tableId = created.lastInsertId;
+    if (typeof tableId !== "number") throw new Error("恢复课表时没有拿到新课表的编号");
+
+    try {
+      const idMap = new Map<number, number>();
+      for (const course of tableCourses) {
+        const inserted = await db.execute(
+          "INSERT INTO courses (table_id, name, teacher, location, color) VALUES ($1, $2, $3, $4, $5)",
+          [tableId, course.name || "未命名课程", course.teacher || "", course.location || "", course.color || "#1989fa"]
+        );
+        if (typeof inserted.lastInsertId === "number") idMap.set(course.id, inserted.lastInsertId);
+      }
+      for (const schedule of webSchedules) {
+        const courseId = idMap.get(schedule.courseId);
+        if (courseId === undefined) continue;
+        await db.execute(
+          "INSERT INTO schedules (course_id, day_of_week, start_period, end_period, start_week, end_week, week_type, scope, is_cancelled, source, parser_version, location, teacher) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+          [
+            courseId,
+            schedule.dayOfWeek,
+            schedule.startPeriod,
+            schedule.endPeriod,
+            schedule.startWeek,
+            schedule.endWeek,
+            schedule.weekType,
+            schedule.scope ?? "semester",
+            schedule.isCancelled ? 1 : 0,
+            schedule.source ?? null,
+            schedule.parserVersion ?? null,
+            schedule.location ?? null,
+            schedule.teacher ?? null
+          ]
+        );
+      }
+    } catch (error) {
+      await db.execute("DELETE FROM schedules WHERE course_id IN (SELECT id FROM courses WHERE table_id = $1)", [tableId]);
+      await db.execute("DELETE FROM courses WHERE table_id = $1", [tableId]);
+      await db.execute("DELETE FROM course_tables WHERE id = $1", [tableId]);
+      throw error;
+    }
+    restored.push(name);
+    // 写完一张就从 localStorage 里划掉一张：后面某张表失败时，下次启动不会把这张再恢复一遍。
+    const done = new Set(tableCourses.map(course => course.id));
+    localStorage.setItem(
+      WEB_STORAGE_KEYS.COURSES,
+      JSON.stringify(readJsonArray(WEB_STORAGE_KEYS.COURSES).filter((course: Course) => !done.has(course.id)))
+    );
+    recoveredTableNames = [...restored];
+  }
+
+  clearStranded();
+}
 
 function normalizeSchedule(row: any): CourseSchedule {
   return {
@@ -585,32 +745,34 @@ export async function writeEditHistory(tableId: number, history: TableHistory): 
     return;
   }
 
-  await db.execute("BEGIN");
-  try {
-    await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
-    if (capped.snapshots.length === 0) {
-      await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
-      await db.execute("COMMIT");
-      return;
-    }
-
-    for (let position = 0; position < capped.snapshots.length; position++) {
-      const snapshot = capped.snapshots[position];
-      await db.execute(
-        "INSERT INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ($1, $2, $3, $4)",
-        [tableId, position, JSON.stringify(snapshot.courses), JSON.stringify(snapshot.schedules)]
-      );
-    }
-    await db.execute(
-      `INSERT INTO edit_history_heads (table_id, current_index) VALUES ($1, $2)
-       ON CONFLICT(table_id) DO UPDATE SET current_index = excluded.current_index`,
-      [tableId, capped.index]
-    );
-    await db.execute("COMMIT");
-  } catch (error) {
-    await db.execute("ROLLBACK");
-    throw error;
+  // 不用 BEGIN / COMMIT：插件的每次 execute 都从连接池里随便取一条连接，BEGIN 和 COMMIT 可能
+  // 落在两条连接上。COMMIT 报「没有进行中的事务」，而开了事务的那条连接一直占着写锁，之后的写入
+  // 要么「database is locked」，要么写进一个永远不提交的事务里，重启就没了；下次启动连迁移都可能
+  // 拿不到锁，库就「打不开」了（issue #54）。
+  //
+  // 所以改成两条各自原子的语句：先删，再用一条多行 INSERT 写回全部动作组。
+  await db.execute("DELETE FROM edit_action_groups WHERE table_id = $1", [tableId]);
+  if (capped.snapshots.length === 0) {
+    await db.execute("DELETE FROM edit_history_heads WHERE table_id = $1", [tableId]);
+    return;
   }
+
+  const rows: string[] = [];
+  const values: unknown[] = [];
+  capped.snapshots.forEach((snapshot, position) => {
+    const base = values.length;
+    rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+    values.push(tableId, position, JSON.stringify(snapshot.courses), JSON.stringify(snapshot.schedules));
+  });
+  await db.execute(
+    `INSERT INTO edit_action_groups (table_id, position, courses_json, schedules_json) VALUES ${rows.join(", ")}`,
+    values
+  );
+  await db.execute(
+    `INSERT INTO edit_history_heads (table_id, current_index) VALUES ($1, $2)
+     ON CONFLICT(table_id) DO UPDATE SET current_index = excluded.current_index`,
+    [tableId, capped.index]
+  );
 }
 
 export async function forgetEditHistory(tableId: number): Promise<void> {
