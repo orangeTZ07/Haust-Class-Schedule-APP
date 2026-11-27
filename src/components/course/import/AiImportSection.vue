@@ -44,16 +44,11 @@ const importMode = computed({
 
 const modeHelpText = computed(() => {
   if (importKind.value === "weekly") {
-    if (isOverwrite.value) {
-      return `覆盖导入会重写第 ${currentWeek.value} 周的覆盖层，学期基础课表会保留。`;
-    }
-    return `追加导入会把新课程叠加到第 ${currentWeek.value} 周，不会清掉学期基础课表。`;
+    return isOverwrite.value
+      ? `替换第 ${currentWeek.value} 周的课程，学期课表不变。`
+      : `添加到第 ${currentWeek.value} 周，学期课表不变。`;
   }
-
-  if (isOverwrite.value) {
-    return "会先新建一个课表再导入，原来的课表不受影响，可以在「选择课程表」里切换。";
-  }
-  return "追加导入会在现有学期基础课表上继续增加课程。";
+  return isOverwrite.value ? "导入为新课表，不影响现有课表。" : "添加到当前课表。";
 });
 
 const weeklyPrompt = [
@@ -107,7 +102,7 @@ const pastePlaceholder = computed(() =>
 const copyPrompt = async () => {
   try {
     await navigator.clipboard.writeText(activePrompt.value);
-    showToast({ message: "复制成功", type: "success", position: "bottom" });
+    showToast({ message: "已复制", type: "success", position: "bottom" });
   } catch (e) {
     showToast({ message: "复制失败", type: "fail" });
   }
@@ -115,7 +110,7 @@ const copyPrompt = async () => {
 
 const handleImport = async () => {
   if (!csvInput.value.trim()) {
-    showToast("内容不能为空");
+    showToast("请先粘贴 AI 返回的 CSV");
     return;
   }
 
@@ -147,15 +142,11 @@ const handleImport = async () => {
   <div class="ai-section">
     <SegmentedControl v-model="importKind" :options="kindOptions" compact />
 
-    <p v-if="importKind === 'weekly'" class="imp-hint note">
-      按周导入的结果会写入第 {{ currentWeek }} 周的覆盖层。
-    </p>
-
     <div class="imp-card">
       <div class="step">
         <div class="step-label">
           <span class="step-num">1</span>
-          <span>复制给 AI 的指令</span>
+          <span>复制提示词</span>
           <button class="copy-btn" @click="copyPrompt">
             <Copy :size="12" />
             <span>复制</span>
@@ -169,14 +160,14 @@ const handleImport = async () => {
       <div class="step">
         <div class="step-label">
           <span class="step-num">2</span>
-          <span>把指令和课程截图一起发给 AI</span>
+          <span>将提示词与课表截图发送给 AI</span>
         </div>
       </div>
 
       <div class="step">
         <div class="step-label">
           <span class="step-num">3</span>
-          <span>粘贴 AI 回复的结果（CSV）</span>
+          <span>粘贴 AI 返回的 CSV</span>
         </div>
         <textarea v-model="csvInput" class="imp-textarea" rows="4" :placeholder="pastePlaceholder" />
       </div>
@@ -199,12 +190,6 @@ const handleImport = async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.note {
-  margin-top: -6px;
-  padding: 0 4px;
-  font-size: 12px;
 }
 
 .step {

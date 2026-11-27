@@ -284,10 +284,8 @@ console.log("=== D. 接线（读源码）===");
   check("拖动改时间时把原课段的地点带走", courses.includes("location: current.location"));
 
   const eams = readFileSync(join(here, "..", "src", "components", "course", "import", "EamsSyncSection.vue"), "utf8");
-  check(
-    "导入报告里的 notes 仍然显示，但默认收起（不再是一屏文字墙）",
-    eams.includes("notes.value = result.report.notes") && /const showNotes = ref\(false\)/.test(eams) && eams.includes("注意事项")
-  );
+  // 每节课已经按各自的教室显示，「某课在 N 个教室上过」不是用户要处理的事，导入面板不再列出（issue #52）。
+  check("导入面板不再列出解析器的 notes", !eams.includes("report.notes") && !eams.includes("注意事项"));
 }
 
 console.log("");

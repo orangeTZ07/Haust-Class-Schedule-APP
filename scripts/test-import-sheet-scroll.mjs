@@ -28,6 +28,22 @@ console.log("=== 通知不再和用户抢滑动 ===");
 }
 
 console.log("");
+console.log("=== 导入面板能滑动（issue #53）===");
+{
+  const sheet = readFileSync(join(here, "..", "src/components/course/import/ImportSheet.vue"), "utf8");
+  const markup = sheet.replace(/<!--[\s\S]*?-->/g, "");
+  // vant 的锁滚动在 document 上记 touchstart；面板里 stopPropagation 会让它的起点永远是旧值，
+  // 面板在顶部时任何滑动都被当成「往下」拦掉。
+  check("面板里不再吞掉 touchstart", !/@touchstart\.stop/.test(markup));
+  check("关掉 vant 的锁滚动，滚动交给 .sheet-body", sheet.includes(':lock-scroll="false"'));
+  check(".sheet-body 自己挡住滚动链", /\.sheet-body \{[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;/.test(sheet));
+  check("外层不带出系统回弹", /\.import-sheet \{[\s\S]*?overscroll-behavior: none;/.test(sheet));
+  check("键盘弹起时收起底部开关，把高度让给表单", sheet.includes(":global(.kb-open .import-sheet .sheet-foot)"));
+  const popups = readFileSync(join(here, "..", "src/styles/popups.css"), "utf8");
+  check("键盘弹起时手势条留白归零", /\.kb-open \.app-sheet-safe \{\s*height: 0;/.test(popups));
+}
+
+console.log("");
 console.log("=== 底部面板不再落在带 transform 的层里 ===");
 {
   const sheets = [
@@ -42,13 +58,70 @@ console.log("=== 底部面板不再落在带 transform 的层里 ===");
 }
 
 console.log("");
-console.log("=== 报告不再是一屏文字墙 ===");
+console.log("=== 提示精简：一句话，细节折叠（issue #52）===");
 {
   const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
-  check("注意事项默认收起", /const showNotes = ref\(false\)/.test(eams));
-  check("点开才铺出来", eams.includes('v-if="showNotes"'));
-  check("收起时给出条数", eams.includes("注意事项 {{ notes.length }} 条"));
-  check("报告本体只留状态与真要处理的提醒", eams.includes("skippedNotice(imported.skipped)") && !eams.includes("...noteLines"));
+  check("不再展示解析器的注意事项列表", !eams.includes("注意事项") && !eams.includes("report.notes"));
+  check("失败只给一句原因，诊断信息单独收着", eams.includes('showMessage("err", result.message, result.detail ?? "")') && !eams.includes("诊断信息（请把这部分发给开发者）"));
+  check("诊断信息默认收起、可复制", /const showDetail = ref\(false\)/.test(eams) && eams.includes('v-if="showDetail"') && eams.includes("copyFailureDetail"));
+  check("没有进行中的提示框（按钮自己显示加载）", !eams.includes("正在连接教务系统") && !eams.includes("正在查询本学期考试安排"));
+  check("只在需要处理时留在面板上", eams.includes("if (warnings.length === 0)") && eams.includes('emit("close")'));
+  check(
+    "提醒只有三类：节数超出、跳过课段、考试获取失败",
+    eams.includes("periodOverflowNotice(") && eams.includes("skippedNotice(imported.skipped)") && eams.includes("考试安排获取失败")
+  );
+  check("节数提醒按当前网格判断，而不是写死 10 节", eams.includes("periodConfig.value.periods.length") && !eams.includes("maxPeriod > 10"));
+}
+
+console.log("");
+console.log("=== 用户看得到的文案用正式措辞（issue #52）===");
+{
+  // 只扫字符串字面量，注释里的口语不影响用户。
+  const stripComments = (src) =>
+    src
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join("\n");
+  const literals = (src) =>
+    [...stripComments(src).matchAll(/"([^"\n]*)"|`([^`]*)`/g)].map((m) => m[1] ?? m[2]).join("\n");
+  const userFacing = [
+    "src/components/course/import/EamsSyncSection.vue",
+    "src/components/course/import/AiImportSection.vue",
+    "src/components/course/import/ImportSheet.vue",
+    "src/components/course/import/importTable.ts",
+    "src/services/eams/eamsClient.ts",
+    "src/services/eams/examClient.ts"
+  ];
+  const casSrc = readFileSync(join(here, "..", "src/services/eams/casLogin.ts"), "utf8");
+  const casReasons = [...casSrc.matchAll(/reason: ["`]([^"`]*)["`]/g)].map((m) => m[1]).join("\n");
+  const text =
+    userFacing.map((file) => literals(readFileSync(join(here, "..", file), "utf8"))).join("\n") + "\n" + casReasons;
+  const colloquial = ["连不上", "发我", "发给我", "不对（", "说人话", "过不去", "没法", "不认这个会话", "结构变了", "本身出错", "爬虫", "课表是空的", "内容不能为空", "复制成功"];
+  const hits = colloquial.filter((word) => text.includes(word));
+  check("不含口语化措辞", hits.length === 0, hits);
+  check("登录失败的原因都是一句完整的话", casReasons.split("\n").every((line) => /。$/.test(line)), casReasons);
+}
+
+console.log("");
+console.log("=== 课表与考试一次同步（issue #51）===");
+{
+  const eams = readFileSync(join(here, "..", "src/components/course/import/EamsSyncSection.vue"), "utf8");
+  check("只有一个同步按钮", eams.includes("同步课表与考试") && !eams.includes('"同步考试"') && !eams.includes("syncExams()") && !eams.includes("@click=\"syncExams\""));
+  check("面板里不再放「查看考试安排」", !eams.includes("查看考试安排"));
+  check("考试安排存到刚写入课表的那张表（新课表用导入返回的编号）", eams.includes("syncExamsInto(imported.tableId ?? targetTableId"));
+  check("覆盖开关在同步开始时读一次（中途拨动不会变成没确认的覆盖）", eams.includes("const overwrite = props.overwrite;") && !/props\.overwrite[\s\S]*props\.overwrite/.test(eams.slice(eams.indexOf("const sync = async"))));
+  check(
+    "确认覆盖之前先确认读得到库（读库失败时确认框会以为是空表）",
+    eams.indexOf("ensureStorageReady()") > -1 && eams.indexOf("ensureStorageReady()") < eams.indexOf('confirmReplace("教务同步")')
+  );
+  check("考试安排取不到时诊断信息也能复制", eams.includes('exams.ok ? "" : exams.detail ?? ""'));
+  check("课表之后取考试时跳过重复的连通性探测", eams.includes("skipReachabilityProbe: true"));
+  const examClient = readFileSync(join(here, "..", "src/services/eams/examClient.ts"), "utf8");
+  check("考试同步支持跳过探测", examClient.includes("if (!options.skipReachabilityProbe)"));
+  const exams = readFileSync(join(here, "..", "src/views/ExamsView.vue"), "utf8");
+  check("考试页的空状态说明随课表一并获取", exams.includes("同步课表时将一并获取"));
 }
 
 console.log("");

@@ -52,7 +52,8 @@ const {
 } = useFeatureCoach();
 const { courses, clearAll, importFromJson, currentWeek, semesterWeekCount, setCurrentWeek,
         periodSlots, addCourse, addSchedule, schedules, effectiveSchedules, activeCourseTableId,
-        coursesReady, editing, sessionCount, canUndoEdit, canRedoEdit,
+        coursesReady, storageError, ensureStorageReady, takeRecoveredTableNames, refreshData,
+        editing, sessionCount, canUndoEdit, canRedoEdit,
         commitEdit, undoEdit, redoEdit, exitEditMode, removeScheduleInScope, updateOccurrenceInScope, getCourseById } = useCourses();
 const SIDEBAR_WIDTH = 280;
 const sidebarVisible = ref(false);
@@ -293,13 +294,23 @@ const loadSample = async () => {
 
 const handleClear = async () => {
   closeSidebar();
+  // 读库失败时屏幕上是一张空表，用户以为「清空」无所谓，删掉的却是真正的当前课表。先重读再问。
+  if (!(await ensureStorageReady())) {
+    showToast("本地课表数据库暂时无法打开，请重启应用后重试。");
+    return;
+  }
   const confirmed = await confirmAction({
     title: "清空所有课程？",
     message: "课程和课段都会被删除，此操作无法撤销。",
     confirmText: "清空",
     danger: true,
   });
-  if (confirmed) clearAll();
+  if (!confirmed) return;
+  try {
+    await clearAll();
+  } catch (error) {
+    showToast((error as Error).message);
+  }
 };
 
 const handleDragTrashStateChange = (state: { visible: boolean; active: boolean; gearActive?: boolean }) => {
@@ -429,10 +440,33 @@ const considerReimportPrompt = async (): Promise<boolean> => {
   }
 };
 
+/// 打不开本地数据库时，课表是空的。以前这时会悄悄改用浏览器存储，用户看到的就是「导入的课全没了」；
+/// 现在说明课程没有丢失，并让用户重试。
+const promptStorageRetry = async () => {
+  while (storageError.value) {
+    const retry = await confirmAction({
+      title: "课表数据读取失败",
+      message: "暂时无法打开本地课表数据库，已导入的课程不会丢失。请重试；如仍失败，请重启应用。",
+      confirmText: "重试",
+      cancelText: "关闭"
+    });
+    if (!retry) return;
+    await refreshData();
+  }
+};
+
+/// 旧版本打不开数据库时写进浏览器存储的课表，本次启动已经搬回数据库，告诉用户去哪里找。
+const announceRecoveredTables = () => {
+  const names = takeRecoveredTableNames();
+  if (names.length) showToast(`已恢复 ${names.length} 张课表，可在「选择课程表」中查看`);
+};
+
 onMounted(async () => {
   document.addEventListener("keydown", onEditKey);
   refreshReminders();
   await coursesReady;
+  await promptStorageRetry();
+  announceRecoveredTables();
   const openImport = await considerReimportPrompt();
   bootstrapped.value = true;
   if (openImport) importVisible.value = true;

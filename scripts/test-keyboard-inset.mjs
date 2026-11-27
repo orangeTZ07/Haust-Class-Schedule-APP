@@ -45,6 +45,7 @@ console.log("=== 接线（读源码）===");
   const composable = readFileSync(join(here, "..", "src/composables/useKeyboardInset.ts"), "utf8");
   check("监听 visualViewport 的 resize 与 scroll", composable.includes('viewport.addEventListener("resize"') && composable.includes('viewport.addEventListener("scroll"'));
   check("数值没变就不写（键盘动画每帧 resize 不能让面板抖）", composable.includes("if (inset === last) return"));
+  check("键盘弹起时在 <html> 上挂 kb-open", composable.includes("classList.toggle(KEYBOARD_OPEN_CLASS, inset > 0)") && kb.KEYBOARD_OPEN_CLASS === "kb-open");
   check("没有 visualViewport 时直接退出（桌面/旧 WebView 不留偏移）", composable.includes("!window.visualViewport"));
 
   const popups = readFileSync(join(here, "..", "src/styles/popups.css"), "utf8");

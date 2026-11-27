@@ -17,6 +17,9 @@ export const MIN_KEYBOARD_PX = 40;
 /// 写到 <html> 上的 CSS 变量名。底部面板在自己的样式里读它。
 export const KEYBOARD_INSET_VAR = "--kb-inset";
 
+/// 键盘弹起期间挂在 <html> 上的类。底部面板据此收起不滚动的部分，把高度让给内容区。
+export const KEYBOARD_OPEN_CLASS = "kb-open";
+
 export interface ViewportMetrics {
   /// window.innerHeight：布局视口高度
   innerHeight: number;

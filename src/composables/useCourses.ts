@@ -70,6 +70,10 @@ let historyWrite: Promise<void> = Promise.resolve();
 let nextCourseId = 1;
 let nextScheduleId = 1;
 
+/// 上一次读课表失败的原因，读成功后清空。App 里打不开 SQLite 时课表是空的，主页据此提示重试，
+/// 而不是让用户以为导入的课程丢了。
+const storageError = ref<string | null>(null);
+
 const STORAGE_KEYS = {
   PERIOD_CONFIG: "course-mngr-period-config",
   CURRENT_WEEK: "course-mngr-current-week",
@@ -113,8 +117,31 @@ const isScheduleActiveInWeek = (schedule: CourseSchedule, week: number) => {
   return true;
 };
 
+/// 节次、当前周、学期开始日期这几项设置存在 localStorage 里，和课表数据库无关。先读它们：
+/// 数据库打不开时也要读到，否则 watcher 会拿默认值把用户的设置覆盖掉。
+function loadLocalSettings() {
+  try {
+    // Old-format and unreadable values are converted here and written back by the watcher in
+    // useCourses(); parseStoredPeriodConfig documents what each case keeps.
+    periodConfig.value = parseStoredPeriodConfig(localStorage.getItem(STORAGE_KEYS.PERIOD_CONFIG)).config;
+
+    const savedCurrentWeek = Number(localStorage.getItem(STORAGE_KEYS.CURRENT_WEEK));
+    if (Number.isFinite(savedCurrentWeek) && savedCurrentWeek > 0) {
+      currentWeek.value = savedCurrentWeek;
+    }
+
+    const savedSemesterStart = localStorage.getItem(STORAGE_KEYS.SEMESTER_START);
+    if (savedSemesterStart) {
+      semesterStartDate.value = savedSemesterStart;
+    }
+  } catch (e) {
+    console.error("Failed to read settings from localStorage", e);
+  }
+}
+
 // Persistence Logic
 async function loadDataFromDb() {
+  loadLocalSettings();
   try {
     courseTables.value = await courseService.getCourseTables();
     activeCourseTableId.value = await courseService.getActiveCourseTableId();
@@ -131,24 +158,24 @@ async function loadDataFromDb() {
       nextScheduleId = Math.max(...schedules.value.map(s => s.id)) + 1;
     }
 
-    // Old-format and unreadable values are converted here and written back by the watcher in
-    // useCourses(); parseStoredPeriodConfig documents what each case keeps.
-    periodConfig.value = parseStoredPeriodConfig(localStorage.getItem(STORAGE_KEYS.PERIOD_CONFIG)).config;
-
-    const savedCurrentWeek = Number(localStorage.getItem(STORAGE_KEYS.CURRENT_WEEK));
-    if (Number.isFinite(savedCurrentWeek) && savedCurrentWeek > 0) {
-      currentWeek.value = savedCurrentWeek;
-    }
-
-    const savedSemesterStart = localStorage.getItem(STORAGE_KEYS.SEMESTER_START);
-    if (savedSemesterStart) {
-      semesterStartDate.value = savedSemesterStart;
-    }
     await adoptEditHistory();
+    storageError.value = null;
   } catch (e) {
     console.error("Failed to load data from SQLite", e);
+    storageError.value = e instanceof Error ? e.message : String(e);
   }
 }
+
+const STORAGE_UNAVAILABLE_MESSAGE = "本地课表数据库暂时无法打开，请重启应用后重试。";
+
+/// 上一次读库失败时，内存里的「当前课表」和课程都不可信（当前课表停在默认的 1 号，课程是空的）。
+/// 这时直接导入或覆盖，确认框会以为当前课表是空的而跳过，服务层却按真正的当前课表清空 ——
+/// 所以任何会改写课表的操作开始前都先重读一次，读不到就不做。
+const ensureStorageReady = async (): Promise<boolean> => {
+  if (!storageError.value) return true;
+  await loadDataFromDb();
+  return !storageError.value;
+};
 
 /// Which semester week a date falls in, or null when the semester start is missing or the date
 /// precedes it.
@@ -734,6 +761,7 @@ export function useCourses() {
   };
 
   const clearAll = async (options?: { boundary?: boolean }) => {
+    if (!(await ensureStorageReady())) throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
     await courseService.clearAllData();
     courses.value = [];
     schedules.value = [];
@@ -864,6 +892,7 @@ export function useCourses() {
   };
 
   const importFromCsv = async (csvStr: string, overwrite: boolean = false): Promise<{ success: boolean; message: string; count: number }> => {
+    if (!(await ensureStorageReady())) return { success: false, message: STORAGE_UNAVAILABLE_MESSAGE, count: 0 };
     let before: TimetableSnapshot | null = null;
     try {
       const items = parseCSV(csvStr);
@@ -903,6 +932,7 @@ export function useCourses() {
   };
 
   const importFromSemesterCsv = async (csvStr: string, overwrite: boolean = false): Promise<{ success: boolean; message: string; count: number }> => {
+    if (!(await ensureStorageReady())) return { success: false, message: STORAGE_UNAVAILABLE_MESSAGE, count: 0 };
     let before: TimetableSnapshot | null = null;
     try {
       const items = parseSemesterCSV(csvStr);
@@ -938,6 +968,7 @@ export function useCourses() {
   };
 
   const importFromJson = async (jsonStr: string): Promise<{ success: boolean; message: string; count: number }> => {
+    if (!(await ensureStorageReady())) return { success: false, message: STORAGE_UNAVAILABLE_MESSAGE, count: 0 };
     let before: TimetableSnapshot | null = null;
     try {
       const items: CourseImportItem[] = JSON.parse(jsonStr);
@@ -988,6 +1019,7 @@ export function useCourses() {
   const importFromJsonBackup = async (
     jsonStr: string
   ): Promise<{ success: boolean; message: string; count: number; skipped?: number }> => {
+    if (!(await ensureStorageReady())) return { success: false, message: STORAGE_UNAVAILABLE_MESSAGE, count: 0 };
     let before: TimetableSnapshot | null = null;
     try {
       const parsed = JSON.parse(jsonStr);
@@ -1080,7 +1112,11 @@ export function useCourses() {
   const importAsNewCourseTable = async (
     baseName: string,
     run: () => Promise<{ success: boolean; message: string; count: number; skipped?: number }>
-  ): Promise<{ success: boolean; message: string; count: number; skipped?: number; tableName: string }> => {
+  ): Promise<{ success: boolean; message: string; count: number; skipped?: number; tableName: string; tableId?: number }> => {
+    // 先确认读得到库：读库失败时 activeCourseTableId 停在默认的 1 号，导入失败后会「退回」到错误的课表。
+    if (!(await ensureStorageReady())) {
+      return { success: false, message: STORAGE_UNAVAILABLE_MESSAGE, count: 0, tableName: baseName };
+    }
     const previousTableId = activeCourseTableId.value;
     const previousWeek = currentWeek.value;
     const tableName = uniqueCourseTableName(baseName);
@@ -1102,7 +1138,7 @@ export function useCourses() {
     } catch (e) {
       result = { success: false, message: `导入失败: ${(e as Error).message}`, count: 0 };
     }
-    if (result.success) return { ...result, tableName };
+    if (result.success) return { ...result, tableName, tableId: newTableId };
 
     try {
       // Point back at the old table before deleting: deleting the active table would make the
@@ -1201,7 +1237,11 @@ export function useCourses() {
     undoEdit,
     redoEdit,
     exitEditMode,
-    coursesReady,    switchCourseTable,
+    coursesReady,
+    storageError,
+    ensureStorageReady,
+    takeRecoveredTableNames: courseService.takeRecoveredTableNames,
+    switchCourseTable,
     createCourseTable,
     renameCourseTable,
     deleteCourseTable,

@@ -160,7 +160,7 @@ export const fetchPublicKey = async (deps: EamsDeps, jar: CookieJar): Promise<st
   const response = await deps.http.request(CAS_PUBLIC_KEY_URL);
   jar.absorb(response);
   const key = response.body.trim();
-  if (!key) throw new Error("学校没有返回 RSA 公钥（CAS 公钥地址返回空）");
+  if (!key) throw new Error("未获取到学校登录所需的加密公钥，请稍后重试。");
   return key;
 };
 
@@ -225,7 +225,7 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
   if (captcha) {
     return {
       ok: false,
-      reason: "学校要求输入验证码，自动登录过不去。请先在浏览器里成功登录一次，再回来重试。",
+      reason: "登录需要验证码，请先在浏览器中登录一次后重试。",
       detail: `${captcha}｜${detail}`
     };
   }
@@ -237,7 +237,7 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
   if (locked) {
     return {
       ok: false,
-      reason: "登录失败次数过多，账号可能被暂时锁定。请先在浏览器里登录一次。",
+      reason: "登录失败次数过多，账号可能已被暂时锁定，请稍后在浏览器中登录确认。",
       detail: `${locked}｜${detail}`
     };
   }
@@ -250,7 +250,7 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
   if (badCredential) {
     return {
       ok: false,
-      reason: "学号或密码不对（学校明确这么提示的）。",
+      reason: "学号或密码错误。",
       detail: `${badCredential}｜${detail}`,
       wrongCredentials: true
     };
@@ -260,7 +260,7 @@ export const classifyLoginFailure = (html: string, finalUrl: string, status = 0)
   // 猜一个原因比不猜更糟 —— 今天已经为此付过两次代价。
   return {
     ok: false,
-    reason: `登录没有成功，但学校没有给出可识别的原因。下面是服务端的原话，请把它发给我。`,
+    reason: "登录失败，原因无法识别，详见诊断信息。",
     detail
   };
 };
@@ -331,7 +331,7 @@ export const casLogin = async (
     }
     return {
       ok: false,
-      reason: "取到的不是登录页，所以没法登录。下面的诊断信息会显示实际拿到了哪一页。",
+      reason: "未能打开学校登录页面，详见诊断信息。",
       detail: formatTrace(trace)
     };
   }

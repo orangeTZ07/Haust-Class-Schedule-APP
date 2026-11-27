@@ -52,6 +52,8 @@ export interface SyncFailure {
 
 export type SyncResult = SyncSuccess | SyncFailure;
 
+const UNREACHABLE_MESSAGE = "无法连接教务系统，请连接 aTrust 或校园网后重试。";
+
 /// 先单独探一次连通性。
 ///
 /// 这一步存在的唯一理由：**"连不上"和"密码错"必须给出不同的提示**。否则用户会像今天那样，
@@ -71,7 +73,7 @@ export const probeReachability = async (http: EamsHttp): Promise<{ ok: true } | 
       return {
         ok: false,
         kind: "unreachable",
-        message: `连不上教务系统（${JWC_HOST}）。请先打开手机上的 aTrust 并连接，或连到校园网后重试。`,
+        message: UNREACHABLE_MESSAGE,
         detail: "没有拿到任何响应。"
       };
     }
@@ -81,9 +83,7 @@ export const probeReachability = async (http: EamsHttp): Promise<{ ok: true } | 
       return {
         ok: false,
         kind: "unreachable",
-        message:
-          `教务系统的登录页第一跳就被拒（HTTP ${first.status}）。` +
-          `现在请点「网络诊断」，把三个变体的结果发我 —— 那能看出是哪一处被针对。`,
+        message: `教务系统拒绝访问（HTTP ${first.status}），请运行「网络诊断」并将结果反馈给开发者。`,
         detail: `链路：${chain}\n\n${formatMatrix([
           { name: "连通性探测", note: "逐跳跟随", hops, verdict: `第一跳 HTTP ${first.status}` }
         ])}`
@@ -95,7 +95,7 @@ export const probeReachability = async (http: EamsHttp): Promise<{ ok: true } | 
     return {
       ok: false,
       kind: "unreachable",
-      message: `连不上教务系统（${JWC_HOST}）。请先打开手机上的 aTrust 并连接，或连到校园网后重试。`,
+      message: UNREACHABLE_MESSAGE,
       detail: error instanceof Error ? error.message : String(error)
     };
   }
@@ -130,7 +130,7 @@ export const fetchTimetable = async (
     return withTrace({
       ok: false,
       kind: "login",
-      message: login.reason ?? "登录失败",
+      message: login.reason ?? "登录失败。",
       detail: login.detail,
       wrongCredentials: login.wrongCredentials
     });
@@ -180,7 +180,7 @@ export const fetchTimetable = async (
     return withTrace({
       ok: false,
       kind: "params",
-      message: "课表页面里找不到必要的请求参数（可能拿到的是登录页或别的页面）。",
+      message: "无法识别课表页面，请稍后重试。",
       detail: `页面标题「${pageTitle(coursePage.body)}」，长度 ${coursePage.body.length}`
     });
   }
@@ -214,7 +214,7 @@ export const fetchTimetable = async (
     return withTrace({
       ok: false,
       kind: "course-table",
-      message: `教务系统返回 HTTP ${table.status}，没能取到课表。`,
+      message: `获取课表失败（HTTP ${table.status}）。`,
       detail: table.body.slice(0, 400)
     });
   }
@@ -225,7 +225,7 @@ export const fetchTimetable = async (
     return withTrace({
       ok: false,
       kind: "empty",
-      message: "课表是空的 —— 可能这个学期的课还没排，或者拿到的不是课表页面。",
+      message: "未获取到课程，本学期可能尚未排课。",
       detail: problems.join("；") || `页面标题「${pageTitle(table.body)}」，长度 ${table.body.length}`
     });
   }

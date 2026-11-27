@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { useRouter } from "vue-router";
-import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { showToast } from "vant";
 import { ChevronDown, Copy, DownloadCloud, Info, LifeBuoy, Loader2, Stethoscope } from "@lucide/vue";
 
 import { useCourses } from "@/composables/useCourses";
-import { fetchTimetable, JWC_HOST, type SyncFailure, type SyncResult } from "@/services/eams/eamsClient";
+import { fetchTimetable, JWC_HOST, type SyncFailure } from "@/services/eams/eamsClient";
 import { clearSavedPassword, readCredentials, saveCredentials } from "@/services/eams/credentialStorage";
-import { fetchExams } from "@/services/eams/examClient";
+import { fetchExams, type ExamSyncResult } from "@/services/eams/examClient";
 import { saveExamSnapshot } from "@/services/eams/examStorage";
 import type { EamsDeps } from "@/services/eams/casLogin";
 import { formatMatrix, runDiagnosticMatrix } from "@/services/eams/diagnose";
@@ -19,7 +17,7 @@ import { launchApp } from "@/services/androidInstaller";
 import { describeError } from "@/utils/describeError";
 import ImportNotice from "./ImportNotice.vue";
 import { useConfirmReplace } from "./confirmReplace";
-import { importDateLabel, newTableNotice, newTableToast, skippedNotice, type ImportOutcome } from "./importTable";
+import { importDateLabel, newTableToast, periodOverflowNotice, skippedNotice, type ImportOutcome } from "./importTable";
 import "./importShared.css";
 
 const emit = defineEmits<{
@@ -32,9 +30,8 @@ const props = defineProps<{
   overwrite: boolean;
 }>();
 
-const { activeCourseTableId, importFromJsonBackup, importAsNewCourseTable } = useCourses();
+const { activeCourseTableId, periodConfig, ensureStorageReady, importFromJsonBackup, importAsNewCourseTable } = useCourses();
 const confirmReplace = useConfirmReplace();
-const router = useRouter();
 
 const savedCredentials = readCredentials();
 const username = ref(savedCredentials?.username ?? "");
@@ -44,18 +41,27 @@ const password = ref(rememberPassword.value ? savedCredentials?.password ?? "" :
 watch(rememberPassword, (remember) => {
   if (!remember) clearSavedPassword();
 });
-const syncing = ref<"timetable" | "exams" | null>(null);
-const message = ref("");
-const messageKind = ref<"ok" | "err" | "info">("info");
+const syncing = ref(false);
 const syncDependencies = (): EamsDeps => ({
   http: createTauriHttp(),
   encryptPassword: async (pw, key) => encryptPasswordWithKey(pw, key) ?? ""
 });
-/// 解析器那份"注意事项"（哪些课换过教室、教师取了谁）。默认收起：一条就够长（数据库原理列了
-/// 11 个教室），三条直接是一屏多的文字墙 —— 而它出现在表单上面，会把学号 / 密码 / 开始同步顶到
-/// 好几屏以外。收起不等于瞒着：给出条数，想核对的人点开就看得到。
-const notes = ref<string[]>([]);
-const showNotes = ref(false);
+
+/// 面板上方的提示：失败的原因，或同步成功但仍需用户处理的提醒。每条只有一句话。
+const message = ref("");
+const messageKind = ref<"ok" | "err" | "info">("info");
+/// 失败时服务端给出的诊断信息（请求链路、状态码、正文片段）。默认收起：给用户看的是一句原因，
+/// 排查用的细节点开才铺出来，并且可以一键复制发给开发者。
+const failureDetail = ref("");
+const showDetail = ref(false);
+
+const showMessage = (kind: "ok" | "err" | "info", text: string, detail = "") => {
+  messageKind.value = kind;
+  message.value = text;
+  failureDetail.value = detail;
+  showDetail.value = false;
+};
+
 const diagnosing = ref(false);
 const diagnoseText = ref("");
 /// Folded away by default: most people never need it, and it is the part that made the old panel
@@ -79,7 +85,7 @@ const openCredit = () => {
 const openAtrustHelp = () => {
   openUrl(ATRUST_HELP_URL).catch(() => {
     const opened = window.open(ATRUST_HELP_URL, "_blank", "noopener");
-    if (!opened) showToast({ message: "打不开 aTrust 安装说明，请用浏览器访问 metic.haust.edu.cn", type: "fail" });
+    if (!opened) showToast({ message: "无法打开 aTrust 安装说明，请在浏览器中访问 metic.haust.edu.cn", type: "fail" });
   });
 };
 
@@ -135,6 +141,11 @@ const copyVpnHost = async () => {
   );
 };
 
+const copyFailureDetail = async () => {
+  const ok = await copyText(`${message.value}\n\n${failureDetail.value}`);
+  showToast(ok ? { message: "已复制诊断信息", type: "success" } : { message: "复制失败", type: "fail" });
+};
+
 /// 网络诊断矩阵。
 ///
 /// 起因是 issue #8 里 orangeTZ07 的指正，而且他说得对：我上一版传的 `redirect: "manual"`
@@ -146,7 +157,7 @@ const copyVpnHost = async () => {
 const diagnose = async () => {
   if (diagnosing.value) return;
   diagnosing.value = true;
-  diagnoseText.value = "正在逐个变体测试，请稍候…";
+  diagnoseText.value = "正在诊断，请稍候…";
   try {
     const results = await runDiagnosticMatrix(
       createTauriHttp(),
@@ -157,40 +168,16 @@ const diagnose = async () => {
     );
     diagnoseText.value = formatMatrix(results);
   } catch (error) {
-    diagnoseText.value = `诊断本身出错了：${describeError(error)}`;
+    diagnoseText.value = `诊断失败：${describeError(error)}`;
   } finally {
     diagnosing.value = false;
-  }
-};
-
-/// 失败信息按原因分类显示。
-///
-/// 这一条不是装饰：今天那次失败，脚本把所有情况都说成"学号或密码不对"，而真实原因是缺字段和验证码，
-/// 结果拿着一个正确密码反复确认。所以每一类都必须说人话、并且说清该做什么。
-const describeFailure = (result: SyncResult & { ok: false }): string => {
-  switch (result.kind) {
-    case "unreachable":
-      return result.message; // 已经写明"请先打开 aTrust"
-    case "login":
-      return `登录失败：${result.message}`;
-    case "session":
-      return `登录成功，但教务系统不认这个会话：${result.message}`;
-    case "params":
-      return `课表页面结构变了：${result.message}`;
-    case "course-table":
-      return `拉取课表失败：${result.message}`;
-    case "empty":
-      return result.message;
-    default:
-      return result.message;
   }
 };
 
 /// 同步结果出来后按登录这一步的成败处理已存的登录信息。
 ///   * 学校明确说学号或密码不对：取消勾选，watch 会删掉已存的密码；
 ///   * 连不上或其它登录失败（验证码、锁定、认不出原因）：已存的不动；
-///   * 成功，或失败发生在登录之后：记下学号，勾了「记住密码」再记密码。凭已有会话免密同步考试时
-///     输入框可能是空的，空值不存，免得盖掉已存的学号。
+///   * 成功，或失败发生在登录之后：记下学号，勾了「记住密码」再记密码。
 const rememberLogin = (result: { ok: true } | SyncFailure, account: string, secret: string) => {
   if (!result.ok && result.wrongCredentials) {
     rememberPassword.value = false;
@@ -200,130 +187,99 @@ const rememberLogin = (result: { ok: true } | SyncFailure, account: string, secr
   if (account && secret) saveCredentials(account, secret, rememberPassword.value);
 };
 
+/// 课表写入之后，在同一个登录会话里取考试安排，存到刚写入的那张课表上。
+/// 取不到不算同步失败：课表已经到手，考试安排只作为一条提醒报出来。
+const syncExamsInto = async (tableId: number, account: string, secret: string): Promise<ExamSyncResult> => {
+  try {
+    const result = await fetchExams(syncDependencies(), account, secret, { skipReachabilityProbe: true });
+    if (result.ok) saveExamSnapshot(tableId, result.snapshot);
+    return result;
+  } catch (error) {
+    return { ok: false, kind: "unknown", message: describeError(error) };
+  }
+};
+
+/// 一次同步拿回课表和考试安排。以前是「同步课表」「同步考试」两个按钮、两次登录，而考试安排
+/// 存到「当前课表」上 —— 先点同步考试、再点同步课表，考试就挂在了旧课表上（issue #51）。
 const sync = async () => {
   if (syncing.value) return;
 
-  if (!username.value.trim() || !password.value) {
-    messageKind.value = "err";
-    message.value = "请先填「我i科大」的学号和密码。";
+  const account = username.value.trim();
+  const secret = password.value;
+  if (!account || !secret) {
+    showMessage("err", "请输入学号和密码。");
+    return;
+  }
+
+  // 读一次就定下来：同步要等好几秒，期间拨动底部开关不能让一次「新课表」同步变成没确认过的覆盖。
+  const overwrite = props.overwrite;
+
+  // 上次读库失败时，「当前课表」和课程数都不可信：确认框会以为是空表而跳过。先重读，读不到就不同步。
+  if (!(await ensureStorageReady())) {
+    showMessage("err", "本地课表数据库暂时无法打开，请重启应用后重试。");
     return;
   }
 
   // Only overwriting asks, and it asks up front rather than after the fetch: a prompt that shows up
   // after the wait is one the user is no longer expecting. A new table destroys nothing.
-  if (props.overwrite && !(await confirmReplace("教务同步"))) return;
+  if (overwrite && !(await confirmReplace("教务同步"))) return;
 
-  syncing.value = "timetable";
-  messageKind.value = "info";
-  message.value = "正在连接教务系统…";
+  syncing.value = true;
+  showMessage("info", "");
 
   try {
-    const account = username.value.trim();
-    const secret = password.value;
     const result = await fetchTimetable(syncDependencies(), account, secret);
     rememberLogin(result, account, secret);
 
     if (!result.ok) {
-      messageKind.value = "err";
-      // **把诊断信息一起显示出来。** 之前只显示 message，detail 被丢掉了 —— 而真正有用的是
-      // detail：服务端的原话、HTTP 状态、最终地址。第一版的归类还把一个"页面里存在验证码变量"
-      // 误判成"需要验证码"，于是用户照着错误提示试了三种办法都没用。信息必须完整地给出来。
-      const detail = result.detail ? `\n\n诊断信息（请把这部分发给开发者）：\n${result.detail}` : "";
-      message.value = describeFailure(result) + detail;
+      // 只给一句原因；服务端原话、HTTP 状态、最终地址收在「诊断信息」里，点开可看、可复制。
+      showMessage("err", result.message, result.detail ?? "");
       return;
     }
 
     // 复用已有的备份导入逻辑：它已经过测试，会处理按周覆盖层、单双周、ID 重映射等。
     // 新课表在取到数据之后才建，所以网络失败不会留下空课表。
     const backupJson = JSON.stringify(result.backup);
-    const imported: ImportOutcome = props.overwrite
+    const targetTableId = activeCourseTableId.value;
+    const imported: ImportOutcome = overwrite
       ? await importFromJsonBackup(backupJson)
       : await importAsNewCourseTable(`教务同步 ${importDateLabel()}`, () => importFromJsonBackup(backupJson));
     if (!imported.success) {
-      messageKind.value = "err";
-      message.value = `课表已取到，但写入失败：${imported.message}`;
+      showMessage("err", `课表保存失败：${imported.message}`);
       return;
     }
 
-    messageKind.value = "ok";
+    // 考试安排存到刚写入课表的那张表：新课表用导入返回的编号，覆盖则是同步开始时的当前课表。
+    const exams = await syncExamsInto(imported.tableId ?? targetTableId, account, secret);
     if (!rememberPassword.value) password.value = "";
-    showToast(imported.tableName ? newTableToast(imported.tableName) : "课表已同步");
 
-    // A warning is something the user has to act on or at least read, so the sheet stays open to
-    // show it. Without one the toast says all there is to say and the sheet gets out of the way.
+    const examCount = exams.ok ? exams.snapshot.exams.length : 0;
+    const summary =
+      (imported.tableName ? newTableToast(imported.tableName) : "已更新当前课表") +
+      (examCount ? `，含 ${examCount} 场考试` : "");
+
+    // 只有需要用户处理的事才留在面板上；其余情况一句 toast 足够，面板直接收起。
     const warnings = [
-      result.report.maxPeriod > 10
-        ? `注意：你的课表排到第 ${result.report.maxPeriod} 节，请到 设置 → 网格设置 把节数调到至少 ${result.report.maxPeriod}，否则晚上的课不会显示。`
-        : "",
-      skippedNotice(imported.skipped)
+      periodOverflowNotice(result.report.maxPeriod, periodConfig.value.periods.length),
+      skippedNotice(imported.skipped),
+      exams.ok ? "" : `考试安排获取失败：${exams.message}`
     ].filter(Boolean);
 
-    // 解析器的 notes 单独收着（见上面两个 ref）—— 它说的正是"地点被投票选过"这件事：地点现在按
-    // 每节课各自的教室保存，这里说明的是课程列表上显示哪一个。
-    notes.value = result.report.notes;
-    showNotes.value = false;
-
-    if (warnings.length === 0 && notes.value.length === 0) {
-      // Cleared as well, or the next time the sheet opens it would greet the user with a stale
-      // "同步完成".
-      message.value = "";
+    if (warnings.length === 0) {
+      showMessage("info", "");
+      showToast(summary);
       emit("close");
       return;
     }
 
-    const where = imported.tableName ? newTableNotice(imported.tableName) : "已覆盖当前课表。";
-    message.value = [
-      `同步完成：${result.report.courses} 门课程、${result.report.schedules - (imported.skipped ?? 0)} 条日程。`,
-      where,
-      ...warnings
-    ].join("\n");
+    // 考试安排取不到时，把它的诊断信息也收进「诊断信息」，方便复制给开发者。
+    showMessage("info", [`${summary}。`, ...warnings].join("\n"), exams.ok ? "" : exams.detail ?? "");
   } catch (error) {
-    messageKind.value = "err";
     // 这里以前写成 (error as Error).message —— 而 Tauri 拒绝时给的是错误值本身，对字符串错误
     // 取 .message 会得到 undefined，把真实原因吞掉（踩过一次）。describeError 专门处理这个。
-    message.value = `同步出错：${describeError(error)}`;
+    showMessage("err", `同步失败：${describeError(error)}`);
   } finally {
-    syncing.value = null;
-  }
-};
-
-const openExams = () => {
-  emit("close");
-  void router.push({ name: "exams" });
-};
-
-const syncExams = async () => {
-  if (syncing.value) return;
-  if (!isTauri()) {
-    messageKind.value = "err";
-    message.value = "请在 App 里同步考试。";
-    return;
-  }
-
-  const tableId = activeCourseTableId.value;
-  syncing.value = "exams";
-  messageKind.value = "info";
-  message.value = "正在查询本学期考试安排…";
-  try {
-    const account = username.value.trim();
-    const secret = password.value;
-    const result = await fetchExams(syncDependencies(), account, secret);
-    rememberLogin(result, account, secret);
-    if (!result.ok) {
-      messageKind.value = "err";
-      message.value = result.message;
-      return;
-    }
-
-    saveExamSnapshot(tableId, result.snapshot);
-    if (!rememberPassword.value) password.value = "";
-    message.value = "";
-    openExams();
-  } catch (error) {
-    messageKind.value = "err";
-    message.value = `考试同步失败：${describeError(error)}`;
-  } finally {
-    syncing.value = null;
+    syncing.value = false;
   }
 };
 </script>
@@ -332,42 +288,37 @@ const syncExams = async () => {
   <div class="eams-section">
     <!-- 结果放在最上面：不用滚动就能看到 -->
     <ImportNotice v-if="message" :kind="messageKind">{{ message }}</ImportNotice>
-    <button type="button" class="app-btn app-btn--outline" :disabled="!!syncing" @click="openExams">
-      查看考试安排
-    </button>
 
-    <!-- 注意事项默认收起：展开是一屏多的文字（数据库原理一条就列 11 个教室），会把下面的表单
-         顶到几屏以外 —— 同步完还想再点一次「开始同步」，得先滑过整段说明。 -->
-    <div v-if="notes.length" class="imp-notes">
-      <button
-        type="button"
-        class="imp-notes-toggle"
-        :aria-expanded="showNotes"
-        @click="showNotes = !showNotes"
-      >
-        <Info :size="15" />
-        <span>注意事项 {{ notes.length }} 条</span>
-        <ChevronDown :size="15" class="chevron" :class="{ open: showNotes }" />
-      </button>
-
-      <ul v-if="showNotes" class="imp-notes-list">
-        <li v-for="(note, index) in notes" :key="index">{{ note }}</li>
-      </ul>
+    <div v-if="message && failureDetail" class="detail">
+      <div class="detail-bar">
+        <button
+          type="button"
+          class="detail-toggle"
+          :aria-expanded="showDetail"
+          @click="showDetail = !showDetail"
+        >
+          <span>诊断信息</span>
+          <ChevronDown :size="15" class="chevron" :class="{ open: showDetail }" />
+        </button>
+        <button type="button" class="detail-copy" @click="copyFailureDetail">
+          <Copy :size="13" aria-hidden="true" />
+          <span>复制</span>
+        </button>
+      </div>
+      <pre v-if="showDetail" class="diag-out">{{ failureDetail }}</pre>
     </div>
 
     <div class="imp-card">
       <div class="imp-card-head">
-        <span class="imp-card-title">从教务系统同步</span>
+        <span class="imp-card-title">教务系统同步</span>
       </div>
 
-      <p class="imp-hint">
-        用「我i科大」（学校统一身份认证）的学号与登录密码登录，同步课表或考试安排。
-      </p>
+      <p class="imp-hint">使用「我i科大」账号登录，同步本学期课表与考试安排。</p>
 
       <div class="atrust">
         <Info :size="15" class="atrust-icon" />
         <p class="atrust-text">
-          需要手机能连上教务系统：先打开 aTrust 并连接，或连校园网。
+          校外使用需先连接 aTrust，或接入校园网。
           <button type="button" class="atrust-jump" @click="openAtrust">打开 aTrust</button>
           <button type="button" class="atrust-copy" :aria-label="`复制 ${VPN_HOST}`" @click="copyVpnHost">
             <span class="atrust-host">{{ VPN_HOST }}</span>
@@ -396,48 +347,41 @@ const syncExams = async () => {
           class="imp-input"
           type="password"
           autocomplete="off"
-          placeholder="请输入我i科大的登录密码"
+          placeholder="请输入「我i科大」登录密码"
           @keyup.enter="sync"
         />
       </label>
 
       <div class="remember">
         <van-checkbox v-model="rememberPassword" shape="square" icon-size="16px">记住密码</van-checkbox>
-        <span class="remember-note">密码只保存在这台手机上</span>
+        <span class="remember-note">仅保存在本机</span>
       </div>
 
-      <button class="app-btn app-btn--primary" :disabled="!!syncing" @click="sync">
-        <Loader2 v-if="syncing === 'timetable'" :size="18" class="imp-spin" />
+      <button class="app-btn app-btn--primary" :disabled="syncing" @click="sync">
+        <Loader2 v-if="syncing" :size="18" class="imp-spin" />
         <DownloadCloud v-else :size="18" />
-        <span>{{ syncing === "timetable" ? "正在同步课表…" : "同步课表" }}</span>
+        <span>{{ syncing ? "正在同步…" : "同步课表与考试" }}</span>
       </button>
-      <button class="app-btn app-btn--outline" :disabled="!!syncing" @click="syncExams">
-        <Loader2 v-if="syncing === 'exams'" :size="18" class="imp-spin" />
-        <DownloadCloud v-else :size="18" />
-        <span>{{ syncing === "exams" ? "正在同步考试…" : "同步考试" }}</span>
-      </button>
-
-      <p class="imp-hint small">课表默认同步为新课表，考试安排保存到当前课表。</p>
     </div>
 
     <div class="trouble">
       <button class="trouble-toggle" :aria-expanded="showTrouble" @click="showTrouble = !showTrouble">
         <LifeBuoy :size="15" />
-        <span>连不上？</span>
+        <span>连接问题</span>
         <ChevronDown :size="15" class="chevron" :class="{ open: showTrouble }" />
       </button>
 
       <div v-if="showTrouble" class="trouble-body">
         <ul class="trouble-list">
-          <li>确认 aTrust 已经显示「已连接」，再点对应的同步按钮。</li>
-          <li>若手机连不上教务系统，可改用顶部的「AI 识别」直接导入课表文本或截图。</li>
-          <li>还是不行，点下面的「网络诊断」，把结果发给开发者。</li>
+          <li>请确认 aTrust 显示「已连接」后重试。</li>
+          <li>仍无法连接时，可改用「AI 识别」导入课表。</li>
+          <li>如需协助，请运行网络诊断并将结果反馈给开发者。</li>
         </ul>
 
         <button class="app-btn app-btn--outline" :disabled="diagnosing" @click="diagnose">
           <Loader2 v-if="diagnosing" :size="16" class="imp-spin" />
           <Stethoscope v-else :size="16" />
-          <span>{{ diagnosing ? "诊断中…" : "网络诊断" }}</span>
+          <span>{{ diagnosing ? "正在诊断…" : "网络诊断" }}</span>
         </button>
 
         <pre v-if="diagnoseText" class="diag-out">{{ diagnoseText }}</pre>
@@ -446,7 +390,7 @@ const syncExams = async () => {
 
     <footer class="eams-footer">
       <p class="eams-credit">
-        教务爬虫原型：
+        教务同步原型：
         <button type="button" class="eams-credit-link" @click="openCredit">@LinJX1210</button>
       </p>
     </footer>
@@ -458,12 +402,6 @@ const syncExams = async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.imp-hint.small {
-  font-size: 12px;
-  text-align: center;
-  opacity: 0.6;
 }
 
 .remember {
@@ -562,35 +500,20 @@ const syncExams = async () => {
   font-weight: 600;
 }
 
-.imp-notes-toggle {
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -6px;
+}
+
+.detail-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 8px 4px;
-  border: none;
-  background: transparent;
-  color: var(--theme-body-text);
-  font-size: 13px;
-  opacity: 0.7;
+  gap: 8px;
 }
 
-.imp-notes-list {
-  margin: 0;
-  padding: 12px 14px 12px 30px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theme-body-text) 4%, transparent);
-  font-size: 12px;
-  line-height: 1.65;
-  list-style: disc;
-  color: var(--theme-body-text);
-  opacity: 0.8;
-}
-
-.imp-notes-list li + li {
-  margin-top: 6px;
-}
-
+.detail-toggle,
 .trouble-toggle {
   display: flex;
   align-items: center;
@@ -602,6 +525,25 @@ const syncExams = async () => {
   color: var(--theme-body-text);
   font-size: 13px;
   opacity: 0.7;
+}
+
+.detail-toggle {
+  flex: 1;
+  width: auto;
+}
+
+.detail-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-body-text);
+  background: color-mix(in srgb, var(--theme-body-text) 10%, transparent);
 }
 
 .chevron {
@@ -634,16 +576,6 @@ const syncExams = async () => {
 
 .trouble-list li + li {
   margin-top: 6px;
-}
-
-.link-btn {
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: inherit;
-  font-weight: 600;
-  color: var(--theme-body-text);
-  text-decoration: underline;
 }
 
 /* 诊断输出是等宽文本，必须能横向滚动 —— 里面的 URL 很长，换行会把地址截断得没法看 */
